@@ -211,5 +211,7 @@ int main(int, char**) {
     RUN_TEST(test_arming_emits_reset_policy_once);
     RUN_TEST(test_belt_link_loss_while_running_emits_reset_policy);
     RUN_TEST(test_none_decision_emits_nothing);
+    RUN_TEST(test_link_up_emits_reset_policy_only_on_transition);
+    RUN_TEST(test_target_dropped_while_belt_down_starts_after_reconnect);
     return UNITY_END();
 }

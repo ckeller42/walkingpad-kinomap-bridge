@@ -15,7 +15,7 @@ namespace policy {
 // unchanged app target would be deadbanded and never act on the new state.
 enum class Emit { None, SetSpeed, Stop, StartSequence, NotifyStarted, ResetPolicy };
 
-struct Outcome {
+struct [[nodiscard]] Outcome {
     Emit emits[3];
     size_t count;
     uint8_t tenthKmh;  // valid for SetSpeed / StartSequence
@@ -30,6 +30,8 @@ public:
     Outcome setArmed(bool armed);
     bool armed() const { return armed_; }
 
+    // Link-up (down->up transition) also emits ResetPolicy: targets dropped
+    // while a link was down must not be deadbanded once it returns.
     // Belt loss: running state is unknown, so it is cleared (emits ResetPolicy
     // if it was running). After reconnect the belt is treated as stopped until
     // a fresh armed target starts it.

@@ -20,3 +20,5 @@ void test_ui_stop_disarms_so_next_target_emits_nothing(void);
 void test_arming_emits_reset_policy_once(void);
 void test_belt_link_loss_while_running_emits_reset_policy(void);
 void test_none_decision_emits_nothing(void);
+void test_link_up_emits_reset_policy_only_on_transition(void);
+void test_target_dropped_while_belt_down_starts_after_reconnect(void);

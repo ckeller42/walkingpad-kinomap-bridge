@@ -17,6 +17,7 @@ Outcome BridgeState::setArmed(bool armed) {
 
 Outcome BridgeState::onBeltLink(bool up) {
     Outcome o = empty();
+    if (up && !beltUp_) o.emits[o.count++] = Emit::ResetPolicy;
     beltUp_ = up;
     if (!up && running_) {
         running_ = false;
@@ -27,6 +28,7 @@ Outcome BridgeState::onBeltLink(bool up) {
 
 Outcome BridgeState::onPhoneLink(bool up) {
     Outcome o = empty();
+    if (up && !phoneUp_) o.emits[o.count++] = Emit::ResetPolicy;
     phoneUp_ = up;
     if (!up && running_) {  // build the outcome before clearing running_
         o.emits[o.count++] = Emit::Stop;
