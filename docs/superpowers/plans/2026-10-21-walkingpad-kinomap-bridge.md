@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Advertised FTMS manufacturer string (`2A29`) must **never** be `decathlon` — it selects a different code path in Kinomap.
-- `2ACC` Fitness Machine Feature is **exactly 8 bytes**; bytes 4–7 are a uint32 LE whose **bit 0 is set** (Speed Target Setting). Inclination bits (bit 2 of target features, and the inclination bit of bytes 0–3) are **clear**.
+- `2ACC` Fitness Machine Feature is **exactly 8 bytes**. Bytes 0–3 (Fitness Machine Features, uint32 LE) = `0x00000000` — no optional measurement features, consistent with a `2ACD` payload carrying speed only. Bytes 4–7 (Target Setting Features, uint32 LE) = `0x00000001` — **bit 0 set** (Speed Target Setting), **bit 1 clear** (Inclination Target Setting), **bit 2 clear** (Resistance Target Setting). Note the bit numbering: inclination is bit 1 and resistance is bit 2, which is what Kinomap's own reader assumes (`uf8.java:155-157`).
 - `2AD5` Supported Inclination Range is **not exposed**.
 - `2AD4` Supported Speed Range is **6 bytes**: min `0.50`, max `6.00`, increment `0.10`, each uint16 LE in 0.01 km/h units → `32 00 58 02 0A 00`.
 - `2ACD` Treadmill Data payload is **flags `0x0000` + instantaneous speed uint16 LE in 0.01 km/h units**, 4 bytes total. No optional fields.
