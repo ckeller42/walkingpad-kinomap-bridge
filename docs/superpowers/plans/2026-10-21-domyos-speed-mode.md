@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let Kinomap command the belt's speed by presenting the bridge as a Domyos treadmill, without changing the default FTMS behaviour.
+**Goal:** Let Kinomap command the belt's speed by presenting the bridge as a Domyos **bike**, without changing the default FTMS behaviour. (Task 1 established that Kinomap's type-42 handler is a bike; there is no Domyos treadmill. The session would be recorded as a ride, not a run — see the spec's "Correction" section.)
 
 **Architecture:** A second phone-facing BLE profile. Encoding lives in Arduino-free `lib/domyos/`; the GATT adapter in `src/domyos_server.*` mirrors `FtmsServer`. A Domyos speed is handed to the **same** `SpeedPolicy`/`BridgeState` as an FTMS one — a second front door, not a second system. The belt side (`BeltLink`, `BeltGate`, WiLink) is untouched.
 
@@ -21,7 +21,9 @@
 - FTMS remains the default mode. A user who never enables Domyos mode sees no behavioural change.
 - The "never advertise `decathlon`" rule stands unchanged **for FTMS mode** and does not apply to the Domyos profile (see spec).
 - Builds must be warning-clean under `-Wall -Wextra`. Do not filter build output when checking.
-- Domyos service UUID: `638A1001-7BDE-3E25-FFC5-9DE9B2A0197A`; characteristics `638A1002`–`638A100E` in the same base.
+- Domyos service UUID: **`638AF000-7BDE-3E25-FFC5-9DE9B2A0197A`**. `638A1001` is the level characteristic, not the service. See `protocol/domyos.yaml`.
+- The device presents as a **bike** (`jh8` sets `TYPE_BIKE`, and `ih8.java:256` gates the speed write on it). There is no Domyos treadmill handler.
+- Three connection gates, each of which silently yields a dead session if missed: a write to `638A1105` is what fires `onEquipmentConnected`; the 1 Hz pump needs the `0x2906` Valid Range descriptors of `638A1001` and `638A100E`; `onStartTraining` needs `638A1003` (power) above 5.
 
 ## Review Focus
 
@@ -205,7 +207,9 @@ Advertise the Domyos service and characteristics from `protocol/domyos.yaml`, no
 
 On the phone: add equipment and pair with the simulated treadmill. Start an **SPD** or **INC+SPD** structured workout.
 
-Expected: Kinomap pairs, and writes a speed command that `serve` prints.
+Expected: Kinomap pairs, and writes a speed command to `638A1004` that `serve` prints.
+
+This rung now answers two questions, not one: whether it *can* work, and — since the device appears as a bike — whether what it produces is worth having. Capture a screenshot of the Kinomap session so the second question can be judged on evidence rather than description.
 
 **If Kinomap will not pair, or pairs but never writes a speed: STOP.** Report what was observed and do not start Task 5. The remaining tasks are wasted effort if this rung fails. Record the outcome in `docs/test-log.md` either way — a negative result here is as valuable as a positive one, and was the single most expensive thing to learn late in the FTMS work.
 

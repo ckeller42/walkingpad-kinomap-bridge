@@ -23,12 +23,65 @@ of evidence agree:
   treadmills** do, and **only in SPD and INC+SPD structured modes**.
 
 `jh8 extends ih8`, which speaks a proprietary non-FTMS protocol on service
-`638A1001-7BDE-3E25-FFC5-9DE9B2A0197A`. `bqj.java:743` selects it by
+`638AF000-7BDE-3E25-FFC5-9DE9B2A0197A`. `bqj.java:743` selects it by
 **equipment type 42**, a property of the paired equipment record — not by the
 `2A29` manufacturer string.
 
-So the only route to app-driven speed is to present the bridge as a Domyos
-treadmill: a second BLE profile, spoken alongside or instead of FTMS.
+So the only route to app-driven speed is a second BLE profile, spoken instead
+of FTMS.
+
+## Correction: the target device is a BIKE
+
+> Added after Task 1 read the sources. Two premises in the original draft of
+> this document were wrong, and both are load-bearing.
+
+**1. The service UUID.** `638A1001` is the *level/resistance characteristic*,
+not the service. The service is **`638AF000-7BDE-3E25-FFC5-9DE9B2A0197A`**
+(`ih8.java:32`, resolved through the service resolver; corroborated
+independently by `qdomyos-zwift`, which calls the same UUID
+`KETTLER_ALT_SERVICE_UUID`). A bridge advertising `638A1001` would never be
+found at all.
+
+**2. Equipment type 42 is a bike.** `jh8.java:23` sets `mType = TYPE_BIKE`, and
+`ih8.java:256` guards the speed write on `mType == TYPE_BIKE` — that guard is
+precisely *why* the speed write exists on this handler. `kh8` is
+`TYPE_ELLIPTICAL`; `lh8` (type 41) is an empty stub. **There is no Domyos
+treadmill subclass in Kinomap.**
+
+So "Domyos mode" means presenting the WalkingPad to Kinomap **as an exercise
+bike**. That is a materially different product from the one this document
+originally described, and the owner should weigh it before any of it is built:
+
+- Kinomap would command speed, which is the goal.
+- But it would record the session as a **ride, not a run**. Cadence, power and
+  resistance are a bike's vocabulary; the belt has none of them.
+- Pace, stride and the running-specific parts of Kinomap's UI and history would
+  not apply.
+
+Nothing below assumes this is acceptable. The verification gate (rung 2) now
+answers a second question as well as its original one: not just *can* this be
+made to work, but *is what it produces worth having*.
+
+**3. The speed gate is narrower than first recorded.** It is not "SPD and
+INC+SPD structured modes". The code requires `controlSpeedTreadmill` (default
+false) **and** `canReceive(FEATURE_SPEED)` **and** the paired profile's
+**`manufacturerId == 2`**.
+
+**4. Three undocumented connection gates**, any of which silently yields a
+connected-but-dead session:
+
+- `onEquipmentConnected()` fires only from the write-complete callback of
+  `638A1105` — the handshake characteristic. No handshake write, no equipment.
+- The 1 Hz data pump starts only after Kinomap reads the `0x2906` Valid Range
+  descriptor of `638A1001` **and** of `638A100E`.
+- `onStartTraining()` fires only when `638A1003` (power, watts) exceeds **5**.
+  The belt reports no power at all, so the bridge must synthesise one or no
+  session ever starts.
+
+The handshake is AES-128-ECB under a key held in the app, but **Kinomap never
+verifies the ciphertext**, so the bridge needs only to serve a 2-byte challenge
+and accept a 16-byte write. The key is deliberately not recorded in this
+repository.
 
 ## The decision this document does not make
 
@@ -127,8 +180,13 @@ Two independent sources, which is the point:
 
 - `ih8.java` / `jh8.java` in the Kinomap decompile — the authoritative
   description of *what Kinomap expects*, which is all that matters here.
-- the open-source `qdomyos-zwift` project, which documents the same protocol
-  from the other side.
+- the open-source `qdomyos-zwift` project — specifically
+  `src/devices/kettlerc12bike/`, which drives this same `638A*` service. Note
+  that its `domyosbike`/`domyostreadmill` devices speak an **entirely
+  different** protocol (`F0`-framed over a Microchip UART service) and are not
+  relevant. Note also that its comments say its startup sequence here was
+  observed from a Kinomap capture, so for the init writes the two sources are
+  **not independent**; its metric parsing carries no such caveat.
 
 Where they agree, mark `provenance: community` with both cited. Where they
 disagree, say so and leave it open until measured. Nothing is `measured` until
