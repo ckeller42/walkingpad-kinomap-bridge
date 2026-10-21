@@ -170,8 +170,25 @@ void test_target_below_minimum_is_a_stop(void) {
     TEST_ASSERT_EQUAL(policy::Action::None, q.onTarget(100, 5000).action);  // no second Stop
 }
 
+void test_adopt_makes_nearby_app_target_a_deadband_noop(void) {
+    policy::SpeedPolicy p;
+    (void)p.onTarget(200, 0);                 // reference 2.0
+    p.adopt(35, 100);                         // user set 3.5
+    TEST_ASSERT_EQUAL(policy::Action::None, p.onTarget(340, 5000).action);       // 0.1 away: deadband
+    TEST_ASSERT_EQUAL(policy::Action::SetSpeed, p.onTarget(200, 6000).action);   // Kinomap still wins
+}
+
+void test_adopt_clears_a_pending_stop_state(void) {
+    policy::SpeedPolicy p;
+    (void)p.onTarget(100, 0);                 // stop
+    p.adopt(5, 100);                          // user starts at 0.5 by hand
+    TEST_ASSERT_EQUAL(policy::Action::Stop, p.onTarget(100, 5000).action);       // stop must emit again
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
+    RUN_TEST(test_adopt_makes_nearby_app_target_a_deadband_noop);
+    RUN_TEST(test_adopt_clears_a_pending_stop_state);
     RUN_TEST(test_sentinel_is_a_stop);
     RUN_TEST(test_sentinel_while_already_stopped_emits_nothing);
     RUN_TEST(test_target_above_max_is_clamped_to_six);
@@ -192,6 +209,13 @@ int main(int, char**) {
     RUN_TEST(test_deceleration_ramp_after_stop_is_not_adopted);
     RUN_TEST(test_target_below_minimum_is_a_stop);
     RUN_TEST(test_disarmed_target_emits_nothing);
+    RUN_TEST(test_step_tenths_moves_in_half_kmh_steps_and_clamps);
+    RUN_TEST(test_manual_speed_while_disarmed_emits_nothing);
+    RUN_TEST(test_manual_speed_while_running_sets_speed_and_syncs_policy);
+    RUN_TEST(test_manual_plus_on_stopped_belt_starts_at_minimum);
+    RUN_TEST(test_manual_minus_on_stopped_belt_does_nothing);
+    RUN_TEST(test_manual_absolute_speed_is_clamped_and_needs_belt_link);
+    RUN_TEST(test_manual_step_at_limits_never_stops_the_belt);
     RUN_TEST(test_arming_alone_does_not_start_the_belt);
     RUN_TEST(test_armed_target_on_stopped_belt_runs_start_sequence_then_notifies);
     RUN_TEST(test_armed_target_on_running_belt_is_a_plain_set_speed);

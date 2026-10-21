@@ -13,7 +13,19 @@ namespace policy {
 // BridgeState dropped or bypassed a decision (or moved the belt itself), so
 // SpeedPolicy's idea of the last-sent speed is stale; without a reset an
 // unchanged app target would be deadbanded and never act on the new state.
-enum class Emit { None, SetSpeed, Stop, StartSequence, NotifyStarted, ResetPolicy };
+//
+// SyncPolicy: the caller MUST call SpeedPolicy::adopt(Outcome::tenthKmh, now).
+// The user changed the speed by hand; the policy reference follows it.
+enum class Emit { None, SetSpeed, Stop, StartSequence, NotifyStarted, ResetPolicy, SyncPolicy };
+
+// Manual speed control (UI +/- and console `speed`): 0.5 km/h steps, clamped
+// to the advertised range, in 0.1 km/h units.
+constexpr uint8_t kSpeedStepTenths = 5;
+constexpr uint8_t kSpeedMinTenths = POLICY_MIN_CENTI_KMH / 10;
+constexpr uint8_t kSpeedMaxTenths = POLICY_MAX_CENTI_KMH / 10;
+// Next step from base: up goes to the next multiple of 0.5 above base, down to
+// the next one below it; the result is clamped to [min, max] (never a stop).
+uint8_t stepTenths(uint8_t baseTenths, int dir);
 
 struct [[nodiscard]] Outcome {
     Emit emits[3];
@@ -59,6 +71,14 @@ public:
     // StartSequence, NotifyStarted (the 2ADA 0x04 that makes Kinomap begin its
     // session) and ResetPolicy, so the first Kinomap target is not deadbanded.
     Outcome startFromUi(uint8_t tenthKmh);
+    // Manual speed (UI +/- and console). Only while armed with the belt link
+    // up; otherwise emits nothing. tenths is clamped to the advertised range.
+    // Running: SetSpeed + SyncPolicy. Stopped: runs the normal start sequence
+    // at that speed (StartSequence, NotifyStarted, SyncPolicy).
+    Outcome setSpeedFromUi(uint8_t tenthKmh);
+    // One 0.5 km/h step from baseTenths (the speed the user sees now). Stopped:
+    // + starts at the minimum, - does nothing.
+    Outcome stepSpeedFromUi(int dir, uint8_t baseTenths);
     // UI STOP: emits Stop, ResetPolicy and also disarms, so the app cannot
     // override the user's physical stop with its next target.
     Outcome stopFromUi();

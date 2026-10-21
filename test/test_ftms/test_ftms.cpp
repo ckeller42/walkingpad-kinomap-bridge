@@ -74,6 +74,18 @@ void test_success_response_echoes_unknown_opcode(void) {
     TEST_ASSERT_EQUAL_HEX8_ARRAY(want, b.bytes, 3);
 }
 
+void test_parse_set_target_inclination_is_named_valid_and_acked(void) {
+    const uint8_t buf[] = {0x03, 0x2C, 0x01};   // 3.00 %, int16 LE
+    auto r = ftms::parseControlPoint(buf, 3);
+    TEST_ASSERT_EQUAL(ftms::CpOp::SetTargetInclination, r.op);
+    TEST_ASSERT_TRUE(r.valid);
+    TEST_ASSERT_EQUAL_HEX8(0x03, r.rawOp);
+    auto b = ftms::controlPointSuccess(r.rawOp);
+    const uint8_t want[] = {0x80, 0x03, 0x01};
+    TEST_ASSERT_EQUAL_size_t(3, b.len);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(want, b.bytes, 3);
+}
+
 void test_parse_unknown_opcode_is_valid_and_keeps_raw(void) {
     const uint8_t buf[] = {0x05};
     auto r = ftms::parseControlPoint(buf, 1);
@@ -141,6 +153,7 @@ int main(int, char**) {
     RUN_TEST(test_parse_stop_pause_with_param);
     RUN_TEST(test_parse_stop_pause_without_param);
     RUN_TEST(test_parse_start_resume);
+    RUN_TEST(test_parse_set_target_inclination_is_named_valid_and_acked);
     RUN_TEST(test_parse_non_null_zero_len_is_invalid);
     return UNITY_END();
 }

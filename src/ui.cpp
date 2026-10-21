@@ -10,6 +10,8 @@ constexpr int W = 320, H = 240;
 constexpr int BAR_Y = 184;  // bottom bar top edge
 constexpr int HIT_Y = 180;  // just above the bar, clear of the distance/time row (<= y176)
 constexpr int HALF = W / 2;
+constexpr int SPD_BTN_W = 72;     // "-" at x 0..71, "+" at x 248..319
+constexpr int SPD_BTN_Y0 = 44, SPD_BTN_Y1 = 140;
 constexpr int SETUP_HIT_Y = 40;  // top strip: tap the BELT indicator to re-run setup
 
 constexpr uint16_t BG = TFT_BLACK;
@@ -71,11 +73,16 @@ void Ui::poll() {
         else (left ? armPressed_ : stopPressed_) = true;
     } else if (!wizardMode_ && t.y < SETUP_HIT_Y && left) {
         setupTapped_ = true;
+    } else if (!wizardMode_ && t.y >= SPD_BTN_Y0 && t.y < SPD_BTN_Y1) {
+        if (t.x < SPD_BTN_W) speedDown_ = true;
+        else if (t.x >= W - SPD_BTN_W) speedUp_ = true;
     }
 }
 
 bool Ui::tookArmButton() { bool r = armPressed_; armPressed_ = false; return r; }
 bool Ui::tookStop() { bool r = stopPressed_; stopPressed_ = false; return r; }
+bool Ui::tookSpeedUp() { bool r = speedUp_; speedUp_ = false; return r; }
+bool Ui::tookSpeedDown() { bool r = speedDown_; speedDown_ = false; return r; }
 bool Ui::tookSetupTap() { bool r = setupTapped_; setupTapped_ = false; return r; }
 bool Ui::tookWizardLeft() { bool r = wizL_; wizL_ = false; return r; }
 bool Ui::tookWizardRight() { bool r = wizR_; wizR_ = false; return r; }
@@ -118,6 +125,19 @@ void Ui::render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
     g.setTextColor(DIM, BG);
     g.setTextDatum(bottom_right);
     g.drawString("km/h", W - 6, 152);
+
+    // Speed -/+ : dim and unmistakably inert while disarmed, like START.
+    {
+        const uint16_t bg = armed ? BTN_GREY : ARM_OFF;
+        const uint16_t fg = armed ? TFT_WHITE : DIM;
+        const int by = SPD_BTN_Y0, bh = SPD_BTN_Y1 - SPD_BTN_Y0, cy = by + bh / 2;
+        g.fillRoundRect(2, by, SPD_BTN_W - 4, bh, 8, bg);
+        g.fillRoundRect(W - SPD_BTN_W + 2, by, SPD_BTN_W - 4, bh, 8, bg);
+        g.fillRect(14, cy - 3, SPD_BTN_W - 28, 6, fg);                   // minus
+        g.fillRect(W - SPD_BTN_W + 14, cy - 3, SPD_BTN_W - 28, 6, fg);   // plus: bar
+        g.fillRect(W - SPD_BTN_W / 2 - 3, cy - (SPD_BTN_W - 28) / 2, 6, SPD_BTN_W - 28, fg);  // plus: stem
+        g.setTextColor(TFT_WHITE, BG);
+    }
 
     g.setTextColor(TFT_WHITE, BG);
     g.setTextDatum(middle_center);

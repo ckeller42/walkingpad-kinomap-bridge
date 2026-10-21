@@ -49,6 +49,13 @@ public:
     // One sample per status poll; detects speed changes made by the remote.
     void onBeltSpeed(uint8_t tenthKmh);
 
+    // The user set the belt speed by hand through the bridge (UI +/- or
+    // console). Adopts it as the reference, as the remote-resync would after
+    // kResyncPolls samples, but immediately: a later app target is then judged
+    // against what the belt really does (deadband / override) instead of a
+    // stale reference. Also counts as a command for rate limiting.
+    void adopt(uint8_t tenthKmh, uint32_t nowMs);
+
     void reset();
 
 private:

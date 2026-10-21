@@ -27,11 +27,14 @@ Buf treadmillData(uint16_t centiKmh);
 // Fitness Machine Control Point response payload for opcode 0x04 (Start or Resume).
 Buf statusStarted();
 
-// Fitness Machine Control Point opcodes the bridge handles. Unknown is the
-// result for any opcode not listed here.
+// Fitness Machine Control Point opcodes the bridge recognises (not all are
+// acted on). Unknown is the result for any opcode not listed here.
 enum class CpOp : uint8_t {
     RequestControl = 0x00,
     SetTargetSpeed = 0x02,
+    // Known but deliberately not acted on: this machine has no incline (the
+    // feature bits say so). Acknowledged with Success, nothing else happens.
+    SetTargetInclination = 0x03,
     StartResume = 0x07,
     StopPause = 0x08,
     Unknown = 0xFF,

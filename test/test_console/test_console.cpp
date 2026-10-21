@@ -19,6 +19,10 @@ void test_every_documented_command_parses(void) {
     TEST_ASSERT_EQUAL(Cmd::Wizard, parse("wizard"));
     TEST_ASSERT_EQUAL(Cmd::WizardNext, parse("wizard next"));
     TEST_ASSERT_EQUAL(Cmd::WizardBack, parse("wizard back"));
+    TEST_ASSERT_EQUAL(Cmd::SpeedUp, parse("speed up"));
+    TEST_ASSERT_EQUAL(Cmd::SpeedDown, parse("SPEED  Down"));
+    TEST_ASSERT_EQUAL(Cmd::SpeedSet, parse("speed 3.5"));
+    TEST_ASSERT_EQUAL(Cmd::Cp, parse("cp"));
     TEST_ASSERT_EQUAL(Cmd::Shot, parse("shot"));
     TEST_ASSERT_EQUAL(Cmd::Help, parse("help"));
 }
@@ -67,12 +71,31 @@ void test_overlong_line_is_flagged_and_next_line_is_clean(void) {
     TEST_ASSERT_EQUAL_STRING("stop", b.line());
 }
 
+void test_speed_value_parsing(void) {
+    unsigned char t = 0;
+    TEST_ASSERT_EQUAL(SpeedArg::Ok, parseSpeedArg("speed 3.5", 50, 600, t));
+    TEST_ASSERT_EQUAL_UINT8(35, t);
+    TEST_ASSERT_EQUAL(SpeedArg::Ok, parseSpeedArg("SPEED 0.50", 50, 600, t));
+    TEST_ASSERT_EQUAL_UINT8(5, t);
+    TEST_ASSERT_EQUAL(SpeedArg::Ok, parseSpeedArg("speed 6", 50, 600, t));
+    TEST_ASSERT_EQUAL_UINT8(60, t);
+    TEST_ASSERT_EQUAL(SpeedArg::OutOfRange, parseSpeedArg("speed 0.4", 50, 600, t));
+    TEST_ASSERT_EQUAL(SpeedArg::OutOfRange, parseSpeedArg("speed 6.1", 50, 600, t));
+    TEST_ASSERT_EQUAL(SpeedArg::OutOfRange, parseSpeedArg("speed 0", 50, 600, t));
+    TEST_ASSERT_EQUAL(SpeedArg::Bad, parseSpeedArg("speed fast", 50, 600, t));
+    TEST_ASSERT_EQUAL(SpeedArg::Bad, parseSpeedArg("speed 3.55", 50, 600, t));
+    TEST_ASSERT_EQUAL(SpeedArg::Bad, parseSpeedArg("speed 3.", 50, 600, t));
+    TEST_ASSERT_EQUAL(SpeedArg::Bad, parseSpeedArg("speed -3", 50, 600, t));
+    TEST_ASSERT_EQUAL(SpeedArg::Bad, parseSpeedArg("speed 3.5x", 50, 600, t));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_every_documented_command_parses);
     RUN_TEST(test_case_and_whitespace_are_forgiven);
     RUN_TEST(test_unknown_and_prefix_commands_are_unknown_not_silent);
     RUN_TEST(test_blank_line_is_empty);
+    RUN_TEST(test_speed_value_parsing);
     RUN_TEST(test_line_buffer_assembles_lines_and_handles_crlf);
     RUN_TEST(test_overlong_line_is_flagged_and_next_line_is_clean);
     return UNITY_END();

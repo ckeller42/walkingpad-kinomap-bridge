@@ -29,11 +29,41 @@ Cmd parse(const char* line) {
         {"status", Cmd::Status},   {"arm", Cmd::Arm},         {"disarm", Cmd::Disarm},
         {"start", Cmd::Start},     {"stop", Cmd::Stop},       {"sim on", Cmd::SimOn},
         {"sim off", Cmd::SimOff},  {"wizard", Cmd::Wizard},   {"wizard next", Cmd::WizardNext},
-        {"wizard back", Cmd::WizardBack}, {"shot", Cmd::Shot}, {"help", Cmd::Help},
+        {"wizard back", Cmd::WizardBack}, {"cp", Cmd::Cp}, {"shot", Cmd::Shot}, {"help", Cmd::Help},
     };
     for (const Entry& e : kTable)
         if (strcmp(s, e.text) == 0) return e.cmd;
+    if (strcmp(s, "speed up") == 0) return Cmd::SpeedUp;
+    if (strcmp(s, "speed down") == 0) return Cmd::SpeedDown;
+    if (strncmp(s, "speed ", 6) == 0) return Cmd::SpeedSet;
     return Cmd::Unknown;
+}
+
+SpeedArg parseSpeedArg(const char* line, unsigned minCenti, unsigned maxCenti, unsigned char& tenthKmh) {
+    char s[LineBuffer::kMax + 1];
+    normalise(line, s, sizeof s);
+    if (strncmp(s, "speed ", 6) != 0) return SpeedArg::Bad;
+    const char* p = s + 6;
+    unsigned whole = 0, frac = 0, fracDigits = 0, wholeDigits = 0;
+    for (; isdigit((unsigned char)*p); ++p) {
+        if (++wholeDigits > 3) return SpeedArg::Bad;
+        whole = whole * 10 + (unsigned)(*p - '0');
+    }
+    if (wholeDigits == 0) return SpeedArg::Bad;
+    if (*p == '.') {
+        for (++p; isdigit((unsigned char)*p); ++p) {
+            if (++fracDigits > 2) return SpeedArg::Bad;
+            frac = frac * 10 + (unsigned)(*p - '0');
+        }
+        if (fracDigits == 0) return SpeedArg::Bad;
+        if (fracDigits == 1) frac *= 10;
+    }
+    if (*p != 0) return SpeedArg::Bad;
+    const unsigned centi = whole * 100 + frac;
+    if (centi % 10 != 0) return SpeedArg::Bad;
+    if (centi < minCenti || centi > maxCenti) return SpeedArg::OutOfRange;
+    tenthKmh = (unsigned char)(centi / 10);
+    return SpeedArg::Ok;
 }
 
 bool LineBuffer::feed(char c) {

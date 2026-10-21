@@ -49,15 +49,24 @@ static uint32_t pendingSinceMs = 0;
 // Latest belt readings (loop thread only).
 static wilink::Status lastStatus{};
 
+// Speed last commanded through applyOutcome: the base for +/- steps. The belt
+// reading lags a command by a poll or two, so rapid presses must not step
+// from it.
+static uint8_t lastCmdTenths = 0;
+static uint32_t lastCmdMs = 0;
+static constexpr uint32_t kCmdBaseMs = 3000;
+
 static void applyOutcome(const policy::Outcome& o) {
     for (size_t i = 0; i < o.count; ++i) {
         switch (o.emits[i]) {
             case policy::Emit::SetSpeed:
+                lastCmdTenths = o.tenthKmh; lastCmdMs = millis();
                 if (startPending) pendingTenths = o.tenthKmh;  // not running yet
                 else theBelt.setSpeed(o.tenthKmh);
                 break;
             case policy::Emit::Stop:
                 startPending = false;
+                lastCmdTenths = 0;
                 theBelt.stop();
                 break;
             case policy::Emit::StartSequence:
@@ -69,6 +78,7 @@ static void applyOutcome(const policy::Outcome& o) {
                 sawCountdown = false;
                 pendingTenths = o.tenthKmh;
                 pendingSinceMs = millis();
+                lastCmdTenths = o.tenthKmh; lastCmdMs = pendingSinceMs;
                 break;
             case policy::Emit::NotifyStarted:
                 // 2ADA 0x04: this is what makes Kinomap begin its session.
@@ -77,6 +87,9 @@ static void applyOutcome(const policy::Outcome& o) {
                 break;
             case policy::Emit::ResetPolicy:
                 speedPolicy.reset();
+                break;
+            case policy::Emit::SyncPolicy:
+                speedPolicy.adopt(o.tenthKmh, millis());
                 break;
             case policy::Emit::None:
                 break;
@@ -268,6 +281,19 @@ static const char* stepName() {
     return "?";
 }
 
+// Manual speed: the ONE path for the on-screen +/- and the console `speed`
+// commands. dir != 0 steps; dir == 0 sets absTenths. BridgeState decides,
+// applyOutcome executes (BeltGate paces). Returns nullptr or an err reason.
+static const char* manualSpeed(int dir, uint8_t absTenths) {
+    if (inWizard) return "wizard-active";
+    if (!state.armed()) return "not-armed";
+    if (!(theBelt.linkUp() && beltFresh())) return "belt-down";
+    uint8_t base = lastCmdTenths;
+    if (millis() - lastCmdMs > kCmdBaseMs) base = lastStatus.tenthKmh;  // remote may have moved it
+    applyOutcome(dir != 0 ? state.stepSpeedFromUi(dir, base) : state.setSpeedFromUi(absTenths));
+    return nullptr;
+}
+
 static void consoleStatus() {
     const bool fresh = beltFresh();
     // speed in 0.1 km/h, target in 0.01 km/h (as Kinomap sends it), so every
@@ -328,11 +354,36 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             if (!inWizard) { Serial.println("err not-in-wizard"); return; }
             wizPress(console::parse(line) == Cmd::WizardNext ? wizard::Btn::Right : wizard::Btn::Left, now);
             break;
+        case Cmd::SpeedUp:
+        case Cmd::SpeedDown: {
+            const char* e = manualSpeed(console::parse(line) == Cmd::SpeedUp ? 1 : -1, 0);
+            if (e) { Serial.printf("err %s\n", e); return; }
+            break;
+        }
+        case Cmd::SpeedSet: {
+            unsigned char tenths = 0;
+            switch (console::parseSpeedArg(line, policy::kMinCentiKmh, policy::kMaxCentiKmh, tenths)) {
+                case console::SpeedArg::Bad: Serial.println("err bad-value"); return;
+                case console::SpeedArg::OutOfRange: Serial.println("err out-of-range"); return;
+                case console::SpeedArg::Ok: break;
+            }
+            const char* e = manualSpeed(0, tenths);
+            if (e) { Serial.printf("err %s\n", e); return; }
+            break;
+        }
+        case Cmd::Cp: {
+            // Control Point writes since boot, by raw opcode byte; only seen ones.
+            Serial.print("cp");
+            for (int i = 0; i < 256; ++i)
+                if (uint32_t c = bleServer.cpCount((uint8_t)i)) Serial.printf(" %02x=%u", i, (unsigned)c);
+            Serial.printf(" empty=%u\n", (unsigned)bleServer.cpEmptyCount());
+            break;
+        }
         case Cmd::Shot:
             shotPending = true;  // answered once the frame has been drawn and emitted
             return;
         case Cmd::Help:
-            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | shot | help");
+            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | speed up|down|<km/h> | cp | shot | help");
             break;
         case Cmd::Unknown:
         case Cmd::TooLong:
@@ -355,7 +406,7 @@ void setup() {
     });
     bleServer.setOnControlOp([](ftms::CpOp op) {
         // Kinomap's {07} in reply to our 2ADA 0x04 is just an acknowledgement.
-        Serial.printf("control op 0x%02x\n", (unsigned)op);
+        // (Raw-byte logging and per-opcode counts live in FtmsServer.)
         if (op == ftms::CpOp::StopPause) {
             std::lock_guard<std::recursive_mutex> g(mtx);
             stopRequested = true;
@@ -429,6 +480,9 @@ void loop() {
                 else applyOutcome(state.setArmed(false));  // ARMED face: tap disarms
                 redraw = true;
             }
+            // Same path as console `speed up|down`; ignored (button is dim) unless armed.
+            if (ui.tookSpeedUp()) { (void)manualSpeed(1, 0); redraw = true; }
+            if (ui.tookSpeedDown()) { (void)manualSpeed(-1, 0); redraw = true; }
             if (ui.tookStop()) {
                 applyOutcome(state.stopFromUi());  // also disarms
                 redraw = true;

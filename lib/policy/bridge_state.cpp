@@ -85,6 +85,40 @@ Outcome BridgeState::startFromUi(uint8_t tenthKmh) {
     return o;
 }
 
+uint8_t stepTenths(uint8_t base, int dir) {
+    int next;
+    if (dir > 0) next = (base / kSpeedStepTenths + 1) * kSpeedStepTenths;
+    else next = (base % kSpeedStepTenths) ? (base / kSpeedStepTenths) * kSpeedStepTenths
+                                          : base - kSpeedStepTenths;
+    if (next < kSpeedMinTenths) next = kSpeedMinTenths;
+    if (next > kSpeedMaxTenths) next = kSpeedMaxTenths;
+    return static_cast<uint8_t>(next);
+}
+
+Outcome BridgeState::setSpeedFromUi(uint8_t tenthKmh) {
+    if (tenthKmh < kSpeedMinTenths) tenthKmh = kSpeedMinTenths;
+    if (tenthKmh > kSpeedMaxTenths) tenthKmh = kSpeedMaxTenths;
+    Outcome o = empty(tenthKmh);
+    if (!armed_ || !beltUp_) return o;
+    if (running_) {
+        o.emits[o.count++] = Emit::SetSpeed;
+    } else {
+        o.emits[o.count++] = Emit::StartSequence;
+        o.emits[o.count++] = Emit::NotifyStarted;
+        running_ = true;
+    }
+    o.emits[o.count++] = Emit::SyncPolicy;
+    return o;
+}
+
+Outcome BridgeState::stepSpeedFromUi(int dir, uint8_t baseTenths) {
+    if (!running_) {
+        if (dir > 0) return setSpeedFromUi(kSpeedMinTenths);
+        return empty();
+    }
+    return setSpeedFromUi(stepTenths(baseTenths, dir));
+}
+
 Outcome BridgeState::stopFromUi() {
     Outcome o = empty();
     o.emits[o.count++] = Emit::Stop;

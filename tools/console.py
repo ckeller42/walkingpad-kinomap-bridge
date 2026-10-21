@@ -5,7 +5,7 @@
     ~/tools/venv-ble/bin/python tools/console.py --port /dev/cu.usbmodem101 arm
 
 Commands: status arm disarm start stop | sim on|off | wizard [next|back] |
-shot | help.  Several commands can share one invocation, separated by ";"
+speed up|down|<km/h> | cp | shot | help.  Several commands can share one invocation, separated by ";"
 (plus a host-side "wait <seconds>"); the first err stops the sequence.  Every reply ends with exactly one "ok" or "err <reason>" line;
 this script prints everything up to and including it and exits 0 on ok, 1 on
 err, 2 on timeout / no reply.

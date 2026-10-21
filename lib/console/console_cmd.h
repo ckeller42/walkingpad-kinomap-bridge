@@ -14,6 +14,9 @@
 //   start | stop
 //   sim on | sim off      ok if already so, else "err reboot-required"
 //   wizard [next|back]    re-enter setup (next/back press the right/left button)
+//   speed up | down       one 0.5 km/h step (armed only: "err not-armed")
+//   speed <km/h>         absolute, e.g. "speed 3.5" (0.1 steps; "err out-of-range", "err bad-value")
+//   cp                    Control Point writes since boot: "cp 00=1 03=7 empty=0" (hex opcode=count), then ok
 //   shot                  emit one screenshot frame now (screenshot builds)
 //   help
 namespace console {
@@ -23,12 +26,18 @@ enum class Cmd {
     Status, Arm, Disarm, Start, Stop,
     SimOn, SimOff,
     Wizard, WizardNext, WizardBack,
-    Shot, Help,
+    SpeedUp, SpeedDown, SpeedSet,
+    Cp, Shot, Help,
     Unknown,   // -> "err unknown-command"
     TooLong,   // -> "err line-too-long"
 };
 
 Cmd parse(const char* line);
+
+enum class SpeedArg { Bad, OutOfRange, Ok };
+// For Cmd::SpeedSet: reads "speed <km/h>" (at most 2 decimals, a multiple of
+// 0.1) into tenthKmh (0.1 km/h units) if it is within [minCenti, maxCenti].
+SpeedArg parseSpeedArg(const char* line, unsigned minCenti, unsigned maxCenti, unsigned char& tenthKmh);
 
 // Accumulates bytes into lines. feed() returns true when a full line is ready
 // (take it with line()); a line longer than the buffer is reported as TooLong

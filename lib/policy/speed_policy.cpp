@@ -68,6 +68,15 @@ void SpeedPolicy::onBeltSpeed(uint8_t tenthKmh) {
     }
 }
 
+void SpeedPolicy::adopt(uint8_t tenthKmh, uint32_t nowMs) {
+    hasRef_ = true;
+    refTenths_ = tenthKmh;
+    stopped_ = false;
+    divergentPolls_ = 0;
+    hasSent_ = true;
+    lastSendMs_ = nowMs;
+}
+
 void SpeedPolicy::reset() { *this = SpeedPolicy(); }
 
 }  // namespace policy

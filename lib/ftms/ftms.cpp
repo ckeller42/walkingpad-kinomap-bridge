@@ -43,6 +43,11 @@ CpRequest parseControlPoint(const uint8_t* buf, size_t len) {
             r.centiKmh = static_cast<uint16_t>(buf[1] | (buf[2] << 8));
             r.valid = true;
             break;
+        case static_cast<uint8_t>(CpOp::SetTargetInclination):
+            // Named so it is logged as itself; deliberately not acted on.
+            r.op = CpOp::SetTargetInclination;
+            r.valid = true;
+            break;
         case static_cast<uint8_t>(CpOp::StartResume):
             r.op = CpOp::StartResume;
             r.valid = true;
