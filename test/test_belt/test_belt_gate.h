@@ -8,3 +8,6 @@ void test_gate_two_speeds_in_one_gap_only_newest_written(void);
 void test_gate_stop_while_start_pending_clears_the_start(void);
 void test_gate_spacing_survives_millis_wraparound(void);
 void test_gate_stop_always_writes_even_when_last_poll_showed_idle(void);
+void test_gate_forwards_tick_even_inside_the_gap(void);
+void test_gate_status_request_shares_the_gap_with_commands(void);
+void test_gate_status_request_outranks_queued_command_but_not_stop(void);

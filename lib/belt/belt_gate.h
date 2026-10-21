@@ -9,7 +9,9 @@
 // belt::Belt, so a BLE-client belt slots in underneath unchanged.
 //
 // Queue depth is 1 per command type: a newer speed supersedes an older one.
-// Send order is stop > mode > start > speed. stop() discards everything
+// Send order is stop > status request > mode > start > speed. The status
+// request is an FE02 write like any other, so poll() only marks one as owed
+// and tick() sends it inside the same gap. stop() discards everything
 // queued and is re-sent until a poll shows the belt stopped (speed 0, state
 // 0 or 4), because a lost stop leaves the belt running with nobody holding it.
 // stop() always writes: a belt that keeps running outranks one extra beep.
@@ -37,6 +39,7 @@ private:
     uint32_t gapMs_, retryMs_;
     uint32_t now_ = 0, lastWriteMs_ = 0, lastStopMs_ = 0;
     bool haveWritten_ = false;
+    bool pollWanted_ = false;   // a status refresh is owed (paced like a command)
 
     bool stopWanted_ = false;   // stop queued or sent but not yet confirmed
     bool stopQueued_ = false;   // needs (re)sending

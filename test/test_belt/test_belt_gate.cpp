@@ -25,6 +25,14 @@ public:
     void stop() override { ev.push_back({'P', now, 0}); }
     bool poll(wilink::Status& out) override { out = status; return true; }
     bool linkUp() const override { return true; }
+    bool writesStatus = false;  // behave like BeltLink: a request is an FE02 write
+    int ticks = 0;
+    void tick(uint32_t) override { ++ticks; }
+    bool requestStatus() override {
+        if (!writesStatus) return false;
+        ev.push_back({'R', now, 0});
+        return true;
+    }
     int count(char k) const {
         int n = 0;
         for (auto& e : ev) n += e.kind == k;
@@ -168,6 +176,46 @@ void test_gate_spacing_survives_millis_wraparound(void) {
     TEST_ASSERT_EQUAL_size_t(2, f.ev.size());
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(kGap, f.ev[1].t - f.ev[0].t);
     TEST_ASSERT_LESS_THAN_UINT32(kGap + 100, f.ev[1].t - f.ev[0].t);
+}
+
+void test_gate_forwards_tick_even_inside_the_gap(void) {
+    FakeBelt f;
+    belt::BeltGate g(f, kGap);
+    g.setMode(wilink::Mode::Manual);
+    tickAt(g, f, 0);    // writes
+    tickAt(g, f, 20);   // inside the gap: early return
+    tickAt(g, f, 40);
+    TEST_ASSERT_EQUAL_INT(3, f.ticks);
+}
+
+void test_gate_status_request_shares_the_gap_with_commands(void) {
+    FakeBelt f;
+    f.writesStatus = true;
+    belt::BeltGate g(f, kGap);
+    tickAt(g, f, 0);
+    g.setMode(wilink::Mode::Manual);
+    tickAt(g, f, 20);          // mode written at 20
+    pollOnce(g);               // status owed
+    for (uint32_t t = 40; t <= 3000; t += 20) tickAt(g, f, t);
+    TEST_ASSERT_EQUAL_size_t(2, f.ev.size());
+    TEST_ASSERT_EQUAL('M', f.ev[0].kind);
+    TEST_ASSERT_EQUAL('R', f.ev[1].kind);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(kGap, f.ev[1].t - f.ev[0].t);
+}
+
+void test_gate_status_request_outranks_queued_command_but_not_stop(void) {
+    FakeBelt f;
+    f.writesStatus = true;
+    belt::BeltGate g(f, kGap);
+    tickAt(g, f, 0);
+    g.setSpeed(30);
+    pollOnce(g);
+    tickAt(g, f, 20);
+    TEST_ASSERT_EQUAL('R', f.ev[0].kind);   // poll first, speed waits a gap
+    g.stop();
+    for (uint32_t t = 40; t <= 1200; t += 20) tickAt(g, f, t);
+    TEST_ASSERT_EQUAL_size_t(2, f.ev.size());
+    TEST_ASSERT_EQUAL('P', f.ev[1].kind);   // stop; the speed was discarded
 }
 
 void test_gate_stop_always_writes_even_when_last_poll_showed_idle(void) {

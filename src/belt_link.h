@@ -7,6 +7,7 @@
 #include <string>
 
 #include "belt.h"
+#include "config.h"
 
 class NimBLEClient;
 class NimBLERemoteCharacteristic;
@@ -19,11 +20,11 @@ class NimBLERemoteCharacteristic;
 // belt::BeltGate, which owns the >= 0.7 s spacing. Every method here is one
 // immediate write.
 //
-// The belt never pushes status. poll() therefore writes a status request and
-// returns the most recently *received* reply, which is normally the answer to
-// the previous poll; at the 1 Hz cadence that is one second stale, by design.
-// It returns false when nothing fresh has arrived (never, or older than
-// kStatusStaleMs), so a silent link is never mistaken for a live belt.
+// The belt never pushes status. requestStatus() writes the request (BeltGate
+// calls it, so it shares the pacing of every other FE02 write); poll() only
+// returns the most recently *received* reply, i.e. the answer to an earlier
+// request. It returns false when nothing fresh has arrived (never, or older
+// than kStatusStaleMs), so a silent link is never mistaken for a live belt.
 //
 // Only 0xA2 frames from lib/wilink are ever written (enforced in send()).
 // The belt's Telink OTA service is never discovered by UUID, connected to or
@@ -35,23 +36,22 @@ class NimBLERemoteCharacteristic;
 // callbacks run on the NimBLE host task and only touch mutex-guarded state.
 class BeltLink : public belt::Belt {
 public:
-    static constexpr uint32_t kStatusStaleMs = 5000;
+    static constexpr uint32_t kStatusStaleMs = STATUS_STALE_MS;
 
     // Initialises NimBLE if needed (safe after FtmsServer::begin) and starts
-    // the worker. Call once.
-    void begin();
+    // the worker. Call once. Returns false if the worker could not be created.
+    bool begin();
 
     void setSpeed(uint8_t tenthKmh) override;
     void setMode(wilink::Mode mode) override;
     void start() override;
     void stop() override;  // setMode(Standby): the only stop the belt honours
-    bool poll(wilink::Status& out) override;
+    bool poll(wilink::Status& out) override;  // read-only: never writes
+    bool requestStatus() override;            // the FE02 write; paced by BeltGate
     bool linkUp() const override { return linked_.load(); }
 
-    struct Impl;  // callback glue, defined in the .cpp
-
 private:
-    friend struct Impl;
+    struct Impl;  // callback glue, defined in the .cpp
     bool send(const wilink::Frame& f);
     void onStatus(const uint8_t* data, size_t len);
     void onDown();

@@ -4,25 +4,23 @@
 #include <mutex>
 
 #include "belt_gate.h"
-#if USE_SIM_BELT
-#include "sim_belt.h"
-#else
 #include "belt_link.h"
-#endif
 #include "bridge_state.h"
 #include "config.h"
 #include "ftms_server.h"
+#include "sim_belt.h"
 #include "speed_policy.h"
 #include "ui.h"
 
-#if USE_SIM_BELT
-static belt::SimBelt rawBelt;
-#else
-static BeltLink rawBelt;
-#endif
-// Every belt write goes through the gate, which paces them >= the command
-// interval apart and retries a stop until the belt is seen stopped.
-static belt::BeltGate theBelt(rawBelt, policy::kMinCommandIntervalMs);
+// Both belts are always built; setup() binds one at boot, so the binary that
+// passes stage 1 (simulated) is the binary that meets the real belt.
+static belt::SimBelt simBelt;
+static BeltLink beltLink;
+// Every belt write (commands AND the status request) goes through the gate,
+// which paces them >= the command interval apart and retries a stop until the
+// belt is seen stopped. Created in setup() once the source is chosen.
+static belt::BeltGate* gate = nullptr;
+#define theBelt (*gate)
 static policy::SpeedPolicy speedPolicy;
 static policy::BridgeState state;
 static FtmsServer bleServer;
@@ -90,12 +88,26 @@ static void driveStart(const wilink::Status& st, uint8_t prevTenths, uint32_t no
     if (st.beltState == 1 || (st.beltState == 6 && (sawCountdown || rising))) {
         theBelt.setSpeed(pendingTenths);
         startPending = false;
-    } else if (now - pendingSinceMs > START_TIMEOUT_MS) {
+    }
+}
+
+// Runs every second whether or not a fresh status arrived: a silent belt must
+// not keep a start pending (and "running") forever.
+static void checkStartTimeout(uint32_t now) {
+    if (startPending && now - pendingSinceMs > START_TIMEOUT_MS) {
         // The belt never started (start refused or lost). Don't stay "running".
         startPending = false;
         applyOutcome(state.onBeltObservedStopped());
         Serial.println("start sequence timed out");
     }
+}
+
+// A reading is only trusted while recent. Past STATUS_STALE_MS the belt counts
+// as down (UI, policy), however connected the link claims to be.
+static bool haveFresh = false;
+static uint32_t lastFreshMs = 0;
+static bool beltFresh(uint32_t now) {
+    return haveFresh && now - lastFreshMs <= STATUS_STALE_MS;
 }
 
 static bool lastPhone = false;
@@ -110,7 +122,7 @@ static void trackPhone() {
 // The belt link can drop and return (BeltLink); the policy must hear of it.
 static bool lastBelt = false;
 static void trackBelt() {
-    bool now = theBelt.linkUp();
+    bool now = theBelt.linkUp() && beltFresh(millis());
     if (now != lastBelt) {
         lastBelt = now;
         if (!now) startPending = false;  // a pending start died with the link
@@ -139,12 +151,19 @@ void setup() {
     });
     bleServer.begin(BRIDGE_ADV_NAME, BRIDGE_MANUFACTURER, BRIDGE_MODEL);
 
-#if !USE_SIM_BELT
-    rawBelt.begin();  // after bleServer.begin(): shares the NimBLE stack
-#endif
+    // Belt source: config default, inverted if the screen is held during boot.
+    M5.update();
+    bool sim = USE_SIM_BELT;
+    if (M5.Touch.getCount() > 0) sim = !sim;
+    Serial.printf("belt source: %s\n", sim ? "SimBelt" : "BeltLink");
+    belt::Belt& chosen = sim ? static_cast<belt::Belt&>(simBelt)
+                             : static_cast<belt::Belt&>(beltLink);
+    gate = new belt::BeltGate(chosen, policy::kMinCommandIntervalMs);
+    // BeltLink shares the NimBLE stack, so only start it after bleServer.begin().
+    if (!sim && !beltLink.begin()) Serial.println("belt link task failed to start");
 
     std::lock_guard<std::recursive_mutex> g(mtx);
-    ui.render(0, 0, 0, theBelt.linkUp(), false, state.armed());  // boots disarmed
+    ui.render(0, 0, 0, false, false, state.armed());  // boots disarmed
 }
 
 void loop() {
@@ -184,6 +203,8 @@ void loop() {
             lastTick = now;
             wilink::Status st{};
             if (theBelt.poll(st)) {
+                haveFresh = true;
+                lastFreshMs = now;
                 const uint8_t prevTenths = lastStatus.tenthKmh;
                 lastStatus = st;
                 speedPolicy.onBeltSpeed(st.tenthKmh);
@@ -193,12 +214,15 @@ void loop() {
                     applyOutcome(state.onBeltObservedStopped());
                 if (state.notifying()) bleServer.notifySpeed((uint16_t)st.tenthKmh * 10);
             }
+            checkStartTimeout(now);
             redraw = true;
         }
-        centi = (uint16_t)lastStatus.tenthKmh * 10;
+        // Never show a stale reading as if it were live.
+        const bool fresh = beltFresh(now);
+        centi = fresh ? (uint16_t)lastStatus.tenthKmh * 10 : 0;
         dist = lastStatus.distance10m;
         elapsed = lastStatus.elapsedSec;
-        beltUp = theBelt.linkUp();
+        beltUp = theBelt.linkUp() && fresh;
         phoneUp = bleServer.phoneConnected();
         armed = state.armed();
     }

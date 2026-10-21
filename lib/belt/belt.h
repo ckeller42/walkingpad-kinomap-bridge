@@ -13,7 +13,13 @@ public:
     virtual void setMode(wilink::Mode mode) = 0;
     virtual void start() = 0;
     virtual void stop() = 0;
+    // Returns the latest known status. Must NOT write to the belt: any write
+    // belongs in requestStatus() so the pacer can see it.
     virtual bool poll(wilink::Status& out) = 0;
+    // Asks the belt to produce a fresh status (BLE: a write to FE02, which is
+    // subject to the same ~0.7 s rule as commands). Returns true only if a
+    // write actually happened. Default: nothing to ask (SimBelt).
+    virtual bool requestStatus() { return false; }
     virtual bool linkUp() const = 0;
     // Time-driven housekeeping (SimBelt's physics, BeltGate's pacing). Call
     // every loop pass. A no-op by default, so a belt with no clock-driven

@@ -12,6 +12,7 @@ const NimBLEUUID kSvc((uint16_t)0xFE00);
 const NimBLEUUID kStatusChr((uint16_t)0xFE01);
 const NimBLEUUID kCmdChr((uint16_t)0xFE02);
 
+constexpr const char* kAdvName = "RE";  // fallback match if FE00 leaves the advert
 constexpr uint8_t kCmdByte = 0xA2;  // the only command group we ever emit
 }  // namespace
 
@@ -21,7 +22,12 @@ struct BeltLink::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     BeltLink& owner;
 
     void onResult(const NimBLEAdvertisedDevice* d) override {
-        if (!d->isAdvertisingService(kSvc)) return;
+        const bool bySvc = d->isAdvertisingService(kSvc);
+        const bool byName = d->getName() == kAdvName;
+        if (!bySvc && !byName) return;
+        if (!bySvc)
+            Serial.printf("beltlink: %s matched by name only (no FE00 in advert)\n",
+                          d->getAddress().toString().c_str());
         std::lock_guard<std::mutex> g(owner.foundMu_);
         owner.found_ = true;
         owner.foundAddr_ = d->getAddress().toString();
@@ -30,8 +36,8 @@ struct BeltLink::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     void onDisconnect(NimBLEClient*, int) override { owner.onDown(); }
 };
 
-void BeltLink::begin() {
-    if (begun_) return;
+bool BeltLink::begin() {
+    if (begun_) return true;
     begun_ = true;
     if (!NimBLEDevice::isInitialized()) NimBLEDevice::init("");
     impl_ = new Impl(*this);
@@ -44,7 +50,7 @@ void BeltLink::begin() {
     scan->setScanCallbacks(impl_, false);
     scan->setActiveScan(true);  // FE00 may sit in the scan response
 
-    xTaskCreate(workerEntry, "beltlink", 6144, this, 1, nullptr);
+    return xTaskCreate(workerEntry, "beltlink", 6144, this, 1, nullptr) == pdPASS;
 }
 
 void BeltLink::workerEntry(void* self) {
@@ -56,6 +62,9 @@ void BeltLink::workerEntry(void* self) {
 void BeltLink::worker() {
     for (;;) {
         if (linked_.load()) {
+            // A disconnect can land between subscribe() and linked_.store();
+            // onDisconnect then ran too early to clear anything. Self-heal.
+            if (!client_->isConnected()) onDown();
             vTaskDelay(pdMS_TO_TICKS(250));
             continue;
         }
@@ -105,15 +114,19 @@ bool BeltLink::connectOnce() {
         cmd_ = cmd;
     }
     linked_.store(true);
+    if (!client_->isConnected()) {  // dropped while we were publishing
+        onDown();
+        return false;
+    }
     return true;
 }
 
 void BeltLink::onDown() {
-    linked_.store(false);
     {
         std::lock_guard<std::mutex> g(gattMu_);
-        cmd_ = nullptr;
+        cmd_ = nullptr;  // before linked_: nobody may see "up" with no handle
     }
+    linked_.store(false);
     std::lock_guard<std::mutex> g(statusMu_);
     haveStatus_ = false;  // never serve a pre-disconnect reading
 }
@@ -130,7 +143,7 @@ void BeltLink::onStatus(const uint8_t* data, size_t len) {
 // Single choke point for every write. Refuses anything that is not an 0xA2
 // frame, so the OTA group (0xE8) cannot be emitted even by a future bug.
 bool BeltLink::send(const wilink::Frame& f) {
-    if (f.len < 2 || f.bytes[0] != 0xF7 || f.bytes[1] != kCmdByte) return false;
+    if (f.len < 2 || f.len > sizeof(f.bytes) || f.bytes[0] != 0xF7 || f.bytes[1] != kCmdByte) return false;
     std::lock_guard<std::mutex> g(gattMu_);
     if (!cmd_) return false;
     return cmd_->writeValue(f.bytes, f.len, false);  // without response
@@ -141,8 +154,11 @@ void BeltLink::setMode(wilink::Mode mode) { send(wilink::setMode(mode)); }
 void BeltLink::start() { send(wilink::startBelt()); }
 void BeltLink::stop() { send(wilink::setMode(wilink::Mode::Standby)); }
 
+bool BeltLink::requestStatus() {
+    return send(wilink::requestStatus());  // the reply arrives later on FE01
+}
+
 bool BeltLink::poll(wilink::Status& out) {
-    send(wilink::requestStatus());  // the reply arrives later on FE01
     std::lock_guard<std::mutex> g(statusMu_);
     if (!haveStatus_ || millis() - statusAtMs_ > kStatusStaleMs) return false;
     out = status_;
