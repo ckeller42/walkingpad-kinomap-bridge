@@ -58,10 +58,7 @@ Screen DevMenu::screen(const Inputs& in) const {
             set(s.rows[3].value, in.storedSsid && in.storedSsid[0] ? "forget" : "");
             s.rows[3].enabled = in.devOn && in.storedSsid && in.storedSsid[0];
 
-            set(s.rows[4].label, "Protocol");
-            set(s.rows[4].value, in.protocol == Protocol::Ftms ? "FTMS" : "Domyos");
-
-            s.rowCount = 5;
+            s.rowCount = 4;
             break;
         }
         case Step::WifiScan: {
@@ -118,7 +115,6 @@ Action DevMenu::tapRow(uint8_t row, const Inputs& in) {
                 case 1: return Action::ToggleUdp;
                 case 2: step_ = Step::WifiScan; return Action::StartScan;
                 case 3: return Action::ForgetWifi;
-                case 4: return Action::CycleProtocol;
                 default: return Action::None;
             }
         case Step::WifiScan:

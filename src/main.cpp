@@ -379,7 +379,6 @@ static devmenu::Inputs devInputs() {
     in.networkCount = logsink::scanCount();
     for (uint8_t i = 0; i < in.networkCount && i < devmenu::kMaxNetworks; ++i)
         in.networks[i] = logsink::scanSsid(i);
-    in.protocol = devmenu::Protocol::Ftms;  // Domyos is unimplemented; see #2
     return in;
 }
 
@@ -409,12 +408,6 @@ static void devMenuAct(devmenu::Action a) {
             break;
         case A::ForgetWifi:
             logsink::setWifi("", "");
-            break;
-        case A::CycleProtocol:
-            // The enumerator exists so the setting is real rather than invented
-            // later, but Domyos needs a second, proprietary BLE profile.
-            Serial.println("protocol: only FTMS is implemented (see issue #2)");
-            logsink::line("protocol switch refused: Domyos not implemented");
             break;
         case A::None:
             break;

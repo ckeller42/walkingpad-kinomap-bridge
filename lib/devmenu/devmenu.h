@@ -1,9 +1,10 @@
 #pragma once
 /**
  * @file devmenu.h
- * @brief The developer menu: the radio switches, Wi-Fi pairing and OTA.
+ * @brief The developer menu: the radio switches and Wi-Fi pairing.
  */
-// The developer menu: the radio switches, Wi-Fi pairing and OTA.
+// The developer menu: the radio switches and Wi-Fi pairing. OTA is driven
+// from the serial console (`ota check`), not from a row here.
 //
 // Arduino-free and unit-tested, like lib/wizard. It decides *what* should
 // happen and never does it: every press returns an Action for the host to
@@ -39,21 +40,6 @@ enum class Action : uint8_t {
     StartScan,       ///< Begin a Wi-Fi scan.
     SubmitPassword,  ///< Connect using ssid() and password().
     ForgetWifi,      ///< Clear the stored credentials.
-    CycleProtocol,   ///< Ask for the next protocol mode (see devmenu::Protocol).
-};
-
-/**
- * @brief Which BLE profile the bridge presents to the phone.
- *
- * Kinomap only commands treadmill speed for Domyos machines, so a future
- * Domyos profile would be the way to obtain app-driven speed. That work is
- * tracked in issue #2 and is **not implemented**; the enumerator exists so the
- * setting is real and selectable rather than invented later, and the host
- * refuses to switch to it.
- */
-enum class Protocol : uint8_t {
-    Ftms = 0,   ///< Fitness Machine Service. The only working mode.
-    Domyos = 1, ///< Proprietary Decathlon/Domyos profile. Not implemented.
 };
 
 constexpr uint8_t kMaxNetworks = 6;  ///< Scan results kept.
@@ -74,7 +60,6 @@ struct Inputs {
     bool scanning = false;        ///< A Wi-Fi scan is in progress.
     uint8_t networkCount = 0;     ///< Networks in @ref networks.
     const char* networks[kMaxNetworks] = {};  ///< Scan results, strongest first.
-    Protocol protocol = Protocol::Ftms;       ///< Current BLE profile.
 };
 
 /** @brief One line of a list screen. */

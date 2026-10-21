@@ -24,7 +24,7 @@ void test_root_lists_the_switches(void) {
     Inputs in = base(false);
     Screen s = m.screen(in);
     TEST_ASSERT_EQUAL_STRING("DEVELOPER", s.title);
-    TEST_ASSERT_EQUAL(5, s.rowCount);
+    TEST_ASSERT_EQUAL(4, s.rowCount);
     TEST_ASSERT_EQUAL_STRING("Developer mode", s.rows[0].label);
     TEST_ASSERT_EQUAL_STRING("OFF", s.rows[0].value);
 }
@@ -180,21 +180,17 @@ void test_forget_row_only_offered_when_a_network_is_stored(void) {
     TEST_ASSERT_EQUAL(Action::ForgetWifi, m.tapRow(3, on));
 }
 
-// The protocol row is always reachable - it is not a radio feature - and
-// reports FTMS, the only mode that works. Domyos is issue #2.
-void test_protocol_row_shows_the_mode_and_is_always_reachable(void) {
+// Every row the root screen offers must do something. A row that only
+// reported a mode nobody could change used to sit at index 4; the screen is
+// four rows now, and a tap past the end is ignored rather than wrapping.
+void test_root_offers_four_live_rows_and_ignores_taps_past_them(void) {
     DevMenu m;
     m.open();
-    Inputs off = base(false);
-    Screen s = m.screen(off);
-    TEST_ASSERT_EQUAL(5, s.rowCount);
-    TEST_ASSERT_EQUAL_STRING("Protocol", s.rows[4].label);
-    TEST_ASSERT_EQUAL_STRING("FTMS", s.rows[4].value);
-    TEST_ASSERT_TRUE(s.rows[4].enabled);
-    TEST_ASSERT_EQUAL(Action::CycleProtocol, m.tapRow(4, off));
-
-    off.protocol = Protocol::Domyos;
-    TEST_ASSERT_EQUAL_STRING("Domyos", m.screen(off).rows[4].value);
+    Inputs on = base(true);
+    Screen s = m.screen(on);
+    TEST_ASSERT_EQUAL(4, s.rowCount);
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(4, on));
+    TEST_ASSERT_EQUAL(Step::Root, m.step());
 }
 
 void test_every_screen_has_a_title_and_a_left_button(void) {
@@ -248,7 +244,7 @@ int main(int, char**) {
     RUN_TEST(test_shift_applies_to_one_character);
     RUN_TEST(test_back_navigates_out_without_connecting);
     RUN_TEST(test_forget_row_only_offered_when_a_network_is_stored);
-    RUN_TEST(test_protocol_row_shows_the_mode_and_is_always_reachable);
+    RUN_TEST(test_root_offers_four_live_rows_and_ignores_taps_past_them);
     RUN_TEST(test_every_screen_has_a_title_and_a_left_button);
     RUN_TEST(test_screens_have_distinct_phases);
     return UNITY_END();

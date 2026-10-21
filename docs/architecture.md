@@ -107,6 +107,12 @@ bridge honours `0x02` correctly if one ever arrives; it simply never does.
 
 So the division of labour in practice is: **you and the bridge drive the belt,
 and Kinomap reads and records it.** See the [test log](test-log.md) for the
-evidence, and
-[issue #2](https://github.com/ckeller42/walkingpad-kinomap-bridge/issues/2) for
-what a Domyos protocol mode would involve.
+evidence.
+
+The one remaining escape route — presenting the proprietary Domyos profile,
+which Kinomap *does* command — was investigated and closed: that handler is a
+bike (`TYPE_BIKE`), so it would have bought app-driven speed at the price of
+recording a walk as a ride, in cadence and power the belt does not measure.
+The [design record](https://github.com/ckeller42/walkingpad-kinomap-bridge/blob/main/docs/superpowers/specs/2026-10-21-domyos-speed-mode-design.md)
+keeps what was learned; the firmware was never written, and there is no
+protocol setting on the device. The bridge is a treadmill, and only that.

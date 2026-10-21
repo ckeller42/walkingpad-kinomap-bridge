@@ -71,10 +71,14 @@ unless the user has armed the bridge on the device.
 
 - **Kinomap will not command the belt's speed.** Not a bug here — it is a
   product decision on their side, for safety and user choice, and it applies to
-  every generic FTMS treadmill. See
+  every treadmill. A proprietary Domyos mode was investigated as a way around
+  it and rejected: Kinomap's handler for those machines is a *bike*, so the
+  speed would have arrived with the walk recorded as a ride. See
   [the test log](docs/test-log.md) for the counted evidence and
-  [#2](https://github.com/ckeller42/walkingpad-kinomap-bridge/issues/2) for what
-  a Domyos protocol mode would involve.
+  [the design record](docs/superpowers/specs/2026-10-21-domyos-speed-mode-design.md)
+  for why that door is closed
+  ([#2](https://github.com/ckeller42/walkingpad-kinomap-bridge/issues/2),
+  `wontfix`).
 - **No incline.** The R1 Pro has no incline mechanism, so `2AD5` is
   deliberately not exposed and Kinomap's inclination targets clamp to zero.
 

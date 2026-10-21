@@ -9,7 +9,7 @@ BELT indicator, which re-opens the setup wizard. Both are refused while the
 belt is moving — the menu can take the radio up and down and re-pair Wi-Fi,
 which is not something to do underfoot.
 
-![The developer menu: the radio switches, the stored network and the protocol mode](screens/dev-menu-root.png)
+![The developer menu: the radio switches and the stored network](screens/dev-menu-root.png)
 
 ## The rows
 
@@ -19,7 +19,11 @@ which is not something to do underfoot.
 | **UDP log** | The log broadcast itself. Reads `needs dev` and ignores taps while developer mode is off, rather than storing a setting that silently does nothing. |
 | **Wi-Fi** | Scan and pair. Shows the current IP when associated, `offline` when credentials are stored but not connected, `not set` when there are none. |
 | *(network name)* | Forget the stored credentials. Only offered when something is stored. |
-| **Protocol** | `FTMS`, the only implemented profile. `Domyos` exists as a setting but is refused — it needs a second, proprietary BLE profile, tracked in [#2](https://github.com/ckeller42/walkingpad-kinomap-bridge/issues/2). |
+
+There is no protocol row. The bridge is a treadmill and only a treadmill: it
+presents FTMS (`0x1826`) and nothing else, so there is nothing to choose. A row
+that reported `FTMS` and refused every tap used to sit at the bottom of this
+screen; it was a setting in appearance only, and it is gone.
 
 Two flags rather than one, because they are different scopes. A single switch
 would have meant turning Wi-Fi **on** just to reach the menu that turns Wi-Fi
