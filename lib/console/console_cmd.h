@@ -29,6 +29,8 @@ enum class Cmd {
     SpeedUp, SpeedDown, SpeedSet,
     Cp, Shot, Help,
     Log, Wifi,
+    DevOn, DevOff,       // developer mode: the radio master switch
+    UdpOn, UdpOff,       // the UDP log broadcast, inside developer mode
     Unknown,   // -> "err unknown-command"
     TooLong,   // -> "err line-too-long"
 };

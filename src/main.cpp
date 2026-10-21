@@ -370,6 +370,23 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             if (!inWizard) { Serial.println("err not-in-wizard"); return; }
             wizPress(console::parse(line) == Cmd::WizardNext ? wizard::Btn::Right : wizard::Btn::Left, now);
             break;
+        case Cmd::DevOn:
+        case Cmd::DevOff:
+            logsink::setDev(console::parse(line) == Cmd::DevOn);
+            break;
+        case Cmd::UdpOn:
+        case Cmd::UdpOff: {
+            const bool want = console::parse(line) == Cmd::UdpOn;
+            // Saying "on" and silently getting nothing would be the worst
+            // outcome here: the flag is stored either way, but the broadcast
+            // only happens inside developer mode, so say so.
+            logsink::setUdp(want);
+            if (want && !logsink::devOn()) {
+                Serial.println("err dev-mode-off");
+                return;
+            }
+            break;
+        }
         case Cmd::Log: {
             char buf[160];
             logsink::describe(buf, sizeof buf);
@@ -417,7 +434,7 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             shotPending = true;  // answered once the frame has been drawn and emitted
             return;
         case Cmd::Help:
-            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | speed up|down|<km/h> | cp | log | wifi <ssid> <pass> | shot | help");
+            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | speed up|down|<km/h> | cp | log | log udp on|off | dev on|off | wifi <ssid> <pass> | shot | help");
             break;
         case Cmd::Unknown:
         case Cmd::TooLong:

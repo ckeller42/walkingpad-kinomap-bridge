@@ -33,6 +33,8 @@ uint32_t dropped = 0;
 bool sdReady = false;
 bool wifiTried = false;
 bool udpStarted = false;
+bool devMode = false;   // master: no radio at all unless this is on
+bool udpWanted = false; // the broadcast itself, inside dev mode
 uint32_t lastFlush = 0, lastWifiTry = 0;
 char sdPath[32] = "";
 uint32_t sdHz = 0;
@@ -66,6 +68,7 @@ void openSdFile() {
 }
 
 void startWifi() {
+    if (!devMode) return;  // shipped firmware never brings the radio up
     char ssid[48] = "", pass[64] = "";
     prefs.begin("bridge", true);
     prefs.getString("wifi_ssid", ssid, sizeof ssid);
@@ -75,6 +78,12 @@ void startWifi() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, pass);
     wifiTried = true;
+}
+
+void stopWifi() {
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    wifiTried = udpStarted = false;
 }
 
 }  // namespace
@@ -101,11 +110,16 @@ bool mountSd() {
 }
 
 void begin() {
+    prefs.begin("bridge", true);
+    devMode = prefs.getBool("dev_mode", false);
+    udpWanted = prefs.getBool("log_udp", false);
+    prefs.end();
     if (mountSd()) openSdFile();
     startWifi();
-    line("logsink: sd=%d type=%d hz=%lu pins sck=%d miso=%d mosi=%d cs=%d path=%s wifi=%d",
-         (int)sdReady, (int)SD.cardType(), (unsigned long)sdHz, sdSck, sdMiso, sdMosi,
-         sdCs, sdPath[0] ? sdPath : "-", (int)wifiTried);
+    line("logsink: dev=%d udp=%d sd=%d type=%d hz=%lu pins sck=%d miso=%d mosi=%d cs=%d path=%s wifi=%d",
+         (int)devMode, (int)udpWanted, (int)sdReady, (int)SD.cardType(),
+         (unsigned long)sdHz, sdSck, sdMiso, sdMosi, sdCs,
+         sdPath[0] ? sdPath : "-", (int)wifiTried);
 }
 
 void line(const char* fmt, ...) {
@@ -133,7 +147,8 @@ void hex(const char* tag, const uint8_t* data, size_t len) {
 }
 
 void tick(uint32_t nowMs) {
-    if (wifiTried && WiFi.status() != WL_CONNECTED && nowMs - lastWifiTry >= kWifiRetryMs) {
+    if (devMode && wifiTried && WiFi.status() != WL_CONNECTED &&
+        nowMs - lastWifiTry >= kWifiRetryMs) {
         lastWifiTry = nowMs;
         WiFi.reconnect();
     }
@@ -157,7 +172,7 @@ void tick(uint32_t nowMs) {
         sdFile.write((const uint8_t*)out, n);
         sdFile.flush();
     }
-    if (WiFi.status() == WL_CONNECTED) {
+    if (devMode && udpWanted && WiFi.status() == WL_CONNECTED) {
         // The socket has to exist before the first send, and the subnet
         // broadcast address is delivered where the 255.255.255.255 limited
         // broadcast often is not.
@@ -174,7 +189,28 @@ void tick(uint32_t nowMs) {
 }
 
 bool sdOk() { return sdReady; }
-bool netOk() { return WiFi.status() == WL_CONNECTED; }
+bool netOk() { return devMode && WiFi.status() == WL_CONNECTED; }
+bool devOn() { return devMode; }
+bool udpOn() { return udpWanted; }
+
+void setDev(bool on) {
+    if (on == devMode) return;
+    devMode = on;
+    prefs.begin("bridge", false);
+    prefs.putBool("dev_mode", on);
+    prefs.end();
+    line("dev mode %s", on ? "ON" : "OFF");
+    if (on) startWifi();
+    else stopWifi();  // leaving dev mode takes the radio down with it
+}
+
+void setUdp(bool on) {
+    udpWanted = on;
+    prefs.begin("bridge", false);
+    prefs.putBool("log_udp", on);
+    prefs.end();
+    line("udp log %s", on ? "ON" : "OFF");
+}
 
 void setWifi(const char* ssid, const char* pass) {
     prefs.begin("bridge", false);
@@ -182,7 +218,7 @@ void setWifi(const char* ssid, const char* pass) {
     prefs.putString("wifi_pass", pass);
     prefs.end();
     WiFi.disconnect();
-    if (ssid[0]) {
+    if (ssid[0] && devMode) {
         WiFi.mode(WIFI_STA);
         WiFi.begin(ssid, pass);
         wifiTried = true;
@@ -197,8 +233,9 @@ void describe(char* out, size_t cap) {
         std::lock_guard<std::mutex> g(mu);
         d = dropped;
     }
-    snprintf(out, cap, "log sd=%d type=%d hz=%lu pins=%d/%d/%d/%d file=%s wifi=%d ip=%s port=%d dropped=%lu",
-             (int)sdReady, (int)SD.cardType(), (unsigned long)sdHz,
+    snprintf(out, cap, "log dev=%d udp=%d sd=%d type=%d hz=%lu pins=%d/%d/%d/%d file=%s wifi=%d ip=%s port=%d dropped=%lu",
+             (int)devMode, (int)udpWanted, (int)sdReady, (int)SD.cardType(),
+             (unsigned long)sdHz,
              sdSck, sdMiso, sdMosi, sdCs, sdPath[0] ? sdPath : "-", (int)(WiFi.status() == WL_CONNECTED),
              WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "-",
              (int)LOG_UDP_PORT, (unsigned long)d);

@@ -29,6 +29,12 @@ void test_every_documented_command_parses(void) {
     TEST_ASSERT_EQUAL(Cmd::Log, parse("log"));
     TEST_ASSERT_EQUAL(Cmd::Wifi, parse("wifi"));
     TEST_ASSERT_EQUAL(Cmd::Wifi, parse("wifi MyNet hunter2"));
+    TEST_ASSERT_EQUAL(Cmd::DevOn, parse("dev on"));
+    TEST_ASSERT_EQUAL(Cmd::DevOff, parse("dev off"));
+    TEST_ASSERT_EQUAL(Cmd::UdpOn, parse("log udp on"));
+    TEST_ASSERT_EQUAL(Cmd::UdpOff, parse("log udp off"));
+    // "log udp on" must not be swallowed by the bare "log" entry.
+    TEST_ASSERT_EQUAL(Cmd::Log, parse("log"));
 }
 
 // parseWifiArg deliberately reads the RAW line, because normalise() lower-cases

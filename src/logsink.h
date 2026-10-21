@@ -35,6 +35,18 @@ void hex(const char* tag, const uint8_t* data, size_t len);
 bool sdOk();
 bool netOk();
 
+// Developer mode is the master switch for everything with a radio: the Wi-Fi
+// pairing UI, the UDP log broadcast and OTA. A shipped firmware has it OFF, so
+// the bridge never brings up Wi-Fi at all, and it is persisted in NVS so it
+// survives a reboot. Turning it off takes the radio down with it.
+bool devOn();
+void setDev(bool on);
+
+// The UDP log broadcast itself, inside developer mode. Also persisted, also
+// off by default; dev mode off means no broadcast whatever this says.
+bool udpOn();
+void setUdp(bool on);
+
 // Stores Wi-Fi credentials in NVS and reconnects. Credentials live on the
 // device, never in the repo. Pass an empty ssid to forget them.
 void setWifi(const char* ssid, const char* pass);
