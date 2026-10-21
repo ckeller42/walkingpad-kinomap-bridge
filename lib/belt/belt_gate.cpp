@@ -41,6 +41,7 @@ bool BeltGate::poll(wilink::Status& out) {
 }
 
 void BeltGate::tick(uint32_t nowMs) {
+    inner_.tick(nowMs);
     now_ = nowMs;
     if (haveWritten_ && now_ - lastWriteMs_ < gapMs_) return;
     if (stopQueued_) {

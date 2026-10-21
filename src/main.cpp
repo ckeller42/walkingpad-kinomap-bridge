@@ -4,21 +4,25 @@
 #include <mutex>
 
 #include "belt_gate.h"
+#if USE_SIM_BELT
+#include "sim_belt.h"
+#else
+#include "belt_link.h"
+#endif
 #include "bridge_state.h"
 #include "config.h"
 #include "ftms_server.h"
-#include "sim_belt.h"
 #include "speed_policy.h"
 #include "ui.h"
 
-#if !USE_SIM_BELT
-#error "Only the simulated belt exists until Task 14 adds the real BLE belt link."
+#if USE_SIM_BELT
+static belt::SimBelt rawBelt;
+#else
+static BeltLink rawBelt;
 #endif
-
-static belt::SimBelt simBelt;
 // Every belt write goes through the gate, which paces them >= the command
 // interval apart and retries a stop until the belt is seen stopped.
-static belt::BeltGate theBelt(simBelt, policy::kMinCommandIntervalMs);
+static belt::BeltGate theBelt(rawBelt, policy::kMinCommandIntervalMs);
 static policy::SpeedPolicy speedPolicy;
 static policy::BridgeState state;
 static FtmsServer bleServer;
@@ -103,6 +107,17 @@ static void trackPhone() {
     }
 }
 
+// The belt link can drop and return (BeltLink); the policy must hear of it.
+static bool lastBelt = false;
+static void trackBelt() {
+    bool now = theBelt.linkUp();
+    if (now != lastBelt) {
+        lastBelt = now;
+        if (!now) startPending = false;  // a pending start died with the link
+        applyOutcome(state.onBeltLink(now));
+    }
+}
+
 void setup() {
     auto cfg = M5.config();
     M5.begin(cfg);
@@ -124,8 +139,11 @@ void setup() {
     });
     bleServer.begin(BRIDGE_ADV_NAME, BRIDGE_MANUFACTURER, BRIDGE_MODEL);
 
+#if !USE_SIM_BELT
+    rawBelt.begin();  // after bleServer.begin(): shares the NimBLE stack
+#endif
+
     std::lock_guard<std::recursive_mutex> g(mtx);
-    applyOutcome(state.onBeltLink(true));
     ui.render(0, 0, 0, theBelt.linkUp(), false, state.armed());  // boots disarmed
 }
 
@@ -141,6 +159,7 @@ void loop() {
     {
         std::lock_guard<std::recursive_mutex> g(mtx);
         trackPhone();
+        trackBelt();
         if (ui.tookArmToggle()) {
             applyOutcome(state.setArmed(!state.armed()));
             redraw = true;
@@ -163,7 +182,6 @@ void loop() {
         theBelt.tick(now);  // paced belt writes
         if (now - lastTick >= 1000) {
             lastTick = now;
-            simBelt.tick(now);
             wilink::Status st{};
             if (theBelt.poll(st)) {
                 const uint8_t prevTenths = lastStatus.tenthKmh;

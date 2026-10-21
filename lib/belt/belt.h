@@ -15,6 +15,10 @@ public:
     virtual void stop() = 0;
     virtual bool poll(wilink::Status& out) = 0;
     virtual bool linkUp() const = 0;
+    // Time-driven housekeeping (SimBelt's physics, BeltGate's pacing). Call
+    // every loop pass. A no-op by default, so a belt with no clock-driven
+    // state (the BLE link, which is event-driven) needs no override.
+    virtual void tick(uint32_t /*nowMs*/) {}
 };
 
 }  // namespace belt

@@ -10,9 +10,11 @@
 #define BRIDGE_MANUFACTURER "WalkingPad Bridge"
 #define BRIDGE_MODEL "R1 Pro FTMS Bridge"
 
-// 1 = simulated belt. The real belt link arrives with Task 14.
+// Belt source. 0 (default) = the real WalkingPad over BLE (BeltLink);
+// 1 = SimBelt, for stage-1 testing with no treadmill. Override with
+// -DUSE_SIM_BELT=1 (see the cores3_sim environment in platformio.ini).
 #ifndef USE_SIM_BELT
-#define USE_SIM_BELT 1
+#define USE_SIM_BELT 0
 #endif
 
 // Give up on a pending belt start if it never reaches state 1/6.

@@ -29,8 +29,8 @@ public:
     bool linkUp() const override { return inner_.linkUp(); }
 
     // Sends at most one queued command if the gap since the last write has
-    // elapsed. Call often (every loop pass is fine).
-    void tick(uint32_t nowMs);
+    // elapsed, and ticks the wrapped belt. Call often (every loop pass is fine).
+    void tick(uint32_t nowMs) override;
 
 private:
     Belt& inner_;

@@ -23,7 +23,7 @@ public:
     bool poll(wilink::Status& out) override;
     bool linkUp() const override { return true; }
 
-    void tick(uint32_t nowMs);
+    void tick(uint32_t nowMs) override;
     uint32_t commandCount() const { return commands_; }   // all accepted
     uint32_t setSpeedCount() const { return speedCmds_; }
     uint32_t modeCount() const { return modeCmds_; }
