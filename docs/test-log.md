@@ -266,3 +266,61 @@ Two candidate explanations, to be distinguished next:
 **Diagnostic gap found:** the firmware logs the *mapped* opcode (`0xff` for
 Unknown) rather than `req.rawOp`, so the actual byte Kinomap wrote is lost. That
 should be logged — it is the difference between knowing and inferring.
+
+## Stage 1 (continued) — belt control proven; Kinomap speed command disproven
+
+Firmware `df64496` (`cores3_sim`), which logs raw control-point opcodes and counts
+them per opcode (`cp` console command).
+
+### Belt control works, end to end
+
+Commanded from the bridge console with an active Kinomap workout running:
+
+| Commanded | Bridge `status` | Kinomap displayed |
+|---|---|---|
+| `speed 4.5` | `speed=45` | — |
+| `speed 5.0` | `speed=50` | **`11:59 /km`** = 5.0 km/h, 101 watts, 47 m |
+| (earlier) 2.0 | `speed=20` | **`29:59 /km`** = 2.0 km/h, 139 m |
+
+So the whole data path is proven on hardware: bridge commands → belt runs →
+`F8 A2` status → `2ACD` notification → Kinomap decodes and displays the correct
+speed, and integrates it into distance.
+
+### Kinomap does NOT send Set Target Speed in video ORIGINAL SPEED mode
+
+After a full session with the belt running and its speed changed twice, the
+per-opcode counters read:
+
+```
+cp 00=1  03=2  07=1  empty=0
+```
+
+- `00` Request Control — once, at connect
+- `07` Start/Resume — once, in reply to our `2ADA 0x04`
+- `03` Set Target Inclination — twice
+- **`02` Set Target Speed — never**
+
+This is counted evidence, not inference. The earlier `control op 0xff` is now
+confirmed to have been `0x03`.
+
+The inclination payload is itself informative: `cp op=0x03 len=3 payload=00 00`
+— a target of **0.0 %** on a route displaying **−5.4 %**. That is Kinomap's own
+clamp behaving exactly as the decompile predicted: `ag8.w0()` clamps the target
+against the maximum read from `2AD5`, and the bridge deliberately does not expose
+`2AD5`, so that maximum is zero. The bridge acknowledges and ignores it.
+
+### What this means
+
+In **ORIGINAL SPEED** video mode Kinomap plays the route at the contributor's pace
+and shows the user how far ahead or behind they are (`→ 238s`). It does not drive
+the treadmill's speed. The bridge is doing everything correctly; the app is simply
+not commanding.
+
+Kinomap's **Structured workout** tab exists and its featured workout is
+**"Mode: INC — Incline-based training"**, with the mode a fixed property of each
+workout rather than a user choice. A speed-mode workout, or a Coaching session,
+remains the place where `02` would be expected — still to be tested.
+
+**Consequence for the project goal.** "Kinomap controls the belt" may hold only in
+specific workout types. The bridge's own speed controls (`+`/`−` on the screen,
+`speed` on the console) make it usable regardless, which is why they were added.
