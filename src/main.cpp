@@ -8,12 +8,14 @@
 #include "ftms_server.h"
 #include "sim_belt.h"
 #include "speed_policy.h"
+#include "ui.h"
 
 static belt::SimBelt simBelt;
 static belt::Belt& theBelt = simBelt;
 static policy::SpeedPolicy speedPolicy;
 static policy::BridgeState state;
 static FtmsServer bleServer;
+static Ui ui;
 
 // BLE callbacks run on the NimBLE task; loop() runs on the Arduino task.
 static std::recursive_mutex mtx;
@@ -66,6 +68,14 @@ static void driveStart(const wilink::Status& st, uint32_t now) {
     }
 }
 
+// Latest belt readings, so the UI can be redrawn immediately after a tap.
+static wilink::Status lastStatus{};
+
+static void renderUi() {
+    ui.render((uint16_t)lastStatus.tenthKmh * 10, lastStatus.distance10m, lastStatus.elapsedSec,
+              theBelt.linkUp(), bleServer.phoneConnected(), state.armed());
+}
+
 static bool lastPhone = false;
 static void trackPhone() {
     bool now = bleServer.phoneConnected();
@@ -79,6 +89,7 @@ void setup() {
     auto cfg = M5.config();
     M5.begin(cfg);
     Serial.begin(115200);
+    ui.begin();
 
     bleServer.setOnTarget([](uint16_t centi) {
         std::lock_guard<std::recursive_mutex> g(mtx);
@@ -93,26 +104,39 @@ void setup() {
 
     std::lock_guard<std::recursive_mutex> g(mtx);
     applyOutcome(state.onBeltLink(true));
-    applyOutcome(state.setArmed(true));  // Task 11 moves this behind the UI
+    renderUi();  // boots disarmed; ARM is a deliberate tap
 }
 
 void loop() {
     static uint32_t lastTick = 0;
     M5.update();
+    ui.poll();
     {
         std::lock_guard<std::recursive_mutex> g(mtx);
         trackPhone();
+        bool redraw = false;
+        if (ui.tookArmToggle()) {
+            applyOutcome(state.setArmed(!state.armed()));
+            redraw = true;
+        }
+        if (ui.tookStop()) {
+            applyOutcome(state.stopFromUi());  // also disarms
+            redraw = true;
+        }
         uint32_t now = millis();
         if (now - lastTick >= 1000) {
             lastTick = now;
             simBelt.tick(now);
             wilink::Status st{};
             if (theBelt.poll(st)) {
+                lastStatus = st;
                 speedPolicy.onBeltSpeed(st.tenthKmh);
                 driveStart(st, now);
                 if (state.notifying()) bleServer.notifySpeed((uint16_t)st.tenthKmh * 10);
             }
+            redraw = true;
         }
+        if (redraw) renderUi();
     }
     delay(20);
 }
