@@ -1,0 +1,34 @@
+name: firmware
+on:
+  push: {branches: [main]}
+  pull_request:
+permissions: {contents: read}
+jobs:
+  firmware-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: {python-version: "3.11"}
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+      - run: pip install platformio
+      - name: build cores3 (default, real belt)
+        run: pio run -e cores3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: walkingpad-bridge-fw-${{ github.sha }}
+          # firmware.factory.bin is the merged bootloader+partitions+app image
+          path: |
+            .pio/build/cores3/firmware.factory.bin
+            .pio/build/cores3/firmware.bin
+          retention-days: 30
+      # Non-default path (USE_SIM_BELT=1). A path that only compiles under the
+      # default is invisible until it breaks, so this must build too. A failure
+      # here is a real failure. Last in the job so it cannot disturb the
+      # artifact uploaded above.
+      - name: build cores3_sim (simulated belt)
+        run: pio run -e cores3_sim

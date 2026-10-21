@@ -1,0 +1,49 @@
+name: CI
+on:
+  push: {branches: [main]}
+  pull_request:
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: {python-version: "3.11"}
+      # PlatformIO core + platform packages; the pioarduino toolchain download
+      # takes minutes, so cache it keyed on platformio.ini.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+      - run: pip install platformio
+      # Pass/fail is the exit code. No test-case count is asserted on purpose.
+      - run: pio test -e native
+  markdownlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: npx --yes markdownlint-cli@0.42.0 --config .markdownlint.json '**/*.md'
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar -xz gitleaks
+          ./gitleaks detect --source . --no-git --redact -v
+  # Decompiled vendor code lives in sibling private repos under a never-commit
+  # rule. Check what is TRACKED (i.e. a commit), not what is present on disk.
+  no-vendor-material:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: fail on tracked vendor-derived files
+        run: |
+          bad=$(git ls-files | grep -Ei '\.(apk|dex|so|bin)$|(^|/)sources/' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::vendor-derived material is tracked:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "no tracked *.apk/*.dex/*.so/*.bin or sources/ tree"
