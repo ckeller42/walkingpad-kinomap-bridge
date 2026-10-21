@@ -20,6 +20,11 @@ void BeltGate::start() {
     startQueued_ = true;
 }
 
+bool BeltGate::requestStatus() {
+    pollWanted_ = true;  // tick() sends it when the pacing gap allows
+    return true;
+}
+
 void BeltGate::stop() {
     modeQueued_ = startQueued_ = speedQueued_ = false;
     stopWanted_ = stopQueued_ = true;

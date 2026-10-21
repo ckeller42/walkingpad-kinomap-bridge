@@ -243,5 +243,6 @@ int main(int, char**) {
     RUN_TEST(test_ui_start_while_disarmed_emits_nothing);
     RUN_TEST(test_ui_start_armed_runs_start_sequence_and_notifies);
     RUN_TEST(test_ui_start_with_belt_down_or_already_running_emits_nothing);
+    RUN_TEST(test_no_outcome_exceeds_the_emit_array);
     return UNITY_END();
 }

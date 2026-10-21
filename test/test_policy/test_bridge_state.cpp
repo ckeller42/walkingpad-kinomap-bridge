@@ -334,3 +334,30 @@ void test_manual_step_at_limits_never_stops_the_belt(void) {
     TEST_ASSERT_EQUAL_UINT8(5, o.tenthKmh);
     TEST_ASSERT_TRUE(s.beltRunning());
 }
+
+// The Outcome carries a fixed-size emit array and one path already fills it
+// completely (StartSequence, NotifyStarted, SyncPolicy). Nothing in the type
+// stops a fourth being appended, so this pins the bound: if any entry point
+// ever produces more, this fails instead of overrunning silently.
+void test_no_outcome_exceeds_the_emit_array(void) {
+    policy::BridgeState s;
+    auto check = [](const policy::Outcome& o) {
+        TEST_ASSERT_LESS_OR_EQUAL(policy::Outcome::kMaxEmits, o.count);
+    };
+
+    check(s.onBeltLink(true));
+    check(s.onPhoneLink(true));
+    check(s.setArmed(true));
+    // A UI speed on a stopped belt is the longest sequence produced anywhere.
+    check(s.setSpeedFromUi(25));
+    check(s.onBeltObservedStopped());
+    check(s.startFromUi(20));
+    check(s.stepSpeedFromUi(1, 20));
+    check(s.apply({policy::Action::SetSpeed, 30}));
+    check(s.stopFromUi());
+    check(s.apply({policy::Action::Stop, 0}));
+    check(s.apply({policy::Action::None, 0}));
+    check(s.setArmed(false));
+    check(s.onPhoneLink(false));
+    check(s.onBeltLink(false));
+}

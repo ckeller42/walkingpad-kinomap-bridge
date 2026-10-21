@@ -125,25 +125,16 @@ void Ui::poll() {
     // ahead of wasPressed() tells them apart. Rate-limited so a held finger
     // does not flood the sinks.
     {
-        static uint32_t lastRaw = 0, lastBeat = 0;
-        static unsigned maxSeen = 0;      // highest contact count since boot
-        static unsigned long samples = 0; // proves the sampler itself is running
-        touchMax_ = maxSeen;
-        touchSamples_ = samples;
+        static uint32_t lastRaw = 0;
         const uint32_t now = millis();
         const unsigned n = (unsigned)M5.Touch.getCount();
-        ++samples;
-        if (n > maxSeen) maxSeen = n;
+        ++touchSamples_;
+        if (n > touchMax_) touchMax_ = n;
         if (n > 0 && now - lastRaw > 250) {
             lastRaw = now;
             logsink::line("touch raw x=%d y=%d n=%u pressed=%d was=%d", (int)t.x,
                           (int)t.y, n, (int)t.isPressed(), (int)t.wasPressed());
         }
-        // A heartbeat every two seconds was useful once, to prove the panel
-        // reported nothing at all, but it floods the log in normal use. The
-        // counters are kept and reported on demand by the console's `touch`.
-        (void)lastBeat;
-        (void)samples;
     }
 
     // wasPressed() is true only on the update that saw the finger land, so a

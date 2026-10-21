@@ -35,3 +35,4 @@ void test_manual_plus_on_stopped_belt_starts_at_minimum(void);
 void test_manual_minus_on_stopped_belt_does_nothing(void);
 void test_manual_absolute_speed_is_clamped_and_needs_belt_link(void);
 void test_manual_step_at_limits_never_stops_the_belt(void);
+void test_no_outcome_exceeds_the_emit_array(void);

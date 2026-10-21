@@ -94,6 +94,17 @@ public:
     void stop() override;
 
     /**
+     * @brief Ask for a fresh status reading, paced like any other write.
+     * @return True once the request has been queued.
+     *
+     * Without this override the gate inherited Belt's default `return false`,
+     * so a caller above the gate got a silent no-op that also claimed no write
+     * had happened. The gate requests status on its own behalf as well; this
+     * only lets a caller ask.
+     */
+    bool requestStatus() override;
+
+    /**
      * @brief Read the wrapped belt's status and drive the stop confirmation.
      * @param out Filled in only on success, by the wrapped belt.
      * @return Whatever the wrapped belt returned.

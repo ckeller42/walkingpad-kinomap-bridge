@@ -91,11 +91,17 @@ uint8_t stepTenths(uint8_t baseTenths, int dir);
  * from a bug in the policy above it.
  */
 struct [[nodiscard]] Outcome {
-    /// What to do, in the order given. Only the first @ref count entries are
-    /// valid; the rest are Emit::None. Three is the longest sequence any entry
-    /// point produces — start sequence, notify, and the policy fix-up.
-    Emit emits[3];
-    size_t count;      ///< Number of valid entries in @ref emits.
+    /// Capacity of the emit array. Three is the longest sequence any entry
+    /// point produces — start sequence, notify, and the policy fix-up — and
+    /// naming it lets a test pin the bound, so a fourth added later fails
+    /// instead of overrunning silently.
+    static constexpr size_t kMaxEmits = 3;
+
+    /// What to do, in the order given. Only the first #count entries are
+    /// valid; the rest are Emit::None.
+    Emit emits[kMaxEmits];
+
+    size_t count;      ///< Number of valid entries in #emits.
     /// Speed in 0.1 km/h units. Valid for Emit::SetSpeed, Emit::StartSequence
     /// and Emit::SyncPolicy. Entry points that clamp report the clamped value
     /// here, so the UI can show what was actually asked for.
