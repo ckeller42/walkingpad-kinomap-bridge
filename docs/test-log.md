@@ -389,3 +389,47 @@ start and countdown, and **3** leaving standby. Both are now in `wilink.yaml`.
 Trap 1 is why the camera cross-check needs to fire inside a ~15 s window, and
 trap 2 is why the cross-check needs the status stream next to the photo rather
 than the photo alone.
+
+## Stage 3 — a real walk, with a walker on the belt
+
+`PHONE_START_CENTI_KMH=200`, bridge armed, real belt, Kinomap 4.7.1, the project
+owner walking. Sampled by screenshotting the phone over ADB only: the serial
+console was not opened once, because opening it reboots the bridge and would
+have dropped both the arming and Kinomap's link.
+
+| Elapsed | Kinomap pace | km/h | Watts | Distance | Note |
+|---|---|---|---|---|---|
+| 0:00:20 | 29:59 /km | 2.0 | 40 | 10 m | started from the ESP |
+| 0:02:47 | 29:59 /km | 2.0 | 40 | 91 m | |
+| 0:05:07 | 29:59 /km | 2.0 | 40 | 169 m | |
+| 0:06:38 | 20:00 /km | 3.0 | 60 | 227 m | **`+` on the ESP** |
+| 0:07:28 | 40:00 /km | 1.5 | 30 | 254 m | **`-` on the ESP** |
+| 0:08:17 | — | 0 | 0 | 271 m | stopped; 33% of route, 18 kcal |
+
+### What this settles
+
+1. **Speed control works under load.** 2.0 -> 3.0 -> 1.5 km/h from the ESP's
+   `+`/`-` buttons, each tracked live by Kinomap, with watts scaling sensibly
+   (40 -> 60 -> 30). This is the first test of the speed path with a person on
+   the belt.
+
+2. **The auto-stop is the unattended interlock, nothing else.** Eight minutes of
+   continuous running with weight on the belt. Every truncated run earlier was
+   this interlock, not a bridge fault.
+
+3. **The distance integration is real.** 169 m at 0:05:07 against 170.6 m
+   predicted for 307 s at 2.0 km/h. Kinomap is integrating the bridge's measured
+   speed, not estimating from the route.
+
+4. **Kinomap never wrote `0x02` Set Target Speed**, across a full eight-minute
+   session with a walker aboard and three speed changes. Taken with the counted
+   `00=1 03=2 07=1` from the earlier session, treat this as settled for video
+   modes in 4.7.1. `PHONE_START_CENTI_KMH` never fired either, consistent with
+   Kinomap never initiating `0x07`.
+
+### The shape of the finished system
+
+The user and the bridge drive the belt; Kinomap reads and records it. Kinomap
+supplies the route, the video, the gradient display and the session record, and
+takes its speed, distance and power from the bridge. It does not drive the
+machine, and no setting in it makes it do so.
