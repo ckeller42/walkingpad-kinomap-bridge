@@ -34,8 +34,10 @@ Cmd parse(const char* line) {
         {"log", Cmd::Log},         {"wifi", Cmd::Wifi},
         {"dev on", Cmd::DevOn},    {"dev off", Cmd::DevOff},
         {"log udp on", Cmd::UdpOn},{"log udp off", Cmd::UdpOff},
+        {"log sd on", Cmd::SdOn},  {"log sd off", Cmd::SdOff},
         {"ota", Cmd::Ota},         {"ota check", Cmd::OtaCheck},
         {"ota apply", Cmd::OtaApply},
+        {"menu close", Cmd::Menu},  {"touch", Cmd::Touch},
     };
     for (const Entry& e : kTable)
         if (strcmp(s, e.text) == 0) return e.cmd;

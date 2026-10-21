@@ -33,6 +33,46 @@ Expected. Kinomap does not command treadmill speed for a generic FTMS machine â€
 see [How it works](architecture.md). Use the `+` and `âˆ’` buttons on the bridge,
 or `speed <km/h>` on the console.
 
+## The touchscreen stops responding entirely
+
+**Power the device off completely and back on.** Not a reset, not a re-flash:
+unplug USB and hold the power button for about six seconds so the AXP2101
+power-management chip actually cycles.
+
+The CoreS3's touch controller shares an I2C bus with the PMU and the AW9523 IO
+expander, and after many abrupt resets - a day of flashing, for instance - it
+can latch in a state where it answers nothing. The display keeps working, which
+makes it look like a software fault.
+
+How to tell this apart from a bug in the firmware, rather than guessing:
+
+```text
+touch       # on the console
+```
+
+```text
+touch enabled=1 count=0 max=0 samples=803 ... board=10
+```
+
+- **`samples` climbing** - the panel is being polled; the loop is alive.
+- **`max` still 0** - no contact has been seen since boot, at any point.
+- **`enabled=1`, `board=10`** - the driver is up and the board is correctly
+  detected as a CoreS3.
+
+That combination means the controller is being asked and is answering nothing,
+which is the latch-up signature. A fault in the touch zones or the press
+latching would show `max` above 0.
+
+To settle it beyond doubt, flash the minimal probe, which contains none of this
+project's code, no BLE, no Wi-Fi and the stock partition table:
+
+```sh
+pio run -e cores3_touchtest -t upload --upload-port /dev/cu.usbmodem101
+```
+
+Touch the screen; green dots follow your finger when the hardware is working.
+Then restore the bridge with `pio run -e cores3 -t upload`.
+
 ## Nothing happens when I touch the screen
 
 Check which firmware is on the device. The **screenshot build**

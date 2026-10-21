@@ -1,6 +1,5 @@
 #include "shot.h"
 
-#if UI_SCREENSHOT
 #include <Arduino.h>
 
 namespace shot {
@@ -66,4 +65,4 @@ void emit(const uint8_t* px, int w, int h) {
     Serial.write(reinterpret_cast<const uint8_t*>("[/SHOT]\n"), 8);
 }
 }  // namespace shot
-#endif
+

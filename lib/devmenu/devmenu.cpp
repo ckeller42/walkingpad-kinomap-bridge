@@ -97,9 +97,9 @@ Screen DevMenu::screen(const Inputs& in) const {
             s.keyboard = true;
             s.shift = shift_;
             s.numeric = numeric_;
-            char buf[28];
-            snprintf(buf, sizeof buf, "%s", ssid_);
-            set(s.prompt, buf);
+            // set() already truncates to the field's capacity; the extra
+            // buffer only added a second, narrower limit and a warning.
+            set(s.prompt, ssid_);
             set(s.typed, typed_);
             break;
         }

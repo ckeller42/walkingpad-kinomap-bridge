@@ -37,6 +37,23 @@ void hex(const char* tag, const uint8_t* data, size_t len);
  * @return True when the card responded and mounted.
  */
 bool sdOk();
+
+/**
+ * @brief Whether SD probing is enabled.
+ *
+ * Off by default. Mounting claims GPIO 35/36/37 for SPI, which on an ESP32-S3
+ * are octal PSRAM pins, so a slot that has never answered is not worth probing
+ * on every boot.
+ *
+ * @return True when SD logging is switched on.
+ */
+bool sdWantedOn();
+
+/**
+ * @brief Enable or disable SD probing. Takes effect after a restart.
+ * @param on True to probe for a card at boot.
+ */
+void setSd(bool on);
 /**
  * @brief Whether Wi-Fi is usable.
  * @return True when developer mode is on and the bridge is associated.

@@ -453,11 +453,14 @@ static void consoleStatus() {
     // value is an integer a host script can compare.
     Serial.printf(
         "status armed=%d running=%d belt_link=%d phone_link=%d belt_state=%d "
-        "speed=%u target=%u wizard=%s src=%s setup_done=%d rx_join=%lu rx_lost=%lu\n",
+        "speed=%u target=%u wizard=%s menu=%s src=%s setup_done=%d rx_join=%lu rx_lost=%lu\n",
         (int)state.armed(), (int)state.beltRunning(), (int)(theBelt.linkUp() && fresh),
         (int)bleServer.phoneConnected(), fresh ? (int)lastStatus.beltState : -1,
         fresh ? (unsigned)lastStatus.tenthKmh : 0u, (unsigned)targetCenti, stepName(),
-        simSource ? "sim" : "real", (int)prefs.getBool("setup_done", false),
+        // Whether the developer menu owns the screen. Without this, "the touch
+        // screen does nothing" is undiagnosable from here: the main screen's
+        // controls are correctly inert while the menu is open.
+        inDevMenu ? "on" : "off", simSource ? "sim" : "real", (int)prefs.getBool("setup_done", false),
         // Frames rejoined from split notifications, and fragments that never
         // completed. Reported so the rate is measured rather than assumed.
         simSource ? 0ul : (unsigned long)beltLink.reassembled(),
@@ -528,6 +531,18 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             }
             break;
         }
+        case Cmd::Menu:
+            // A way out of the developer menu that does not need the touch
+            // screen, for exactly the case where the screen seems dead.
+            if (!inDevMenu) { Serial.println("err not-in-menu"); return; }
+            leaveDevMenu();
+            break;
+        case Cmd::Touch: {
+            char buf[160];
+            ui.describeTouch(buf, sizeof buf);
+            Serial.println(buf);
+            break;
+        }
         case Cmd::Ota:
             Serial.printf("ota running=%s state=%d url=%s msg=%s\n", ota::version(),
                           (int)ota::state(), ota::url()[0] ? ota::url() : "-",
@@ -556,6 +571,10 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             applyOutcome(state.setArmed(false));
             ota::apply();
             Serial.println(ota::message());
+            break;
+        case Cmd::SdOn:
+        case Cmd::SdOff:
+            logsink::setSd(console::parse(line) == Cmd::SdOn);
             break;
         case Cmd::Log: {
             char buf[160];
@@ -604,7 +623,7 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             shotPending = true;  // answered once the frame has been drawn and emitted
             return;
         case Cmd::Help:
-            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | speed up|down|<km/h> | cp | log | log udp on|off | dev on|off | wifi <ssid> <pass> | ota [check|apply|url <u>] | shot | help");
+            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | menu close | touch | speed up|down|<km/h> | cp | log | log udp on|off | log sd on|off | dev on|off | wifi <ssid> <pass> | ota [check|apply|url <u>] | shot | help");
             break;
         case Cmd::Unknown:
         case Cmd::TooLong:

@@ -33,6 +33,8 @@ void test_every_documented_command_parses(void) {
     TEST_ASSERT_EQUAL(Cmd::DevOff, parse("dev off"));
     TEST_ASSERT_EQUAL(Cmd::UdpOn, parse("log udp on"));
     TEST_ASSERT_EQUAL(Cmd::UdpOff, parse("log udp off"));
+    TEST_ASSERT_EQUAL(Cmd::Menu, parse("menu close"));
+    TEST_ASSERT_EQUAL(Cmd::OtaCheck, parse("ota check"));
     // "log udp on" must not be swallowed by the bare "log" entry.
     TEST_ASSERT_EQUAL(Cmd::Log, parse("log"));
 }

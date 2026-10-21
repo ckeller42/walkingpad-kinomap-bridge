@@ -40,6 +40,7 @@ bool scanBusy = false;
 char ssidBuf[48] = {};
 char ipBuf[20] = {};
 bool devMode = false;   // master: no radio at all unless this is on
+bool sdWanted = false;  // SD probing is opt-in; see begin()
 bool udpWanted = false; // the broadcast itself, inside dev mode
 uint32_t lastFlush = 0, lastWifiTry = 0;
 char sdPath[32] = "";
@@ -49,6 +50,11 @@ WiFiUDP udp;
 Preferences prefs;
 
 size_t pending() { return (head + kRing - tail) % kRing; }
+
+// SD.cardType() reaches into the card object, which is only meaningful once
+// SD.begin() has been attempted. With SD probing off that never happens, so
+// asking anyway hangs the boot before a single log line is written.
+int cardType() { return sdReady ? (int)SD.cardType() : 0; }
 
 // Pushes raw text into the ring. Caller holds mu. A line that will not fit is
 // dropped whole and counted, rather than half-written: a truncated log line is
@@ -122,11 +128,17 @@ void begin() {
     prefs.begin("bridge", true);
     devMode = prefs.getBool("dev_mode", false);
     udpWanted = prefs.getBool("log_udp", false);
+    sdWanted = prefs.getBool("log_sd", false);
     prefs.end();
-    if (mountSd()) openSdFile();
+    // SD probing is opt-in and off by default. Mounting claims GPIO 35/36/37
+    // for SPI, and on an ESP32-S3 those are octal PSRAM pins; the CoreS3 has
+    // 8 MB of PSRAM. Probing a slot that has never answered (cardType reports
+    // 0, i.e. no card) is not worth touching them for. Turn it on with
+    // "log sd on" when a card is actually present.
+    if (sdWanted && mountSd()) openSdFile();
     startWifi();
-    line("logsink: dev=%d udp=%d sd=%d type=%d hz=%lu pins sck=%d miso=%d mosi=%d cs=%d path=%s wifi=%d",
-         (int)devMode, (int)udpWanted, (int)sdReady, (int)SD.cardType(),
+    line("logsink: dev=%d udp=%d sd=%d want_sd=%d type=%d hz=%lu pins sck=%d miso=%d mosi=%d cs=%d path=%s wifi=%d",
+         (int)devMode, (int)udpWanted, (int)sdReady, (int)sdWanted, cardType(),
          (unsigned long)sdHz, sdSck, sdMiso, sdMosi, sdCs,
          sdPath[0] ? sdPath : "-", (int)wifiTried);
 }
@@ -213,6 +225,16 @@ void setDev(bool on) {
     else stopWifi();  // leaving dev mode takes the radio down with it
 }
 
+void setSd(bool on) {
+    sdWanted = on;
+    prefs.begin("bridge", false);
+    prefs.putBool("log_sd", on);
+    prefs.end();
+    line("sd logging %s (takes effect after a restart)", on ? "ON" : "OFF");
+}
+
+bool sdWantedOn() { return sdWanted; }
+
 void setUdp(bool on) {
     udpWanted = on;
     prefs.begin("bridge", false);
@@ -286,8 +308,8 @@ void describe(char* out, size_t cap) {
         std::lock_guard<std::mutex> g(mu);
         d = dropped;
     }
-    snprintf(out, cap, "log dev=%d udp=%d sd=%d type=%d hz=%lu pins=%d/%d/%d/%d file=%s wifi=%d ip=%s port=%d dropped=%lu",
-             (int)devMode, (int)udpWanted, (int)sdReady, (int)SD.cardType(),
+    snprintf(out, cap, "log dev=%d udp=%d sd=%d want_sd=%d type=%d hz=%lu pins=%d/%d/%d/%d file=%s wifi=%d ip=%s port=%d dropped=%lu",
+             (int)devMode, (int)udpWanted, (int)sdReady, (int)sdWanted, cardType(),
              (unsigned long)sdHz,
              sdSck, sdMiso, sdMosi, sdCs, sdPath[0] ? sdPath : "-", (int)(WiFi.status() == WL_CONNECTED),
              WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "-",

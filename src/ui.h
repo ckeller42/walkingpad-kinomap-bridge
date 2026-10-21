@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 
 #include "devmenu.h"
@@ -31,6 +32,13 @@ class Ui {
 public:
     /** @brief Set up the panel and the off-screen canvas. Call once. */
     void begin();
+
+    /**
+     * @brief Report what the touch panel says about itself.
+     * @param out Buffer for one line of text.
+     * @param cap Its capacity.
+     */
+    void describeTouch(char* out, size_t cap);
 
     /**
      * @brief Sample touch and latch any press.
@@ -172,5 +180,11 @@ private:
     bool keyShift_ = false;
     bool keyBack_ = false;
     bool keyNum_ = false;
+    // Highest contact count and sample total since boot. Reported by
+    // describeTouch(): max == 0 with samples climbing means the panel is
+    // being polled correctly and answering nothing, which is the signature
+    // of the controller latching up rather than a bug in the zones.
+    unsigned touchMax_ = 0;
+    unsigned long touchSamples_ = 0;
     int shotPhase_ = -1;
 };

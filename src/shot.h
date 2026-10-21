@@ -19,10 +19,12 @@
 #endif
 
 namespace shot {
-#if UI_SCREENSHOT
 // px: w*h RGB565 pixels as stored by an M5GFX 16-bit sprite (big-endian bytes).
+//
+// Built into every firmware, not just the capture build: the console's `shot`
+// is the only way to see what is on the panel when someone reports that the
+// screen is not responding, and a support tool that is compiled out of the
+// build people actually run is no support tool at all. It costs nothing until
+// it is called.
 void emit(const uint8_t* px, int w, int h);
-#else
-inline void emit(const uint8_t*, int, int) {}
-#endif
 }  // namespace shot

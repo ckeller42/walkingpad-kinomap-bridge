@@ -31,7 +31,10 @@ enum class Cmd {
     Log, Wifi,
     DevOn, DevOff,       // developer mode: the radio master switch
     UdpOn, UdpOff,       // the UDP log broadcast, inside developer mode
+    SdOn, SdOff,         // SD probing, which claims PSRAM-adjacent pins
     Ota, OtaCheck, OtaApply, OtaUrl,  // firmware update
+    Menu,                // leave the developer menu without the touch screen
+    Touch,               // report the touch panel's own state
     Unknown,   // -> "err unknown-command"
     TooLong,   // -> "err line-too-long"
 };

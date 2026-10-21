@@ -3,6 +3,7 @@
 #include <M5Unified.h>
 #include <stdio.h>
 
+#include "logsink.h"
 #include "shot.h"
 
 namespace {
@@ -101,11 +102,59 @@ void Ui::begin() {
     if (!canvasOk) Serial.println("ui: no sprite memory, drawing direct");
 }
 
+// Reports what the touch panel says about itself. A dead screen can mean the
+// panel is disabled, that it reports no contacts at all, or that contacts
+// arrive but are never latched as a press - and those have entirely different
+// causes, which no amount of staring at the zone mapping distinguishes.
+void Ui::describeTouch(char* out, size_t cap) {
+    auto t = M5.Touch.getDetail();
+    snprintf(out, cap,
+             "touch enabled=%d count=%u max=%u samples=%lu x=%d y=%d pressed=%d "
+             "waspressed=%d board=%d",
+             (int)M5.Touch.isEnabled(), (unsigned)M5.Touch.getCount(), touchMax_,
+             touchSamples_, (int)t.x, (int)t.y, (int)t.isPressed(),
+             (int)t.wasPressed(), (int)M5.getBoard());
+}
+
 void Ui::poll() {
     auto t = M5.Touch.getDetail();
+
+    // Raw contacts, logged before any latching. "The screen does not respond"
+    // has two very different causes - the panel reporting nothing at all, or
+    // contacts arriving and never becoming a press - and only a trace taken
+    // ahead of wasPressed() tells them apart. Rate-limited so a held finger
+    // does not flood the sinks.
+    {
+        static uint32_t lastRaw = 0, lastBeat = 0;
+        static unsigned maxSeen = 0;      // highest contact count since boot
+        static unsigned long samples = 0; // proves the sampler itself is running
+        touchMax_ = maxSeen;
+        touchSamples_ = samples;
+        const uint32_t now = millis();
+        const unsigned n = (unsigned)M5.Touch.getCount();
+        ++samples;
+        if (n > maxSeen) maxSeen = n;
+        if (n > 0 && now - lastRaw > 250) {
+            lastRaw = now;
+            logsink::line("touch raw x=%d y=%d n=%u pressed=%d was=%d", (int)t.x,
+                          (int)t.y, n, (int)t.isPressed(), (int)t.wasPressed());
+        }
+        // A heartbeat every two seconds was useful once, to prove the panel
+        // reported nothing at all, but it floods the log in normal use. The
+        // counters are kept and reported on demand by the console's `touch`.
+        (void)lastBeat;
+        (void)samples;
+    }
+
     // wasPressed() is true only on the update that saw the finger land, so a
     // held finger yields exactly one event.
     if (!t.wasPressed()) return;
+    // Every touch is logged with its coordinates and which screen family owns
+    // the zones. Without this, "the screen does not respond" cannot be told
+    // apart from "the panel reports nothing at all" - and the two have
+    // completely different causes.
+    logsink::line("touch x=%d y=%d wiz=%d menu=%d kb=%d", (int)t.x, (int)t.y,
+                  (int)wizardMode_, (int)menuMode_, (int)menuKeyboard_);
     const bool left = t.x < HALF;
 
     // The developer menu owns the whole screen while it is open, so it is
@@ -189,7 +238,9 @@ void Ui::finishFrame(int phase) {
 }
 
 bool Ui::shotNow() {
-    if (!UI_SCREENSHOT || !canvasOk) return false;
+    // Deliberately not gated on UI_SCREENSHOT: see shot.h. Only the automatic
+    // per-phase emission is build-gated.
+    if (!canvasOk) return false;
     shot::emit(static_cast<const uint8_t*>(canvas.getBuffer()), W, H);
     return true;
 }
