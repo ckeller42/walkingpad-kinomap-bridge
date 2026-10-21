@@ -17,11 +17,44 @@ constexpr const char* kAdvName = "RE";  // fallback match if FE00 leaves the adv
 constexpr uint8_t kCmdByte = 0xA2;  // the only command group we ever emit
 }  // namespace
 
-// Callback glue, kept out of the header so NimBLE types stay private.
+/**
+ * @brief Callback glue for the scan and the client connection.
+ *
+ * Kept out of belt_link.h so that NimBLE's types stay out of every translation
+ * unit that only wants to talk to a belt. One object serves both callback
+ * interfaces, and it is registered with NimBLE's delete-callbacks flag off so
+ * that NimBLE never takes ownership of it: it has to outlive any single
+ * connection, because after a drop the same object is what finds the belt
+ * again.
+ *
+ * Everything here runs on the NimBLE host task, so it only touches the owner's
+ * mutex-guarded and atomic members.
+ */
 struct BeltLink::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
+    /**
+     * @brief Bind the glue to the link it reports into.
+     * @param o The owning BeltLink, stored by reference; it owns this object
+     *          and outlives it.
+     */
     explicit Impl(BeltLink& o) : owner(o) {}
+
+    /// The link whose state these callbacks publish into.
     BeltLink& owner;
 
+    /**
+     * @brief Latch a matching advertisement for the worker to connect to.
+     *
+     * Matches service `FE00`, or failing that the advertised name `RE`, and
+     * logs when only the name matched - that is weaker evidence of a belt, and
+     * worth seeing in a capture rather than inferring later. Records the
+     * address and address type, remembers the address for foundAddress(), and
+     * moves the phase to Phase::Found; the worker does the connecting.
+     *
+     * Only the newest match survives: with two belts in range the second
+     * overwrites the first, and nothing here chooses between them.
+     *
+     * @param d The advertisement NimBLE just received.
+     */
     void onResult(const NimBLEAdvertisedDevice* d) override {
         const bool bySvc = d->isAdvertisingService(kSvc);
         const bool byName = d->getName() == kAdvName;
@@ -36,6 +69,14 @@ struct BeltLink::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
         owner.lastFoundAddr_ = owner.foundAddr_;
         owner.phase_.store(Phase::Found);
     }
+    /**
+     * @brief Tear the link down on any disconnect, whatever the reason.
+     *
+     * Both parameters are ignored: the client is the only one there is, and no
+     * disconnect reason would make it right to keep serving readings from a
+     * belt that is gone. Clearing the link is what sends the worker back to
+     * scanning, so this is also the whole of the reconnect trigger.
+     */
     void onDisconnect(NimBLEClient*, int) override { owner.onDown(); }
 };
 
