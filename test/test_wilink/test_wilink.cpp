@@ -46,6 +46,41 @@ void test_set_mode_manual(void) {
     TEST_ASSERT_EQUAL_HEX8_ARRAY(want, f.bytes, 6);
 }
 
+void test_parse_status_extracts_speed_and_mode(void) {
+    // F8 A2 <state> <speed*10> <mode> <time BE24> <dist BE24> <steps BE24>
+    const uint8_t buf[] = {0xF8, 0xA2, 0x01, 0x2A, 0x01,
+                           0x00, 0x00, 0x3C,      // 60 s
+                           0x00, 0x00, 0x0A,      // 10 * 10 m = 100 m
+                           0x00, 0x00, 0x64};     // 100 steps
+    wilink::Status s{};
+    TEST_ASSERT_TRUE(wilink::parseStatus(buf, sizeof(buf), s));
+    TEST_ASSERT_EQUAL_UINT8(42, s.tenthKmh);
+    TEST_ASSERT_EQUAL_UINT8(1, s.mode);
+    TEST_ASSERT_EQUAL_UINT32(60, s.elapsedSec);
+    TEST_ASSERT_EQUAL_UINT32(10, s.distance10m);
+    TEST_ASSERT_EQUAL_UINT32(100, s.steps);
+}
+
+void test_parse_status_rejects_wrong_header(void) {
+    const uint8_t buf[14] = {0xF7, 0xA2};
+    wilink::Status s{};
+    TEST_ASSERT_FALSE(wilink::parseStatus(buf, sizeof(buf), s));
+}
+
+void test_parse_status_rejects_short_buffer(void) {
+    const uint8_t buf[] = {0xF8, 0xA2, 0x01, 0x2A};
+    wilink::Status s{};
+    TEST_ASSERT_FALSE(wilink::parseStatus(buf, sizeof(buf), s));
+}
+
+void test_parse_status_leaves_output_untouched_on_reject(void) {
+    const uint8_t buf[] = {0xF8, 0xA2};
+    wilink::Status s{};
+    s.tenthKmh = 99;
+    TEST_ASSERT_FALSE(wilink::parseStatus(buf, sizeof(buf), s));
+    TEST_ASSERT_EQUAL_UINT8(99, s.tenthKmh);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_crc_matches_documented_start_frame);
@@ -55,5 +90,9 @@ int main(int, char**) {
     RUN_TEST(test_start_belt_matches_documented_frame);
     RUN_TEST(test_set_speed_4_2_kmh);
     RUN_TEST(test_set_mode_manual);
+    RUN_TEST(test_parse_status_extracts_speed_and_mode);
+    RUN_TEST(test_parse_status_rejects_wrong_header);
+    RUN_TEST(test_parse_status_rejects_short_buffer);
+    RUN_TEST(test_parse_status_leaves_output_untouched_on_reject);
     return UNITY_END();
 }

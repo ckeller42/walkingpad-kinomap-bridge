@@ -39,4 +39,31 @@ Frame setMode(Mode m) { return build(0x02, static_cast<uint8_t>(m)); }
 
 Frame startBelt() { return build(0x04, 0x01); }
 
+namespace {
+
+constexpr uint8_t kStatusHeader0 = 0xF8;
+constexpr uint8_t kStatusHeader1 = 0xA2;
+constexpr size_t kStatusLen = 14;
+
+uint32_t readBe24(const uint8_t* p) {
+    return (static_cast<uint32_t>(p[0]) << 16) |
+           (static_cast<uint32_t>(p[1]) << 8) |
+           static_cast<uint32_t>(p[2]);
+}
+
+}  // namespace
+
+bool parseStatus(const uint8_t* buf, size_t len, Status& out) {
+    if (buf == nullptr || len < kStatusLen) return false;
+    if (buf[0] != kStatusHeader0 || buf[1] != kStatusHeader1) return false;
+
+    out.beltState = buf[2];
+    out.tenthKmh = buf[3];
+    out.mode = buf[4];
+    out.elapsedSec = readBe24(&buf[5]);
+    out.distance10m = readBe24(&buf[8]);
+    out.steps = readBe24(&buf[11]);
+    return true;
+}
+
 }  // namespace wilink
