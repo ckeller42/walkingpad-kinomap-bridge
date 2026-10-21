@@ -494,3 +494,34 @@ format `ag8.z()` requires.
 needs to change for Kinomap to drive it; the flag has to be enabled on the
 account. When it is, re-run `tools/ftms_client.py` for the baseline and then
 check `cp` for a `02` from Kinomap itself.
+
+### Kinomap does not control treadmill speed, by policy
+
+Kinomap's own support article "The app doesn't control the speed of my
+treadmill, why?" states the app does **not** automatically set treadmill speed,
+for two stated reasons: **safety** and **user choice**. It says only **Domyos**
+treadmills support automatic speed, and only in the **SPD** and **INC+SPD**
+structured training modes. Another help page puts it as: for security reasons
+Kinomap does not control machine speed even when the machine is interactive;
+incline it does change automatically.
+
+Three independent lines of evidence agree:
+
+1. **Counted on the wire** — a full session with a walker aboard and three
+   speed changes produced `cp 00=1 03=2 07=1` and no `0x02`.
+2. **In the code** — every `0x02` path sits behind
+   `controlSpeedTreadmill` (default false), and `kti.java:869` additionally
+   requires `aVar3 instanceof jh8`. `jh8 extends ih8`, which speaks a
+   proprietary non-FTMS UUID set — the Domyos protocol, matching the
+   `decathlon` manufacturer-string special-casing already documented in `ag8`.
+3. **Vendor policy** — the support article above.
+
+**Conclusion.** For a generic FTMS treadmill, Kinomap commanding speed is not a
+bug, not a bridge defect and not a user-reachable setting. It is a deliberate
+product decision. The bridge satisfies every documented FTMS requirement and
+honours `0x02` correctly when one arrives (proven above), so nothing here needs
+fixing; Kinomap simply will not send one to a non-Domyos machine.
+
+The shipped behaviour is therefore: **the user and the bridge drive the belt;
+Kinomap reads, displays and records it.** That is the whole of what this pairing
+can do, and it works.
