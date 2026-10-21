@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Generate docs/protocol/frame-layouts.md from protocol/wilink.yaml and protocol/ftms.yaml.
+"""Generate docs/protocol/frame-layouts.md from the files in protocol/.
+
+Reads protocol/wilink.yaml, protocol/ftms.yaml and protocol/domyos.yaml.
 
 Byte-offset tables (these protocols are byte-oriented, not bit-packed), plus
 worked examples whose CRCs are computed and whose decodings are produced by
@@ -79,8 +81,11 @@ def _wilink(doc):
     return "\n".join(out)
 
 
-def _ftms(doc):
-    out = ["## FTMS\n"]
+def _payload_sections(doc, title, preamble=None):
+    """One subsection per declared payload. Shared by every payload-shaped protocol."""
+    out = [f"## {title}\n"]
+    if preamble:
+        out.append(f"{preamble}\n")
     for p in doc["payloads"]:
         out.append(f"### {p['title']}\n")
         out.append(
@@ -105,14 +110,20 @@ def _ftms(doc):
 def generate():
     wilink = pc.load("wilink")
     ftms = pc.load("ftms")
+    domyos = pc.load("domyos")
     parts = [
         pc.banner(GENERATOR),
         "# Frame layouts\n",
-        "Byte-offset layouts. All multi-byte FTMS fields are little-endian; "
-        "WiLink 24-bit counters are big-endian. No bit grid is used because neither "
-        "protocol is bit-packed.\n",
+        "Byte-offset layouts. All multi-byte FTMS and Domyos-mode fields are little-endian; "
+        "WiLink 24-bit counters are big-endian. No bit grid is used because none of these "
+        "protocols is bit-packed.\n",
         _wilink(wilink),
-        _ftms(ftms),
+        _payload_sections(ftms, "FTMS"),
+        _payload_sections(
+            domyos, "Domyos mode",
+            "Nothing below has been measured, and the examples are illustrative values in the "
+            "declared layout rather than captures. A payload marked `disputed` has two "
+            "incompatible readings; see [reference.md](reference.md) for both."),
     ]
     text = "\n".join(parts)
     while "\n\n\n" in text:

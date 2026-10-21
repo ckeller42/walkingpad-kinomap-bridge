@@ -1,9 +1,10 @@
 """Shared loading, validation and formatting for the protocol view generators.
 
-The single source of truth is protocol/wilink.yaml and protocol/ftms.yaml.
-Everything under docs/protocol/ except README.md is generated from them by
-tools/gen_protocol_reference.py and tools/gen_frame_layouts.py, and
-tools/check_protocol_views.py fails if a committed view is stale.
+The single source of truth is protocol/wilink.yaml, protocol/ftms.yaml and
+protocol/domyos.yaml. Everything under docs/protocol/ except README.md is
+generated from them by tools/gen_protocol_reference.py and
+tools/gen_frame_layouts.py, and tools/check_protocol_views.py fails if a
+committed view is stale or if a protocol file no view reads is added.
 
 Output must be byte-for-byte deterministic: no timestamps, no absolute paths,
 no dict-ordering surprises (YAML mappings keep file order).
@@ -18,12 +19,18 @@ ROOT = Path(__file__).resolve().parent.parent
 PROTOCOL_DIR = ROOT / "protocol"
 DEFAULT_OUT = ROOT / "docs" / "protocol"
 
-PROVENANCE = ("measured", "community", "vendor-app")
+PROVENANCE = ("measured", "community", "vendor-app", "disputed")
 PROVENANCE_LEGEND = {
     "measured": "observed on real hardware; `docs/test-log.md` is the record",
     "community": "from the reverse-engineering projects or the design doc, not independently captured here",
     "vendor-app": "from the vendor-app decompiles (KS Fit, Kinomap)",
+    "disputed": "two sources disagree; both readings are recorded and neither has been measured",
 }
+
+# Every protocol file must be read by the views, so that adding one and
+# forgetting to wire it up fails rather than passing quietly.
+PROTOCOLS = ("wilink", "ftms", "domyos")
+BANNER_SOURCES = tuple(f"protocol/{n}.yaml" for n in PROTOCOLS)
 
 
 class SchemaError(Exception):
@@ -42,8 +49,9 @@ def load(name):
     return doc
 
 
-def banner(generator, sources=("protocol/wilink.yaml", "protocol/ftms.yaml")):
-    src = " and ".join(f"`{s}`" for s in sources)
+def banner(generator, sources=BANNER_SOURCES):
+    quoted = [f"`{s}`" for s in sources]
+    src = quoted[0] if len(quoted) == 1 else ", ".join(quoted[:-1]) + " and " + quoted[-1]
     return (
         f"> **GENERATED** from {src} by `tools/{generator}` — do not hand-edit; "
         "see [README.md](README.md) for how to regenerate.\n"
@@ -169,6 +177,16 @@ def _validate(name, doc):
         check_prov(ch, f"characteristic {ch['uuid']}", doc["transport"])
     for ch in doc.get("characteristics", []):
         check_prov(ch, f"characteristic {ch['uuid']}")
+    # A handshake is an ordered chain; a gap in it is a silently broken
+    # connection, so the step numbers are checked as well as the provenance.
+    for i, st in enumerate(doc.get("handshake", []), start=1):
+        where = f"handshake step {st.get('step')}"
+        need(st.get("step") == i, f"{where}: steps must run 1..n in order, expected {i}")
+        need(st.get("evidence"), f"{where}: evidence required")
+        check_prov(st, where)
+    for q in doc.get("open_questions", []):
+        need(q.get("question") and q.get("status"),
+             f"open question {q.get('id')}: both question and status required")
     for en_name, en in enums.items():
         vals = [v["value"] for v in en["values"]]
         need(len(vals) == len(set(vals)), f"enum {en_name}: duplicate values")
@@ -202,8 +220,9 @@ def _validate(name, doc):
                 need(len(parse_hex(p["example"])) == p["length"], f"payload {p['id']}: example length")
         ids = {p["id"] for p in doc["payloads"]}
         for ch in doc["characteristics"]:
-            if "payload" in ch:
-                need(ch["payload"] in ids, f"characteristic {ch['uuid']}: unknown payload")
+            for key in ("payload", "response_payload", "descriptor"):
+                if key in ch:
+                    need(ch[key] in ids, f"characteristic {ch['uuid']}: unknown {key} {ch[key]!r}")
 
 
 def cli(generate, description):

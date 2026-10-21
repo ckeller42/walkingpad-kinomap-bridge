@@ -1,0 +1,818 @@
+# Single source of truth for the Domyos-mode (Kinomap-side) protocol the
+# bridge would serve in PROTOCOL_MODE=domyos.
+#
+# docs/protocol/reference.md and docs/protocol/frame-layouts.md are generated
+# from this file by tools/gen_protocol_reference.py and
+# tools/gen_frame_layouts.py. Do not restate these facts by hand in
+# docs/protocol/.
+#
+# NOTHING HERE HAS BEEN MEASURED. Every entry is `community` or `disputed`.
+# Provenance in this file:
+#   community   both independent sources agree, or only one speaks and the
+#               other is silent; not seen on any wire from this project
+#   disputed    the two sources disagree. Both readings are recorded. Do not
+#               implement one without a measurement that settles it.
+#   measured    reserved; promoted only once seen on the wire (plan Task 4)
+#
+# The two sources, read but never copied (see AGENTS.md, no-vendor-material):
+#   kinomap-decompile   ih8.java / jh8.java in the Kinomap decompile. This is
+#                       the authoritative statement of what Kinomap EXPECTS,
+#                       which is the only thing that matters for a bridge
+#                       pretending to be the machine.
+#   qdomyos-zwift       src/devices/kettlerc12bike/ in cagnulein/qdomyos-zwift,
+#                       which drives this same 638A* service from the other
+#                       side (as a central talking to real hardware).
+#
+# Two naming warnings, both load-bearing:
+#
+#  1. "Domyos" is this project's name for the mode, inherited from the design
+#     doc. Neither source calls this service Domyos. qdomyos-zwift's own
+#     Domyos devices (domyostreadmill, domyosbike, ...) speak a COMPLETELY
+#     different protocol - an F0-framed stream over the Microchip transparent
+#     UART service 49535343-fe7d-4ae5-8fa9-9fafd205e455 - and none of it
+#     applies here. In qdomyos-zwift this 638A* service is the Kettler C12
+#     bike. The mode name is kept only so the plan and the code agree.
+#
+#  2. Kinomap's handler for this protocol is a BIKE, not a treadmill. jh8 sets
+#     TYPE_BIKE, and the speed write exists only on the TYPE_BIKE branch. See
+#     the constraints: this is the single biggest consequence for the bridge.
+
+schema_version: 1
+protocol: domyos
+title: Domyos mode (bridge as peripheral, Kinomap as central)
+role: The bridge is the BLE peripheral; Kinomap is the central.
+summary: >-
+  A proprietary one-value-per-characteristic service. Every live metric is its
+  own 1-2 byte notify characteristic rather than a packed frame, limits come
+  from 0x2906 Valid Range descriptors rather than from readable
+  characteristics, and the only speed command is a write back to the same
+  characteristic speed is reported on. Kinomap reaches this handler by
+  equipment type 42, not by any manufacturer string.
+
+service:
+  uuid: 638AF000-7BDE-3E25-FFC5-9DE9B2A0197A
+  name: Proprietary fitness service
+  provenance: community
+  evidence: >-
+    kinomap-decompile: ih8 resolves this UUID as the service and every other
+    638A* UUID as a characteristic inside it; qdomyos-zwift: the same UUID is
+    KETTLER_ALT_SERVICE_UUID, the alternate service its characteristic lookups
+    run against
+  notes: >-
+    The project brief and the design doc both call 638A1001 the service UUID.
+    Both sources contradict that: 638A1001 is the level characteristic inside
+    638AF000. qdomyos-zwift also knows a primary service
+    8ce5cc01-0a4d-11e9-ab14-d663bd873d93 carrying the same characteristics on
+    other firmware; Kinomap never looks for it, so the bridge must advertise
+    638AF000.
+
+advertisement:
+  name: null
+  service: 638AF000-7BDE-3E25-FFC5-9DE9B2A0197A
+  provenance: community
+  evidence: >-
+    kinomap-decompile: j71's ScanCallback forwards every scan result whose
+    device name is non-empty and applies no service-UUID filter, so the device
+    must have a name; which name, and whether the pairing UI filters on it, is
+    an open question
+  notes: >-
+    Not determined: the advertised local name. A `modelFilter` string exists on
+    Kinomap's paired-equipment record and was not traced to a scan filter, so
+    no name is recorded here rather than a plausible-looking guess.
+
+characteristics:
+  - uuid: 638A1104
+    name: Handshake challenge
+    properties: [read]
+    payload: handshake_challenge
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8 reads this characteristic immediately after
+      service discovery and ignores any value whose length is not exactly 2;
+      qdomyos-zwift: silent, it performs no handshake
+    notes: >-
+      Read once, never subscribed. Exactly two bytes or Kinomap drops the
+      value and the connection never progresses.
+  - uuid: 638A1105
+    name: Handshake response
+    properties: [write]
+    payload: handshake_response
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8 writes the 16-byte response here and treats the
+      write-complete callback for this characteristic as "equipment
+      connected"; qdomyos-zwift: names the same UUID
+      KETTLER_HANDSHAKE_CHAR_UUID but never reads or writes it
+    notes: >-
+      The gate on everything. Kinomap calls onEquipmentConnected() only from
+      the successful-write callback for this characteristic. A peripheral that
+      rejects the write is never connected as far as the app is concerned.
+      qdomyos-zwift naming it the handshake characteristic corroborates the
+      role, not the mechanism.
+  - uuid: 638A1001
+    name: Level (resistance)
+    properties: [notify, write]
+    payload: level
+    descriptor: level_valid_range
+    provenance: disputed
+    evidence: >-
+      kinomap-decompile: ih8 discards any notification whose length is not
+      exactly 1, and writes a single byte; qdomyos-zwift: parses this
+      characteristic only in a branch guarded by length >= 2 and reads it as
+      uint16 little-endian
+    notes: >-
+      Disputed width: 1 byte (Kinomap) against 2 bytes little-endian
+      (qdomyos-zwift). Both read it as a plain level with no scale. Since
+      Kinomap is the consumer here, 1 byte is what the bridge would have to
+      notify - but that is a reading of one source, not a measurement, and the
+      0x2906 descriptor on this characteristic is two bytes wide, which is
+      consistent with either.
+  - uuid: 638A1002
+    name: Cadence
+    properties: [notify]
+    payload: cadence
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8 requires exactly 2 bytes, reads uint16
+      little-endian and divides by 10 before passing the value as the cadence
+      argument of onEquipmentUpdate; qdomyos-zwift: names the same UUID
+      KETTLER_CADENCE_CHAR_UUID and subscribes to it, but decodes cadence from
+      standard CSC/Cycling Power instead and so documents no encoding
+    notes: >-
+      Only Kinomap speaks to the scale, so the 0.1 rpm unit rests on one
+      source. qdomyos-zwift corroborates the role and nothing else.
+  - uuid: 638A1003
+    name: Power
+    properties: [notify]
+    payload: power
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8 requires exactly 2 bytes, reads uint16
+      little-endian unscaled and passes it as the watt argument of
+      onEquipmentUpdate; qdomyos-zwift: KETTLER_POWER_CHAR_UUID, uint16
+      little-endian at offset 0, assigned straight to watts
+    notes: >-
+      Agreed by both sources, encoding included. Also the training trigger -
+      see the `training_starts_on_power` constraint.
+  - uuid: 638A1004
+    name: Speed
+    properties: [notify, write]
+    payload: speed
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8 requires exactly 2 bytes, reads uint16
+      little-endian and divides by 10 for the speed argument of
+      onEquipmentUpdate, and writes the same encoding back on a speed target;
+      qdomyos-zwift: KETTLER_SPEED_CHAR_UUID, uint16 little-endian at offset 0
+      divided by 10.0
+    notes: >-
+      The one characteristic this whole mode exists for. Read and written in
+      the same encoding, on the same UUID. Both sources agree exactly on the
+      read side; only Kinomap documents the write.
+  - uuid: 638A1005
+    name: Second speed value (disputed)
+    properties: [notify]
+    payload: alt_speed_or_level
+    provenance: disputed
+    evidence: >-
+      kinomap-decompile: ih8 handles 638A1005 in the same branch as 638A1004
+      and stores it as speed, uint16 little-endian divided by 10;
+      qdomyos-zwift: handles 638A1005 in its resistance branch, uint16
+      little-endian unscaled and rejected unless <= max_resistance
+    notes: >-
+      A flat contradiction - speed against resistance, scaled against
+      unscaled. Kinomap's reading is what matters for a peripheral, but a
+      bridge is safest not notifying this characteristic at all until a
+      measurement settles it, because under Kinomap's reading a resistance
+      value here would overwrite the reported speed.
+  - uuid: 638A1008
+    name: Four-byte counter
+    properties: [notify]
+    payload: counter_1008
+    provenance: disputed
+    evidence: >-
+      kinomap-decompile: ih8 requires exactly 4 bytes, splits them into four
+      locals and then uses none of them; qdomyos-zwift:
+      KETTLER_DISTANCE_CHAR_UUID, uint32 little-endian at offset 0 divided by
+      1000 to give kilometres
+    notes: >-
+      The length (4) is the only thing both sources agree on. qdomyos-zwift
+      calls it distance in metres; Kinomap parses and discards it, so the
+      decompile cannot confirm or deny the meaning. Kinomap derives distance
+      by integrating speed instead, so the bridge does not need this
+      characteristic - see `distance_derived_by_kinomap`.
+  - uuid: 638A1010
+    name: Console button events
+    properties: [notify]
+    payload: console_buttons
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8 requires exactly 6 bytes and reads bytes 0, 4 and
+      5 as signed level deltas that move the user's incline offset;
+      qdomyos-zwift: silent, it does not reference this UUID
+    notes: >-
+      One source only. Documented because serving it wrongly is actively
+      harmful: a non-zero byte here moves Kinomap's incline offset behind the
+      user's back. See the `console_buttons_must_be_zero` constraint.
+  - uuid: 638A1103
+    name: In power range
+    properties: [notify]
+    payload: in_power_range
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8 sets its in-power-range flag true when byte 0 is
+      0 and false otherwise; qdomyos-zwift: silent, it does not reference this
+      UUID
+    notes: One source only. Display-only in Kinomap; no behaviour hangs off it.
+  - uuid: 638A100E
+    name: Target power
+    properties: [notify, write]
+    payload: target_power
+    descriptor: power_valid_range
+    provenance: disputed
+    evidence: >-
+      kinomap-decompile: ih8 writes a bare uint16 little-endian watt value
+      (two bytes, no framing) and reads the characteristic's 0x2906 descriptor
+      for the power limits; qdomyos-zwift: KETTLER_CONTROL_CHAR_UUID, writes a
+      ten-byte framed command with a rolling sequence byte and reads no
+      descriptor
+    notes: >-
+      Disputed write payload: two raw bytes against a ten-byte framed command.
+      Not reconcilable by reading, and not needed by this bridge either way -
+      the belt has no resistance and Kinomap only writes here when it is
+      commanding power, which it is not in a speed workout. Recorded because
+      the 0x2906 descriptor on this characteristic IS needed; see
+      `data_pump_needs_both_valid_ranges`.
+  - uuid: 2A37
+    name: Heart Rate Measurement (Heart Rate 180D)
+    properties: [notify]
+    payload: heart_rate
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8 subscribes to every notify characteristic of
+      service 180D before touching 638AF000, and decodes 2A37 with the
+      standard 8/16-bit flag in bit 0 of byte 0; qdomyos-zwift: silent for
+      this device, it takes heart rate from its own sources
+    notes: >-
+      Standard Bluetooth Heart Rate Measurement, in service 180D and not in
+      638AF000. The bridge has no heart-rate source, so this is documented as
+      part of what Kinomap looks for rather than as something to serve.
+
+# The ordered chain Kinomap walks before it will report any data at all. Every
+# step is from the decompile; qdomyos-zwift performs no equivalent, so there is
+# nothing to agree or disagree with except where noted on the characteristics.
+handshake:
+  - step: 1
+    action: Subscribe to Heart Rate
+    detail: >-
+      Every notify or indicate characteristic of service 180D has its Client
+      Characteristic Configuration descriptor written, before 638AF000 is
+      looked at.
+    provenance: community
+    evidence: "kinomap-decompile: ih8's service-discovery callback, first two calls"
+  - step: 2
+    action: Subscribe to the proprietary service
+    detail: >-
+      Service 638AF000 is resolved and every notify or indicate
+      characteristic in it has its CCCD written, one at a time, each waiting
+      for the previous write to complete.
+    provenance: community
+    evidence: "kinomap-decompile: ih8's service-discovery callback, third call"
+  - step: 3
+    action: Read the challenge
+    detail: Characteristic 638A1104 is read. Exactly two bytes, or the chain stops.
+    provenance: community
+    evidence: "kinomap-decompile: ih8 queues this read in the same callback and length-gates the result at 2"
+  - step: 4
+    action: Write the response
+    detail: >-
+      A 16-byte block is built from the challenge, encrypted with AES-128-ECB
+      under a fixed key compiled into the app, and written to 638A1105. The
+      key is deliberately not recorded in this repository, and the bridge does
+      not need it: as the peripheral it only has to accept the write.
+    provenance: community
+    evidence: "kinomap-decompile: ih8's characteristic-read callback for 638A1104"
+  - step: 5
+    action: Equipment reported connected
+    detail: >-
+      Kinomap's onEquipmentConnected() fires from the write-complete callback
+      for 638A1105 and from nowhere else. Until the write succeeds the app has
+      no connected equipment.
+    provenance: community
+    evidence: "kinomap-decompile: ih8's characteristic-write callback, guarded on this UUID and on success"
+  - step: 6
+    action: Read the level limits
+    detail: >-
+      The 0x2906 Valid Range descriptor of 638A1001 is read; byte 0 becomes
+      the minimum level and byte 1 the maximum.
+    provenance: community
+    evidence: "kinomap-decompile: ih8's characteristic-write callback, immediately after onEquipmentConnected"
+  - step: 7
+    action: Read the power limits
+    detail: >-
+      The 0x2906 Valid Range descriptor of 638A100E is read; bytes 0-1 become
+      the minimum power and bytes 2-3 the maximum, both uint16 little-endian.
+    provenance: community
+    evidence: "kinomap-decompile: ih8's descriptor-read callback for 638A1001"
+  - step: 8
+    action: The 1 Hz data pump starts
+    detail: >-
+      Only on completing step 7 does Kinomap start the once-per-second task
+      that publishes the latest notified values as an equipment update. Both
+      descriptor reads must succeed or no data is ever shown.
+    provenance: community
+    evidence: "kinomap-decompile: ih8's descriptor-read callback for 638A100E schedules the task at a 1 s fixed rate"
+
+# Byte-level payload layouts. `unit`/`scale` give the engineering unit (scale
+# is the multiplier from raw to unit). Examples are illustrative values in the
+# declared layout, not captures - nothing here has been captured.
+payloads:
+  - id: handshake_challenge
+    title: Handshake challenge (638A1104, read)
+    direction: read
+    length: 2
+    provenance: community
+    evidence: "kinomap-decompile: ih8 length-gates this read at exactly 2 bytes"
+    fields:
+      - offset: 0
+        size: 2
+        name: challenge
+        type: raw
+        note: >-
+          Two arbitrary bytes chosen by the peripheral. Kinomap feeds them
+          into the response block in swapped order, byte 1 before byte 0.
+    example: "12 34"
+    example_note: an illustrative challenge; any two bytes are legal
+  - id: handshake_response
+    title: Handshake response (638A1105, write)
+    direction: write
+    length: 16
+    provenance: community
+    evidence: "kinomap-decompile: ih8 builds a 16-byte block and writes the AES-128-ECB ciphertext of it"
+    fields:
+      - offset: 0
+        size: 16
+        name: aes_block
+        type: raw
+        note: >-
+          AES-128-ECB ciphertext of a 16-byte plaintext derived from the
+          challenge, under a fixed key shipped in the app. The bridge as
+          peripheral neither computes nor verifies this; it only has to accept
+          the write and report success.
+    example: "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+    example_note: >-
+      placeholder, not a real ciphertext - the key is not recorded here and no
+      example write has been captured
+  - id: level
+    title: Level (638A1001, notify and write)
+    direction: notify and write
+    length: 1
+    provenance: disputed
+    evidence: >-
+      kinomap-decompile: exactly 1 byte on notify, 1 byte on write;
+      qdomyos-zwift: read as uint16 little-endian in a branch requiring 2
+      bytes
+    fields:
+      - offset: 0
+        size: 1
+        name: level
+        type: u8
+        note: >-
+          Plain level, no scale, bounded by the 0x2906 descriptor. The width
+          is the disputed part: Kinomap insists on 1 byte, qdomyos-zwift reads
+          2 little-endian.
+    example: "05"
+    example_note: level 5
+  - id: level_valid_range
+    title: Level limits (638A1001, descriptor 0x2906)
+    direction: descriptor read
+    length: 2
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8's descriptor-read callback takes byte 0 as the
+      minimum level and byte 1 as the maximum; qdomyos-zwift: reads no
+      descriptor, so it neither confirms nor contradicts this
+    fields:
+      - {offset: 0, size: 1, name: minimum_level, type: u8}
+      - {offset: 1, size: 1, name: maximum_level, type: u8}
+    example: "01 10"
+    example_note: levels 1 to 16, illustrative
+  - id: cadence
+    title: Cadence (638A1002, notify)
+    direction: notify
+    length: 2
+    provenance: community
+    evidence: >-
+      kinomap-decompile: uint16 little-endian, integer-divided by 10;
+      qdomyos-zwift: subscribes but decodes cadence elsewhere
+    fields:
+      - {offset: 0, size: 2, name: cadence, type: u16le, unit: rpm, scale: 0.1}
+    example: "90 01"
+    example_note: 400 raw = 40.0 rpm
+  - id: power
+    title: Power (638A1003, notify)
+    direction: notify
+    length: 2
+    provenance: community
+    evidence: >-
+      kinomap-decompile: uint16 little-endian, unscaled, passed through as
+      watts; qdomyos-zwift: uint16 little-endian at offset 0 assigned straight
+      to watts
+    fields:
+      - {offset: 0, size: 2, name: power, type: u16le, unit: W}
+    example: "7d 00"
+    example_note: 125 W
+  - id: speed
+    title: Speed (638A1004, notify and write)
+    direction: notify and write
+    length: 2
+    provenance: community
+    evidence: >-
+      kinomap-decompile: uint16 little-endian divided by 10 on notify, and the
+      same encoding written back on a speed target; qdomyos-zwift: uint16
+      little-endian at offset 0 divided by 10.0
+    fields:
+      - offset: 0
+        size: 2
+        name: speed
+        type: u16le
+        unit: km/h
+        scale: 0.1
+        note: >-
+          Little-endian, low byte first. Kinomap applies no clamp of its own
+          on the write, so the peripheral must clamp; a write of 00 00 is the
+          stop.
+    example: "19 00"
+    example_note: 25 raw = 2.5 km/h
+  - id: alt_speed_or_level
+    title: Second speed value (638A1005, notify) - disputed meaning
+    direction: notify
+    length: 2
+    provenance: disputed
+    evidence: >-
+      kinomap-decompile: handled identically to 638A1004, uint16 little-endian
+      divided by 10, stored as speed; qdomyos-zwift: handled as resistance,
+      uint16 little-endian unscaled and rejected above its maximum resistance
+    fields:
+      - offset: 0
+        size: 2
+        name: value
+        type: u16le
+        note: >-
+          Speed in 0.1 km/h under Kinomap's reading, an unscaled resistance
+          level under qdomyos-zwift's. No unit is asserted here because the
+          two readings are incompatible.
+    example: "19 00"
+    example_note: 25 raw = 2.5 km/h under Kinomap's reading, level 25 under qdomyos-zwift's
+  - id: counter_1008
+    title: Four-byte counter (638A1008, notify) - disputed meaning
+    direction: notify
+    length: 4
+    provenance: disputed
+    evidence: >-
+      kinomap-decompile: exactly 4 bytes, parsed and then discarded;
+      qdomyos-zwift: uint32 little-endian divided by 1000, used as distance in
+      kilometres
+    fields:
+      - offset: 0
+        size: 4
+        name: counter
+        type: u32le
+        note: >-
+          Distance in metres under qdomyos-zwift's reading. Kinomap reads the
+          four bytes and uses none of them, so no unit is asserted.
+    example: "e8 03 00 00"
+    example_note: 1000 raw = 1.000 km under qdomyos-zwift's reading
+  - id: console_buttons
+    title: Console button events (638A1010, notify)
+    direction: notify
+    length: 6
+    provenance: community
+    evidence: >-
+      kinomap-decompile: exactly 6 bytes; bytes 0, 4 and 5 are read as signed
+      deltas (values above 128 are negative) that move the user's incline
+      offset; qdomyos-zwift: silent
+    fields:
+      - offset: 0
+        size: 1
+        name: level_delta
+        type: u8
+        note: "Signed; above 128 means negative. Applied directly to the incline offset."
+      - {offset: 1, size: 3, name: unused, type: raw, note: "Not read by Kinomap."}
+      - offset: 4
+        size: 1
+        name: coarse_delta
+        type: u8
+        note: "Non-zero moves the offset by three levels, signed as above. Only read when byte 0 is 0."
+      - offset: 5
+        size: 1
+        name: fine_delta
+        type: u8
+        note: "Non-zero moves the offset by one level, signed as above. Only read when byte 0 is 0."
+    example: "00 00 00 00 00 00"
+    example_note: no button pressed - the only value the bridge should ever notify
+  - id: in_power_range
+    title: In power range (638A1103, notify)
+    direction: notify
+    length: 1
+    provenance: community
+    evidence: >-
+      kinomap-decompile: byte 0 of 0 means in range, anything else out of
+      range; qdomyos-zwift: silent
+    fields:
+      - {offset: 0, size: 1, name: in_range, type: u8, enum: power_range}
+    example: "00"
+    example_note: in range
+  - id: target_power
+    title: Target power (638A100E, write) - disputed payload
+    direction: write
+    length: 2
+    provenance: disputed
+    evidence: >-
+      kinomap-decompile: a bare uint16 little-endian watt value, two bytes, no
+      framing; qdomyos-zwift: a ten-byte framed command with a rolling
+      sequence byte carrying the same watt value little-endian in its last two
+      bytes
+    fields:
+      - offset: 0
+        size: 2
+        name: target_power
+        type: u16le
+        unit: W
+        note: >-
+          Kinomap's reading. qdomyos-zwift's ten-byte framing is recorded in
+          the constraints rather than as a second layout, because its leading
+          bytes were taken from a packet capture and their meaning is not
+          established in either source.
+    example: "7d 00"
+    example_note: 125 W, under Kinomap's reading
+  - id: power_valid_range
+    title: Power limits (638A100E, descriptor 0x2906)
+    direction: descriptor read
+    length: 4
+    provenance: community
+    evidence: >-
+      kinomap-decompile: bytes 0-1 are the minimum and bytes 2-3 the maximum,
+      both uint16 little-endian; qdomyos-zwift: reads no descriptor
+    fields:
+      - {offset: 0, size: 2, name: minimum_power, type: u16le, unit: W}
+      - {offset: 2, size: 2, name: maximum_power, type: u16le, unit: W}
+    example: "19 00 fa 00"
+    example_note: 25 W to 250 W, illustrative
+  - id: heart_rate
+    title: Heart Rate Measurement (2A37, notify)
+    direction: notify
+    length: 2
+    provenance: community
+    evidence: >-
+      kinomap-decompile: bit 0 of byte 0 clear means an 8-bit rate in byte 1,
+      set means a 16-bit little-endian rate in bytes 1-2; this is the standard
+      Bluetooth layout
+    fields:
+      - {offset: 0, size: 1, name: flags, type: u8, note: "Bit 0 clear: 8-bit rate follows. Bit 0 set: 16-bit little-endian rate follows."}
+      - {offset: 1, size: 1, name: heart_rate, type: u8, unit: bpm}
+    example: "00 48"
+    example_note: 72 bpm, 8-bit form
+enums:
+  power_range:
+    field: 638A1103 byte 0
+    values:
+      - value: 0x00
+        name: in_range
+        meaning: Kinomap shows the user as inside the target power range
+        provenance: community
+        evidence: "kinomap-decompile: ih8 sets the flag true only on 0"
+      - value: 0x01
+        name: out_of_range
+        meaning: Any non-zero value; Kinomap does not distinguish between them
+        provenance: community
+        evidence: "kinomap-decompile: ih8's else branch, reached for every non-zero byte"
+
+constraints:
+  - id: handler_is_a_bike
+    statement: >-
+      Equipment type 42 selects a handler whose machine type is BIKE, and the
+      speed write exists only on that branch. Presenting the bridge here means
+      presenting the treadmill to Kinomap as a bike, with the session, units
+      and summary that follow from that.
+    key: equipment_type_42_is_a_bike
+    value: true
+    provenance: community
+    evidence: >-
+      kinomap-decompile: jh8 sets TYPE_BIKE in its constructor, and ih8's
+      speed-target path is guarded on the machine type being BIKE; the
+      type-42 selection is in bqj's equipment-type switch
+  - id: speed_gate
+    statement: >-
+      A speed command reaches the equipment only when the account preference
+      controlSpeedTreadmill is on (it defaults off), the handler declares it
+      can receive the speed feature, and the paired profile's manufacturer id
+      is 2. All three, every time.
+    key: speed_write_requires_manufacturer_id
+    value: 2
+    provenance: community
+    evidence: >-
+      kinomap-decompile: bqj's gate reads the controlSpeedTreadmill preference
+      with a false default and ANDs it with a helper requiring both the
+      can-receive-speed declaration and a profile manufacturer id of 2
+  - id: speed_unit
+    statement: >-
+      Speed on 638A1004 is uint16 little-endian in units of 0.1 km/h, in both
+      directions.
+    key: speed_unit_kmh
+    value: 0.1
+    unit: km/h
+    provenance: community
+    evidence: >-
+      kinomap-decompile: divides by 10 on read and multiplies by 10 on write,
+      low byte first; qdomyos-zwift: divides its little-endian read by 10.0
+  - id: stop_is_speed_zero
+    statement: >-
+      There is no start, stop, pause or resume command in this protocol -
+      Kinomap's implementations of all four are empty. Stopping a session
+      writes a speed of 0 to 638A1004.
+    key: stop_is_speed_zero
+    value: true
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8 overrides start, stop and resume with empty
+      bodies, and its training-stopped handler sends a speed target of 0
+  - id: no_clamp_on_write
+    statement: >-
+      Kinomap clamps level and power writes to the limits it read from the
+      0x2906 descriptors, but clamps speed writes to nothing. A speed above
+      the belt's range will arrive unaltered and must be clamped by the
+      bridge.
+    key: speed_write_is_clamped_by_kinomap
+    value: false
+    provenance: community
+    evidence: >-
+      kinomap-decompile: the level and power target setters clamp against the
+      stored minimum and maximum; the speed path multiplies by 10 and writes
+  - id: data_pump_needs_both_valid_ranges
+    statement: >-
+      Kinomap publishes no equipment data until it has successfully read the
+      0x2906 Valid Range descriptor of 638A1001 and then of 638A100E; the
+      second read is what starts the 1 Hz update task. A peripheral without
+      both descriptors connects and shows nothing.
+    key: requires_valid_range_descriptors
+    value: true
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8's descriptor-read callback chains 638A1001 to
+      638A100E and schedules the 1 s task only on the second
+  - id: connected_means_handshake_written
+    statement: >-
+      Kinomap reports the equipment connected only from the successful-write
+      callback for 638A1105. Nothing else sets that state, so the challenge
+      read and response write are not optional.
+    key: requires_handshake_write
+    value: true
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8's characteristic-write callback is the only
+      caller of onEquipmentConnected and is guarded on this UUID and on
+      success
+  - id: handshake_key_not_recorded
+    statement: >-
+      The handshake is AES-128-ECB under a fixed 16-byte key compiled into the
+      app. The key is deliberately not recorded in this repository, and is not
+      needed: a peripheral only has to serve a two-byte challenge and accept
+      a 16-byte write, since Kinomap never checks the ciphertext against
+      anything.
+    key: handshake_key_recorded_here
+    value: false
+    provenance: community
+    evidence: >-
+      AGENTS.md no-vendor-material rule; kinomap-decompile: the cipher is
+      initialised for encryption with a fixed key constant and the result is
+      written without any verification step
+  - id: strict_length_gates
+    statement: >-
+      Every notification is length-gated to an exact value and silently
+      dropped otherwise - 1 byte for 638A1001 and 638A1103, 2 for 638A1002,
+      638A1003, 638A1004 and 638A1005, 4 for 638A1008, 6 for 638A1010, 2 for
+      the 638A1104 read. A notification one byte long or short is invisible,
+      not an error.
+    key: notification_lengths_are_exact
+    value: true
+    provenance: community
+    evidence: >-
+      kinomap-decompile: every branch of ih8's notification handler returns
+      early unless the length matches exactly
+  - id: training_starts_on_power
+    statement: >-
+      Kinomap starts the training session when the value on 638A1003 exceeds
+      5, and treats 5 or below as 0. A bridge that never reports power above 5
+      never starts a session, whatever speed it reports.
+    key: training_starts_above_power
+    value: 5
+    unit: W
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8's 1 Hz task floors the power value at 5, and
+      calls onStartTraining the first time the floored value is positive
+    notes: >-
+      One source only; qdomyos-zwift is a central and has no equivalent.
+      The belt reports no power, so the bridge would have to synthesise one.
+  - id: distance_derived_by_kinomap
+    statement: >-
+      Kinomap integrates the notified speed itself, once per second, to get
+      distance. The 638A1008 counter is parsed and discarded.
+    key: kinomap_derives_distance
+    value: true
+    provenance: community
+    evidence: >-
+      kinomap-decompile: the 1 Hz task accumulates speed divided by 3.6 into
+      its own metre counter and passes that as the distance argument
+  - id: console_buttons_must_be_zero
+    statement: >-
+      A non-zero byte 0, 4 or 5 on 638A1010 moves the user's incline offset in
+      Kinomap with no visible cause. The bridge must either not expose the
+      characteristic or only ever notify six zero bytes.
+    key: console_button_bytes_must_be_zero
+    value: true
+    provenance: community
+    evidence: >-
+      kinomap-decompile: ih8's 6-byte branch applies those bytes to the
+      incline offset and raises a feature-changed event
+  - id: update_rate
+    statement: >-
+      Kinomap samples whatever the last notified value was once per second; it
+      does not poll and does not read any of the metric characteristics. The
+      notification rate only has to beat 1 Hz.
+    key: update_interval_s
+    value: 1
+    unit: s
+    provenance: community
+    evidence: "kinomap-decompile: the task is scheduled at a fixed rate of 1 s with no initial delay"
+  - id: target_power_framing_disputed
+    statement: >-
+      The 638A100E write payload is not settled. Kinomap writes two raw
+      little-endian watt bytes; qdomyos-zwift writes a ten-byte command whose
+      first eight bytes include a rolling sequence number taken from a packet
+      capture, with the watt value little-endian in the last two. Neither
+      source explains the other.
+    key: target_power_payload_settled
+    value: false
+    provenance: disputed
+    evidence: >-
+      kinomap-decompile: a two-byte little-endian write in the power-target
+      setter; qdomyos-zwift: a ten-byte array in setTargetPower, and a
+      separate fixed startup sequence of 12- and 13-byte writes to the same
+      characteristic that has no counterpart in the decompile
+  - id: sources_are_not_fully_independent
+    statement: >-
+      qdomyos-zwift's startup writes and target-power framing for this service
+      are annotated in its own source as having come from a Kinomap packet
+      capture. For those two facts the second source is downstream of the
+      first, so agreement between them would not be independent corroboration.
+    key: sources_fully_independent
+    value: false
+    provenance: community
+    evidence: >-
+      qdomyos-zwift: the comment above its startup sequence states it was
+      observed in a Kinomap bug-report btsnoop; its metric parsing carries no
+      such note
+
+# Questions neither source answers. Recorded so that no later task mistakes a
+# silence for a settled value.
+open_questions:
+  - id: advertised_name
+    question: What local name must the peripheral advertise for Kinomap's pairing flow to offer it as equipment type 42?
+    status: >-
+      Not determined. Kinomap's scan callback accepts any device with a
+      non-empty name and applies no service-UUID filter; a modelFilter string
+      exists on the paired-equipment record but was not traced to the scan or
+      pairing UI.
+  - id: equipment_type_origin
+    question: Where does equipment type 42 come from, and can it be chosen by the user?
+    status: >-
+      Not determined. The type is a field on a server-supplied equipment
+      catalogue record, not something the peripheral advertises, so whether
+      the bridge can be paired as type 42 at all is a question for the pairing
+      test in the plan's Task 4, not for this document.
+  - id: notify_on_1105
+    question: Does 638A1105 also need notify, or only write?
+    status: >-
+      Not determined. Kinomap only writes it, and would subscribe to it if it
+      were notifiable because it subscribes to the whole service; nothing in
+      either source says whether the real machine notifies on it.
+  - id: level_width
+    question: Is 638A1001 one byte or two?
+    status: >-
+      Disputed, not determined. Kinomap requires exactly one; qdomyos-zwift
+      reads two little-endian. Settle by measurement, not by argument.
+  - id: characteristic_1005_meaning
+    question: Is 638A1005 a second speed value or a resistance value?
+    status: >-
+      Disputed, not determined. Under Kinomap's reading a resistance value
+      notified here would silently overwrite the reported speed, so the safe
+      course until measured is not to notify it.
+  - id: unused_characteristics
+    question: What are 638A1006, 638A1007 and 638A1009 through 638A100D?
+    status: >-
+      Not determined, and out of scope. Kinomap never touches them.
+      qdomyos-zwift treats 638A100A as another resistance characteristic. No
+      entry is recorded for any of them because this file covers only what
+      Kinomap uses.

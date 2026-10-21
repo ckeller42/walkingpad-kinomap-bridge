@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Generate docs/protocol/reference.md from protocol/wilink.yaml and protocol/ftms.yaml.
+"""Generate docs/protocol/reference.md from the files in protocol/.
+
+Reads protocol/wilink.yaml, protocol/ftms.yaml and protocol/domyos.yaml.
 
     python tools/gen_protocol_reference.py [--out DIR]
 """
@@ -149,9 +151,62 @@ def _ftms(doc):
     return "\n".join(out)
 
 
+def _domyos(doc):
+    """The Domyos-mode profile: nothing measured, so provenance carries the weight."""
+    out = []
+    out.append("## Domyos mode — the second Kinomap side\n")
+    out.append(f"{doc['summary']} {doc['role']}\n")
+    out.append(
+        "> **NOT MEASURED.** Every fact in this section comes from reading two sources and "
+        "none from this hardware. `disputed` means the two disagree; both readings are kept and "
+        "neither is implemented without a measurement. See "
+        "[`protocol/domyos.yaml`](../../protocol/domyos.yaml) for the sources and the naming warnings.\n"
+    )
+    svc = doc["service"]
+    out.append(
+        f"Service `{svc['uuid']}` ({svc['name']}), {svc['provenance']}: {svc['evidence']}.\n"
+    )
+    out.append(f"{svc['notes']}\n")
+    adv = doc["advertisement"]
+    out.append(f"Advertised service `{adv['service']}`, {adv['provenance']}. {adv['notes']}\n")
+
+    out.append("### Characteristics\n")
+    rows = []
+    for ch in doc["characteristics"]:
+        rows.append([ch["uuid"], ch["name"], ", ".join(ch["properties"]),
+                     f"`{ch['descriptor']}`" if "descriptor" in ch else "",
+                     ch["provenance"], ch["evidence"]])
+    out.append(pc.table(["UUID", "Name", "Properties", "0x2906 descriptor", "Provenance", "Evidence"], rows))
+    out.append("")
+    for ch in doc["characteristics"]:
+        out.append(f"- `{ch['uuid']}` ({ch['name']}): {ch['notes']}")
+    out.append("")
+
+    out.append("### Connection chain\n")
+    out.append("Ordered, and every step gates the next. A peripheral that skips one shows no data at all.\n")
+    rows = [[str(s["step"]), s["action"], s["detail"], s["provenance"], s["evidence"]]
+            for s in doc["handshake"]]
+    out.append(pc.table(["Step", "Action", "Detail", "Provenance", "Evidence"], rows))
+
+    out.append("### Enumerations\n")
+    for name, en in doc["enums"].items():
+        out.append(_enum_table(name, en))
+    out.append("")
+
+    out.append("### Behavioural constraints\n")
+    out.append(_constraints(doc))
+
+    out.append("### Open questions\n")
+    out.append("Neither source answers these. A later task must not read the silence as a settled value.\n")
+    rows = [[q["id"], q["question"], q["status"]] for q in doc["open_questions"]]
+    out.append(pc.table(["Id", "Question", "Status"], rows))
+    return "\n".join(out)
+
+
 def generate():
     wilink = pc.load("wilink")
     ftms = pc.load("ftms")
+    domyos = pc.load("domyos")
     legend = pc.table(["Provenance", "Meaning"], [[k, v] for k, v in pc.PROVENANCE_LEGEND.items()])
     parts = [
         pc.banner(GENERATOR),
@@ -161,6 +216,7 @@ def generate():
         legend,
         _wilink(wilink),
         _ftms(ftms),
+        _domyos(domyos),
     ]
     text = "\n".join(parts)
     while "\n\n\n" in text:

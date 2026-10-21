@@ -4,16 +4,20 @@ The protocol facts for this bridge live in exactly one place:
 
 - [`protocol/wilink.yaml`](../../protocol/wilink.yaml): the treadmill side (service `FE00`)
 - [`protocol/ftms.yaml`](../../protocol/ftms.yaml): the Kinomap side (service `1826`)
+- [`protocol/domyos.yaml`](../../protocol/domyos.yaml): the second Kinomap side,
+  the proprietary profile of the optional Domyos mode (service
+  `638AF000-7BDE-3E25-FFC5-9DE9B2A0197A`). Nothing in it has been measured yet.
 
 Every other file in this directory except this README is **generated** from
-those two files. Do not hand-edit a generated file; edit the YAML and
+those three files. Do not hand-edit a generated file; edit the YAML and
 regenerate. Where the YAML and [`docs/test-log.md`](../test-log.md) differ, the
 test log wins: it is the measured record.
 
 Each fact in the YAML carries a provenance: `measured` (observed on real
-hardware), `community` (reverse-engineering projects or the design doc) or
-`vendor-app` (the KS Fit and Kinomap decompiles). The provenance survives into
-the generated views.
+hardware), `community` (reverse-engineering projects, a decompile or the design
+doc), `vendor-app` (the KS Fit and Kinomap decompiles) or `disputed` (two
+sources disagree, both readings are recorded and neither is implemented until a
+measurement settles it). The provenance survives into the generated views.
 
 ## Views
 
@@ -37,7 +41,10 @@ twice produces identical bytes.
 
 `tools/check_protocol_views.py` regenerates every view into a temporary
 directory and diffs it against the committed copy. It exits non-zero, with a
-unified diff, if any view is stale, missing, or an orphaned generated file.
+unified diff, if any view is stale, missing, or an orphaned generated file. It
+also fails if a `protocol/*.yaml` exists that no view reads, so adding a
+protocol and forgetting to wire up the generators cannot pass quietly; the list
+of inputs is `PROTOCOLS` in `tools/protocol_common.py`.
 This is the analogue of a pytest that fails when a committed view does not
 match a fresh regeneration; PlatformIO/Unity cannot check markdown, so it is a
 plain script.

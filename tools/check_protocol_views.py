@@ -3,8 +3,9 @@
 
 Regenerates every view into a temporary directory and compares it with the
 committed copy in docs/protocol/. Exits 0 when all match, 1 on any difference
-(missing file, stale content, or a stray extra generated file), 2 on a
-generator failure. Prints a unified diff so the failure is self-explanatory.
+(missing file, stale content, a stray extra generated file, or a protocol
+source no view reads), 2 on a generator failure. Prints a unified diff so the
+failure is self-explanatory.
 
     python tools/check_protocol_views.py
 
@@ -18,6 +19,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 COMMITTED = HERE.parent / "docs" / "protocol"
+PROTOCOL_DIR = HERE.parent / "protocol"
 
 # generator script -> view file it writes
 GENERATORS = {
@@ -28,8 +30,25 @@ HAND_WRITTEN = {"README.md"}
 BANNER_MARK = "**GENERATED**"
 
 
+def unread_protocol_files():
+    """protocol/*.yaml files that no generator declares as a source.
+
+    The views are only a source of truth if every protocol file reaches them.
+    Adding protocol/domyos.yaml and forgetting to wire up a generator would
+    otherwise leave a silently undocumented protocol.
+    """
+    sys.path.insert(0, str(HERE))
+    import protocol_common as pc
+
+    declared = {Path(s).name for s in pc.BANNER_SOURCES}
+    return sorted(p.name for p in PROTOCOL_DIR.glob("*.yaml") if p.name not in declared)
+
+
 def main():
     failures = 0
+    for name in unread_protocol_files():
+        print(f"FAIL: protocol/{name} is read by no view; add it to PROTOCOLS in tools/protocol_common.py")
+        failures += 1
     with tempfile.TemporaryDirectory() as tmp:
         for script, view in GENERATORS.items():
             proc = subprocess.run(
