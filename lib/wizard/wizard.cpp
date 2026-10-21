@@ -134,22 +134,38 @@ Screen Wizard::screen(const Inputs& in) const {
             set(s.title, "About ARM");
             set(s.action[0], "ARM before you walk.");
             set(s.action[1], "Then press START.");
-            set(s.detail[0], "Kinomap can start the belt");
+            set(s.detail[0], "The bridge moves the belt");
             set(s.detail[1], "only while ARMED (green).");
             set(s.detail[2], "STOP (red) always works,");
             set(s.detail[3], "armed or not.");
             break;
         case Step::Done:
             s.stepNo = sim_ ? 3 : 5;
+            set(s.right, "FINISH");
+            // Kinomap verifies it receives treadmill data before it will pair,
+            // and the bridge only notifies while the belt delivers fresh
+            // status. So a belt left off makes Kinomap fail with a generic
+            // "could not pair" error that says nothing about the real cause.
+            // Measured: this is exactly how a real pairing attempt failed.
+            if (!sim_ && !in.beltUp) {
+                s.phase = 51;
+                set(s.title, "Belt is OFF");
+                set(s.action[0], "Switch the belt ON");
+                set(s.action[1], "before pairing Kinomap.");
+                set(s.detail[0], "Kinomap checks for data before");
+                set(s.detail[1], "it pairs. With the belt off");
+                set(s.detail[2], "it fails with a connection");
+                set(s.detail[3], "error that blames the bridge.");
+                break;
+            }
             s.phase = 50;
             set(s.title, "Last step");
             set(s.action[0], "Open Kinomap, ARM here,");
             set(s.action[1], "then press START.");
-            set(s.detail[0], "Kinomap won't drive the belt");
-            set(s.detail[1], "until it is already moving.");
-            set(s.detail[2], "Belt remote works too.");
+            set(s.detail[0], "Leave the belt ON: Kinomap");
+            set(s.detail[1], "will not pair without data.");
+            set(s.detail[2], "Kinomap never starts the belt.");
             set(s.detail[3], "Re-run setup: tap BELT dot.");
-            set(s.right, "FINISH");
             break;
     }
     if (sim_) s.phase += 1000;  // sim variants are different screens

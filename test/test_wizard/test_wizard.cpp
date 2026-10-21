@@ -129,7 +129,35 @@ void test_last_step_states_kinomap_waits_for_movement(void) {
     TEST_ASSERT_EQUAL(Step::Done, w.step());
     Screen s = w.screen(in);
     TEST_ASSERT_NOT_NULL(strstr(s.action[1], "START"));
-    TEST_ASSERT_NOT_NULL(strstr(s.detail[1], "already moving"));
+    // Measured: Kinomap never initiates FTMS StartResume, so the last screen
+    // must say the user starts the belt, not the app.
+    TEST_ASSERT_NOT_NULL(strstr(s.detail[2], "never starts"));
+    // And it must say to leave the belt on, because Kinomap checks for data
+    // before it will pair at all.
+    TEST_ASSERT_NOT_NULL(strstr(s.detail[0], "belt ON"));
+}
+
+// A belt left off makes Kinomap fail to pair with an error that blames the
+// bridge, so the last screen has to catch that case before the user goes
+// looking at the wrong thing.
+void test_last_step_warns_when_the_belt_is_off(void) {
+    Wizard w;
+    w.start(false);
+    Inputs on = real(true);
+    w.press(Btn::Right, on);
+    w.update(on);
+    w.press(Btn::Right, on);
+    w.press(Btn::Right, on);
+    TEST_ASSERT_EQUAL(Step::Done, w.step());
+
+    Inputs off = real(false);
+    Screen s = w.screen(off);
+    TEST_ASSERT_NOT_NULL(strstr(s.title, "OFF"));
+    TEST_ASSERT_NOT_NULL(strstr(s.action[0], "Switch the belt ON"));
+    // Distinct phase, so the screenshot tooling captures it as its own screen.
+    TEST_ASSERT_NOT_EQUAL(w.screen(on).phase, s.phase);
+    // Still finishable: the warning informs, it does not trap the user.
+    TEST_ASSERT_EQUAL_STRING("FINISH", s.right);
 }
 
 void test_arm_screen_explains_arm_and_stop(void) {
@@ -154,6 +182,7 @@ int main(int, char**) {
     RUN_TEST(test_found_screen_shows_address);
     RUN_TEST(test_every_screen_has_an_instruction_and_both_buttons);
     RUN_TEST(test_last_step_states_kinomap_waits_for_movement);
+    RUN_TEST(test_last_step_warns_when_the_belt_is_off);
     RUN_TEST(test_arm_screen_explains_arm_and_stop);
     return UNITY_END();
 }

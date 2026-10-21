@@ -32,6 +32,7 @@ uint32_t dropped = 0;
 
 bool sdReady = false;
 bool wifiTried = false;
+bool udpStarted = false;
 uint32_t lastFlush = 0, lastWifiTry = 0;
 char sdPath[32] = "";
 uint32_t sdHz = 0;
@@ -157,11 +158,14 @@ void tick(uint32_t nowMs) {
         sdFile.flush();
     }
     if (WiFi.status() == WL_CONNECTED) {
-        // Broadcast, so the Mac needs no fixed address on this bridge:
-        //   nc -ul 9999
+        // The socket has to exist before the first send, and the subnet
+        // broadcast address is delivered where the 255.255.255.255 limited
+        // broadcast often is not.
+        if (!udpStarted) udpStarted = udp.begin(0) == 1;
+        const IPAddress bcast = WiFi.broadcastIP();
         for (size_t off = 0; off < n; off += 1200) {
             const size_t chunk = (n - off < 1200) ? n - off : 1200;
-            if (udp.beginPacket(IPAddress(255, 255, 255, 255), LOG_UDP_PORT)) {
+            if (udp.beginPacket(bcast, LOG_UDP_PORT)) {
                 udp.write((const uint8_t*)out + off, chunk);
                 udp.endPacket();
             }
