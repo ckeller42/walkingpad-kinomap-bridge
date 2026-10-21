@@ -1,7 +1,7 @@
 # WalkingPad R1 Pro → Kinomap bridge — design
 
 **Date:** 2026-10-21
-**Status:** design, not yet approved for implementation
+**Status:** approved 2026-10-21
 
 ---
 
