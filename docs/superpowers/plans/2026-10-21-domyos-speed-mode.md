@@ -4,7 +4,7 @@
 > treadmill, so this mode would have presented the belt as one. See the spec's
 > status note and issue #2. Task 1's output (`protocol/domyos.yaml` and the
 > tooling changes) is committed and stands; Tasks 2-7 were never started.
-
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let Kinomap command the belt's speed by presenting the bridge as a Domyos **bike**, without changing the default FTMS behaviour. (Task 1 established that Kinomap's type-42 handler is a bike; there is no Domyos treadmill. The session would be recorded as a ride, not a run — see the spec's "Correction" section.)
