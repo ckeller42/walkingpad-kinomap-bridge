@@ -494,9 +494,16 @@ git commit -m "feat: speed policy with stop sentinel, deadband, rate limit and r
 **Interfaces:**
 - Consumes: `policy::Decision`, `policy::Action`.
 - Produces:
-  `enum class Emit { None, SetSpeed, Stop, StartSequence, NotifyStarted };`
+  `enum class Emit { None, SetSpeed, Stop, StartSequence, NotifyStarted, ResetPolicy };`
   `struct Outcome { Emit emits[3]; size_t count; uint8_t tenthKmh; };`
-  `class BridgeState { public: void setArmed(bool); bool armed() const; void onBeltLink(bool up); void onPhoneLink(bool up); bool beltRunning() const; bool notifying() const; Outcome apply(const Decision& d); Outcome stopFromUi(); };`
+  `class BridgeState { public: Outcome setArmed(bool); bool armed() const; Outcome onBeltLink(bool up); Outcome onPhoneLink(bool up); bool beltRunning() const; bool notifying() const; Outcome apply(const Decision& d); Outcome stopFromUi(); };`
+
+  **Every state-changing entry point returns an `Outcome`.** This is deliberate:
+  the link-loss Stop and the `SpeedPolicy` reset are obligations that must travel
+  in the return value, not in a comment the caller may not read. `Emit::ResetPolicy`
+  tells the composition layer to call `SpeedPolicy::reset()` — without it, a
+  decision that `BridgeState` drops still leaves `SpeedPolicy` believing it was
+  sent, and the next identical target is deadbanded away.
 
 `apply` turns a `SpeedPolicy` decision into what the adapters must actually emit, given arm state and whether the belt is running. `notifying()` tells the FTMS server whether to send `2ACD` at all.
 
@@ -717,6 +724,13 @@ git commit -m "feat: NimBLE FTMS peripheral adapter"
 - [ ] **Step 1: Implement `src/main.cpp`**
 
 Wire `FtmsServer` → `SpeedPolicy` → `BridgeState` → `SimBelt`. The `onTarget` callback runs the policy and applies the outcome to the belt; the `onControlOp` callback handles the `{07}` Kinomap sends in reply to our `2ADA` `0x04`. A 1 Hz tick polls the belt, feeds `onBeltSpeed`, and notifies `2ACD` when `BridgeState::notifying()`. Arming starts `true` for this task only, so stage 0 needs no touch input; Task 11 moves it behind the UI.
+
+**Every `Outcome` must be drained, including the ones returned by `setArmed`,
+`onBeltLink` and `onPhoneLink`** — those carry the link-loss `Stop` and the
+`ResetPolicy` instruction. Write one `applyOutcome(const Outcome&)` helper that
+walks `emits[0..count)` and route every call through it; `Emit::ResetPolicy`
+calls `SpeedPolicy::reset()`. Dropping one of these outcomes is how the belt
+keeps running after the phone disappears.
 
 - [ ] **Step 2: Flash the CoreS3**
 
