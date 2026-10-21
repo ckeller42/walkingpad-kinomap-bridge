@@ -41,6 +41,13 @@ WalkingPad R1 Pro  ◄── BLE, WiLink FE00 ──►  CoreS3  ◄── BLE, 
 2. Kinomap sets the target speed; the belt follows.
 3. Kinomap receives live speed and derives distance and time as it normally would.
 4. Kinomap can start the belt — subject to the arming rule below.
+   **Amended 2026-10-21 after stage 1.** This holds only once a Kinomap session
+   is already running. Kinomap shows *"Begin running to start the training…"*
+   and sends **no** speed target until the treadmill reports movement — its
+   session is started **by the belt**, not by the app. So the **first** start is
+   always the user's, from the bridge's own START control or the belt's remote.
+   The bridge must therefore be able to start a session by itself; it cannot
+   depend on the app, and in simulated-belt mode there is no remote at all.
 5. Stopping always works, from Kinomap or from the bridge.
 6. The bridge is usable while walking: readable at a glance, one reachable STOP.
 
@@ -303,6 +310,12 @@ starts**, not an opcode.
   off** — not across reboots, and not on link loss.
 - **While armed**, a Kinomap target above the stop sentinel will start a stopped
   belt via the start sequence.
+- **But Kinomap cannot begin a session by itself.** Amended after stage 1: it
+  waits for the treadmill to report movement before sending any target, so the
+  bridge needs a **START** control of its own — available only while armed — that
+  runs the start sequence. Without it the bridge and the app wait on each other
+  forever, and in simulated-belt mode there is no remote to break the tie. START
+  is how a session begins; Kinomap's targets take over once it is running.
 - **While disarmed**, speed targets are **accepted and acknowledged with success,
   then ignored.** The belt does not start. Arming by itself does not start the
   belt either — the *next* target after arming does.
