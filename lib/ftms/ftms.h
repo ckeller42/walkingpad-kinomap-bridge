@@ -85,6 +85,10 @@ struct CpRequest {
     /// The first byte exactly as written, or 0 when there was none. Kept so a
     /// response can echo the request opcode even when op is Unknown.
     uint8_t rawOp;
+    /// True when the write carried at least one byte. Distinguishes "an
+    /// operation we could not decode" from "no operation at all": only the
+    /// first can be answered, because only it has an opcode to echo.
+    bool hasOp;
 };
 
 /**
@@ -106,5 +110,20 @@ CpRequest parseControlPoint(const uint8_t* buf, size_t len);
  *       Kinomap retry in a loop.
  */
 Buf controlPointSuccess(uint8_t rawOp);
+
+/**
+ * @brief The indication to send back for a Control Point write.
+ *
+ * @param req A request from parseControlPoint().
+ * @return A Success indication echoing @ref CpRequest::rawOp, or a Buf with
+ *         `len == 0` when there is nothing to answer.
+ *
+ * Every write that named an operation is answered, **including one the parser
+ * rejected** - a truncated `SetTargetSpeed`, say. The client is entitled to an
+ * indication for every write it makes, and silence leaves it waiting for one
+ * while every other write gets Success. A zero-length write named no
+ * operation, so it has no opcode to echo and gets nothing back.
+ */
+Buf controlPointAck(const CpRequest& req);
 
 }  // namespace ftms

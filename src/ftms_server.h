@@ -160,8 +160,10 @@ public:
      * retry in a loop, so a correct refusal costs more than a meaningless
      * acknowledgement. Nothing acts on the acknowledgement either way.
      *
-     * The one write that goes unanswered is a write too short for its own
-     * opcode: it is counted and logged, then dropped without an indication.
+     * A write too short for its own opcode changes nothing - the callbacks are
+     * not run - but it is still answered, echoing the opcode it did carry. The
+     * only unanswered write is a zero-length one, which named no operation and
+     * so has no opcode to echo.
      *
      * @param data Bytes as written; may be null.
      * @param len  Number of bytes in @p data; may be zero.

@@ -109,18 +109,22 @@ void FtmsServer::handleControlPointWrite(const uint8_t* data, size_t len) {
         else Serial.printf("cp op=0x%02x len=1%s\n", data[0], req.valid ? "" : " (invalid)");
     }
     if (data && len) logsink::hex("cp", data, len);
-    if (!req.valid) {
-        logsink::line("cp invalid");
-        return;
+
+    // An undecodable write changes nothing, but it is still answered below:
+    // the client is owed an indication for every write it makes.
+    if (!req.valid) logsink::line("cp invalid");
+
+    if (req.valid) {
+        if (req.op == ftms::CpOp::SetTargetSpeed) {
+            if (onTarget_) onTarget_(req.centiKmh);
+        } else if (onControlOp_) {
+            onControlOp_(req.op);
+        }
     }
 
-    if (req.op == ftms::CpOp::SetTargetSpeed) {
-        if (onTarget_) onTarget_(req.centiKmh);
-    } else if (onControlOp_) {
-        onControlOp_(req.op);
-    }
-
-    // Always Success, echoing the raw opcode: an FTMS error makes Kinomap retry.
-    ftms::Buf resp = ftms::controlPointSuccess(req.rawOp);
-    controlPoint_->indicate(resp.bytes, resp.len);
+    // Always Success, echoing the raw opcode: an FTMS error makes Kinomap
+    // retry in a loop. A zero-length write has no opcode to echo, and
+    // controlPointAck() returns an empty buffer for it.
+    ftms::Buf resp = ftms::controlPointAck(req);
+    if (controlPoint_ && resp.len) controlPoint_->indicate(resp.bytes, resp.len);
 }

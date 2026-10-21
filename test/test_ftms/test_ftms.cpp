@@ -135,6 +135,40 @@ void test_parse_non_null_zero_len_is_invalid(void) {
     TEST_ASSERT_FALSE(r.valid);
 }
 
+// Every write that names an operation gets an indication, including one the
+// parser rejects. A truncated SetTargetSpeed used to get complete silence
+// while every other write got Success, so the phone sat waiting for an
+// answer it was entitled to.
+void test_rejected_write_is_still_acknowledged_with_its_own_opcode(void) {
+    const uint8_t truncated[] = {0x02, 0x2c};  // SetTargetSpeed, one byte short
+    ftms::CpRequest r = ftms::parseControlPoint(truncated, sizeof truncated);
+    TEST_ASSERT_FALSE(r.valid);
+    ftms::Buf b = ftms::controlPointAck(r);
+    TEST_ASSERT_EQUAL(3, b.len);
+    TEST_ASSERT_EQUAL_HEX8(0x80, b.bytes[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x02, b.bytes[1]);  // echoes what was written
+    TEST_ASSERT_EQUAL_HEX8(0x01, b.bytes[2]);
+}
+
+// A zero-length write named no operation, so there is no opcode to echo and
+// nothing honest to say. len == 0 means "send nothing".
+void test_empty_write_has_nothing_to_acknowledge(void) {
+    ftms::CpRequest r = ftms::parseControlPoint(nullptr, 0);
+    TEST_ASSERT_FALSE(r.hasOp);
+    TEST_ASSERT_EQUAL(0, ftms::controlPointAck(r).len);
+}
+
+// Opcode 0x00 is RequestControl, so a one-byte 0x00 write is a real request
+// that happens to share rawOp with the empty case. It must be answered.
+void test_request_control_is_not_mistaken_for_an_empty_write(void) {
+    const uint8_t one[] = {0x00};
+    ftms::CpRequest r = ftms::parseControlPoint(one, sizeof one);
+    TEST_ASSERT_TRUE(r.hasOp);
+    ftms::Buf b = ftms::controlPointAck(r);
+    TEST_ASSERT_EQUAL(3, b.len);
+    TEST_ASSERT_EQUAL_HEX8(0x00, b.bytes[1]);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_feature_is_8_bytes_with_speed_target_bit);
@@ -155,5 +189,8 @@ int main(int, char**) {
     RUN_TEST(test_parse_start_resume);
     RUN_TEST(test_parse_set_target_inclination_is_named_valid_and_acked);
     RUN_TEST(test_parse_non_null_zero_len_is_invalid);
+    RUN_TEST(test_rejected_write_is_still_acknowledged_with_its_own_opcode);
+    RUN_TEST(test_empty_write_has_nothing_to_acknowledge);
+    RUN_TEST(test_request_control_is_not_mistaken_for_an_empty_write);
     return UNITY_END();
 }
