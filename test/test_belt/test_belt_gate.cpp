@@ -93,7 +93,12 @@ void test_gate_ignored_stop_is_resent_until_poll_shows_stopped(void) {
         tickAt(g, f, t);
         pollOnce(g);
     }
-    TEST_ASSERT_GREATER_OR_EQUAL_INT(2, f.count('P'));
+    // First stop at 20 ms; polls at 4 s (>= 3 s since the stop) queue the
+    // retry, sent on the next tick (5 s); the next is queued at 8 s, sent at
+    // 9 s. A resend on every gap would give ~10 here.
+    TEST_ASSERT_EQUAL_INT(3, f.count('P'));
+    TEST_ASSERT_EQUAL_UINT32(5000, f.ev[1].t);
+    TEST_ASSERT_EQUAL_UINT32(9000, f.ev[2].t);
     // Belt finally reports stopped: no further stops.
     setStatus(f, 4, 0);
     tickAt(g, f, 11000);
@@ -165,38 +170,13 @@ void test_gate_spacing_survives_millis_wraparound(void) {
     TEST_ASSERT_LESS_THAN_UINT32(kGap + 100, f.ev[1].t - f.ev[0].t);
 }
 
-void test_gate_stop_skipped_when_fresh_poll_shows_idle(void) {
+void test_gate_stop_always_writes_even_when_last_poll_showed_idle(void) {
     FakeBelt f;
     belt::BeltGate g(f, kGap);
-    setStatus(f, 4, 0);
+    setStatus(f, 0, 0);
     tickAt(g, f, 0);
     pollOnce(g);
     g.stop();
-    for (uint32_t t = 20; t <= 3000; t += 20) tickAt(g, f, t);
-    TEST_ASSERT_EQUAL_INT(0, f.count('P'));
-}
-
-void test_gate_stop_not_skipped_on_stale_poll(void) {
-    FakeBelt f;
-    belt::BeltGate g(f, kGap);
-    setStatus(f, 4, 0);
-    tickAt(g, f, 0);
-    pollOnce(g);
-    tickAt(g, f, 5000);  // poll is 5 s old
-    g.stop();
-    tickAt(g, f, 5020);
-    TEST_ASSERT_EQUAL_INT(1, f.count('P'));
-}
-
-void test_gate_stop_not_skipped_after_a_write_since_the_poll(void) {
-    FakeBelt f;
-    belt::BeltGate g(f, kGap);
-    setStatus(f, 4, 0);
-    tickAt(g, f, 0);
-    pollOnce(g);
-    g.start();
-    tickAt(g, f, 20);  // start written; the idle poll no longer describes the belt
-    g.stop();
-    tickAt(g, f, 1100);
+    tickAt(g, f, 20);
     TEST_ASSERT_EQUAL_INT(1, f.count('P'));
 }

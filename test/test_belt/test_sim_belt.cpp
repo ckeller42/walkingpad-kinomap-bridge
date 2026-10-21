@@ -236,8 +236,6 @@ int main(int, char**) {
     RUN_TEST(test_gate_two_speeds_in_one_gap_only_newest_written);
     RUN_TEST(test_gate_stop_while_start_pending_clears_the_start);
     RUN_TEST(test_gate_spacing_survives_millis_wraparound);
-    RUN_TEST(test_gate_stop_skipped_when_fresh_poll_shows_idle);
-    RUN_TEST(test_gate_stop_not_skipped_on_stale_poll);
-    RUN_TEST(test_gate_stop_not_skipped_after_a_write_since_the_poll);
+    RUN_TEST(test_gate_stop_always_writes_even_when_last_poll_showed_idle);
     return UNITY_END();
 }
