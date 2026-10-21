@@ -75,6 +75,16 @@ Outcome BridgeState::apply(const Decision& d) {
     return o;
 }
 
+Outcome BridgeState::startFromUi(uint8_t tenthKmh) {
+    Outcome o = empty(tenthKmh);
+    if (!armed_ || !beltUp_ || running_) return o;
+    o.emits[o.count++] = Emit::StartSequence;
+    o.emits[o.count++] = Emit::NotifyStarted;
+    o.emits[o.count++] = Emit::ResetPolicy;
+    running_ = true;
+    return o;
+}
+
 Outcome BridgeState::stopFromUi() {
     Outcome o = empty();
     o.emits[o.count++] = Emit::Stop;

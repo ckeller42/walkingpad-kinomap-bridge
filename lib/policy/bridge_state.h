@@ -53,6 +53,12 @@ public:
     Outcome onBeltObservedStopped();
 
     Outcome apply(const Decision& d);
+    // UI START: begins a session from the bridge itself, because Kinomap sends
+    // no target until the belt reports movement. Only while armed, belt link
+    // up and not already running; otherwise emits nothing. Emits
+    // StartSequence, NotifyStarted (the 2ADA 0x04 that makes Kinomap begin its
+    // session) and ResetPolicy, so the first Kinomap target is not deadbanded.
+    Outcome startFromUi(uint8_t tenthKmh);
     // UI STOP: emits Stop, ResetPolicy and also disarms, so the app cannot
     // override the user's physical stop with its next target.
     Outcome stopFromUi();

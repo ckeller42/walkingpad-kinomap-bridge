@@ -3,19 +3,29 @@
 #include <M5Unified.h>
 #include <stdio.h>
 
+#include "shot.h"
+
 namespace {
 constexpr int W = 320, H = 240;
 constexpr int BAR_Y = 184;  // bottom bar top edge
 constexpr int HIT_Y = 180;  // just above the bar, clear of the distance/time row (<= y176)
 constexpr int HALF = W / 2;
+constexpr int SETUP_HIT_Y = 40;  // top strip: tap the BELT indicator to re-run setup
 
 constexpr uint16_t BG = TFT_BLACK;
 constexpr uint16_t DIM = 0x7BEF;       // mid grey
-constexpr uint16_t ARM_ON = 0x03A0;    // dark green
+constexpr uint16_t ARM_ON = 0x03A0;    // dark green: armed
+constexpr uint16_t ARM_GO = 0x05E0;    // bright green: START is available
 constexpr uint16_t ARM_OFF = 0x2104;   // dark grey
+constexpr uint16_t BTN_GREY = 0x4208;
 
 M5Canvas canvas(&M5.Display);
 bool canvasOk = false;
+
+lgfx::LovyanGFX& target() {
+    return canvasOk ? static_cast<lgfx::LovyanGFX&>(canvas)
+                    : static_cast<lgfx::LovyanGFX&>(M5.Display);
+}
 
 void dot(lgfx::LovyanGFX& g, int cx, const char* label, bool up, bool sim = false) {
     g.fillCircle(cx - 40, 14, 9, sim ? TFT_ORANGE : (up ? TFT_GREEN : TFT_RED));
@@ -23,6 +33,22 @@ void dot(lgfx::LovyanGFX& g, int cx, const char* label, bool up, bool sim = fals
     g.setTextDatum(middle_left);
     g.setFont(&fonts::FreeSansBold12pt7b);
     g.drawString(label, cx - 24, 14);
+}
+
+// One half of the bottom bar. Falls back to a smaller font if the label is wide.
+void barButton(lgfx::LovyanGFX& g, int x, uint16_t bg, const char* label) {
+    const int bh = H - BAR_Y;
+    g.fillRect(x, BAR_Y, HALF, bh, bg);
+    g.setTextDatum(middle_center);
+    g.setTextColor(TFT_WHITE, bg);
+    g.setFont(&fonts::FreeSansBold18pt7b);
+    if (g.textWidth(label) > HALF - 8) g.setFont(&fonts::FreeSansBold12pt7b);
+    g.drawString(label, x + HALF / 2, BAR_Y + bh / 2);
+}
+void barDivider(lgfx::LovyanGFX& g) {
+    const int bh = H - BAR_Y;
+    g.drawFastVLine(HALF - 1, BAR_Y, bh, BG);
+    g.drawFastVLine(HALF, BAR_Y, bh, BG);
 }
 }  // namespace
 
@@ -38,18 +64,41 @@ void Ui::poll() {
     auto t = M5.Touch.getDetail();
     // wasPressed() is true only on the update that saw the finger land, so a
     // held finger yields exactly one event.
-    if (!t.wasPressed() || t.y < HIT_Y) return;
-    if (t.x < HALF) armPressed_ = true;
-    else stopPressed_ = true;
+    if (!t.wasPressed()) return;
+    const bool left = t.x < HALF;
+    if (t.y >= HIT_Y) {
+        if (wizardMode_) (left ? wizL_ : wizR_) = true;
+        else (left ? armPressed_ : stopPressed_) = true;
+    } else if (!wizardMode_ && t.y < SETUP_HIT_Y && left) {
+        setupTapped_ = true;
+    }
 }
 
-bool Ui::tookArmToggle() { bool r = armPressed_; armPressed_ = false; return r; }
+bool Ui::tookArmButton() { bool r = armPressed_; armPressed_ = false; return r; }
 bool Ui::tookStop() { bool r = stopPressed_; stopPressed_ = false; return r; }
+bool Ui::tookSetupTap() { bool r = setupTapped_; setupTapped_ = false; return r; }
+bool Ui::tookWizardLeft() { bool r = wizL_; wizL_ = false; return r; }
+bool Ui::tookWizardRight() { bool r = wizR_; wizR_ = false; return r; }
+
+// Pushes the finished frame, and (screenshot builds) emits it once per phase.
+void Ui::finishFrame(int phase) {
+    if (!canvasOk) return;
+    canvas.pushSprite(0, 0);
+    if (UI_SCREENSHOT && phase != shotPhase_) {
+        shotPhase_ = phase;
+        shot::emit(static_cast<const uint8_t*>(canvas.getBuffer()), W, H);
+    }
+}
+
+bool Ui::shotNow() {
+    if (!UI_SCREENSHOT || !canvasOk) return false;
+    shot::emit(static_cast<const uint8_t*>(canvas.getBuffer()), W, H);
+    return true;
+}
 
 void Ui::render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
-                bool beltUp, bool phoneUp, bool armed) {
-    lgfx::LovyanGFX& g = canvasOk ? static_cast<lgfx::LovyanGFX&>(canvas)
-                                  : static_cast<lgfx::LovyanGFX&>(M5.Display);
+                bool beltUp, bool phoneUp, bool armed, bool running) {
+    lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
 
     // A simulated belt must never look like a healthy real one: amber "SIM".
@@ -84,19 +133,55 @@ void Ui::render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
     g.drawString(buf, HALF + HALF / 2, 164);
 
     // Bottom bar: two halves flush with the screen edges. STOP is always
-    // saturated red; ARM is green when armed, dark grey when not.
-    const int bh = H - BAR_Y;
-    const uint16_t armBg = armed ? ARM_ON : ARM_OFF;
-    g.fillRect(0, BAR_Y, HALF, bh, armBg);
-    g.fillRect(HALF, BAR_Y, HALF, bh, TFT_RED);
-    g.drawFastVLine(HALF - 1, BAR_Y, bh, BG);
-    g.drawFastVLine(HALF, BAR_Y, bh, BG);
-    g.setFont(&fonts::FreeSansBold18pt7b);
-    g.setTextDatum(middle_center);
-    g.setTextColor(TFT_WHITE, armBg);
-    g.drawString(armed ? "ARMED" : "ARM", HALF / 2, BAR_Y + bh / 2);
-    g.setTextColor(TFT_WHITE, TFT_RED);
-    g.drawString("STOP", HALF + HALF / 2, BAR_Y + bh / 2);
+    // saturated red. The left half is one control with three faces:
+    //   disarmed            -> ARM   (dark grey)
+    //   armed, can start    -> START (bright green: this is the call to action)
+    //   armed otherwise     -> ARMED (dark green; tap disarms)
+    const bool canStart = armed && !running && beltUp;
+    const char* label = !armed ? "ARM" : (canStart ? "START" : "ARMED");
+    const uint16_t armBg = !armed ? ARM_OFF : (canStart ? ARM_GO : ARM_ON);
+    barButton(g, 0, armBg, label);
+    barButton(g, HALF, TFT_RED, "STOP");
+    barDivider(g);
 
-    if (canvasOk) canvas.pushSprite(0, 0);
+    finishFrame(100 + (armed ? 1 : 0) + (canStart ? 2 : 0) + (centiKmh > 0 ? 4 : 0) + (sim_ ? 8 : 0));
+}
+
+void Ui::renderWizard(const wizard::Screen& s, bool sim) {
+    lgfx::LovyanGFX& g = target();
+    g.fillScreen(BG);
+
+    g.setTextDatum(middle_left);
+    g.setFont(&fonts::FreeSansBold12pt7b);
+    g.setTextColor(TFT_WHITE, BG);
+    g.drawString(s.title, 8, 14);
+
+    // Progress ("STEP 2 OF 5") and, when it applies, the amber SIM BELT tag.
+    char buf[24];
+    snprintf(buf, sizeof buf, "STEP %u OF %u", s.stepNo, s.stepTotal);
+    g.setFont(&fonts::FreeSans9pt7b);
+    g.setTextColor(DIM, BG);
+    g.drawString(buf, 8, 38);
+    if (sim) {
+        g.fillCircle(HALF + 28, 38, 7, TFT_ORANGE);
+        g.setTextColor(TFT_ORANGE, BG);
+        g.drawString("SIM BELT", HALF + 42, 38);
+    }
+
+    // What the user has to do next: the largest, whitest text on the screen.
+    g.setFont(&fonts::FreeSansBold12pt7b);
+    g.setTextColor(TFT_WHITE, BG);
+    g.drawString(s.action[0], 8, 68);
+    g.drawString(s.action[1], 8, 94);
+
+    g.setFont(&fonts::FreeSans9pt7b);
+    g.setTextColor(DIM, BG);
+    for (int i = 0; i < 4; ++i)
+        if (s.detail[i][0]) g.drawString(s.detail[i], 8, 121 + 17 * i);
+
+    barButton(g, 0, BTN_GREY, s.left);
+    barButton(g, HALF, ARM_GO, s.right);
+    barDivider(g);
+
+    finishFrame(s.phase);
 }

@@ -32,9 +32,16 @@ struct BeltLink::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
         owner.found_ = true;
         owner.foundAddr_ = d->getAddress().toString();
         owner.foundType_ = d->getAddressType();
+        owner.lastFoundAddr_ = owner.foundAddr_;
+        owner.phase_.store(Phase::Found);
     }
     void onDisconnect(NimBLEClient*, int) override { owner.onDown(); }
 };
+
+std::string BeltLink::foundAddress() const {
+    std::lock_guard<std::mutex> g(foundMu_);
+    return lastFoundAddr_;
+}
 
 bool BeltLink::begin() {
     if (begun_) return true;
@@ -75,6 +82,7 @@ void BeltLink::worker() {
         }
         NimBLEScan* scan = NimBLEDevice::getScan();
         if (!found) {
+            phase_.store(Phase::Scanning);
             if (!scan->isScanning()) {
                 scan->clearResults();
                 scan->start(0, false, true);  // until stopped
@@ -94,6 +102,7 @@ bool BeltLink::connectOnce() {
         addr = NimBLEAddress(foundAddr_, foundType_);
         found_ = false;
     }
+    phase_.store(Phase::Connecting);
     if (!client_->connect(addr)) return false;
 
     NimBLERemoteService* svc = client_->getService(kSvc);
@@ -114,6 +123,7 @@ bool BeltLink::connectOnce() {
         cmd_ = cmd;
     }
     linked_.store(true);
+    phase_.store(Phase::Linked);
     if (!client_->isConnected()) {  // dropped while we were publishing
         onDown();
         return false;

@@ -51,6 +51,12 @@ public:
     bool requestStatus() override;            // the FE02 write; paced by BeltGate
     bool linkUp() const override { return linked_.load(); }
 
+    // What the worker is doing right now; the setup wizard shows it.
+    enum class Phase : uint8_t { Idle, Scanning, Found, Connecting, Linked };
+    Phase phase() const { return phase_.load(); }
+    // Address of the most recent belt seen (empty if none yet).
+    std::string foundAddress() const;
+
 private:
     struct Impl;  // callback glue, defined in the .cpp
     bool send(const wilink::Frame& f);
@@ -61,6 +67,8 @@ private:
     bool connectOnce();
 
     std::atomic<bool> linked_{false};
+    std::atomic<Phase> phase_{Phase::Idle};
+    std::string lastFoundAddr_;  // under foundMu_
 
     std::mutex gattMu_;  // guards cmd_ (the FE02 handle) for the write path
     NimBLERemoteCharacteristic* cmd_ = nullptr;
@@ -73,7 +81,7 @@ private:
     NimBLEClient* client_ = nullptr;
     Impl* impl_ = nullptr;
     // Set by the scan callback (host task), consumed by the worker.
-    std::mutex foundMu_;
+    mutable std::mutex foundMu_;
     bool found_ = false;
     std::string foundAddr_;
     uint8_t foundType_ = 0;

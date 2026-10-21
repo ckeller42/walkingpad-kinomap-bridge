@@ -25,3 +25,6 @@ void test_target_dropped_while_belt_down_starts_after_reconnect(void);
 void test_observed_stopped_clears_running_and_resets_policy(void);
 void test_observed_stopped_when_not_running_emits_nothing(void);
 void test_target_after_observed_stop_starts_the_belt_again(void);
+void test_ui_start_while_disarmed_emits_nothing(void);
+void test_ui_start_armed_runs_start_sequence_and_notifies(void);
+void test_ui_start_with_belt_down_or_already_running_emits_nothing(void);

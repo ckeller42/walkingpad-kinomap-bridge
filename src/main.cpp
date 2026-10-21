@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <M5Unified.h>
+#include <Preferences.h>
 
 #include <mutex>
 
@@ -7,10 +8,12 @@
 #include "belt_link.h"
 #include "bridge_state.h"
 #include "config.h"
+#include "console_cmd.h"
 #include "ftms_server.h"
 #include "sim_belt.h"
 #include "speed_policy.h"
 #include "ui.h"
+#include "wizard.h"
 
 // Both belts are always built; setup() binds one at boot, so the binary that
 // passes stage 1 (simulated) is the binary that meets the real belt.
@@ -68,6 +71,8 @@ static void applyOutcome(const policy::Outcome& o) {
                 pendingSinceMs = millis();
                 break;
             case policy::Emit::NotifyStarted:
+                // 2ADA 0x04: this is what makes Kinomap begin its session.
+                Serial.printf("notify started (2ADA 04), phone=%d\n", (int)bleServer.phoneConnected());
                 bleServer.notifyStarted();
                 break;
             case policy::Emit::ResetPolicy:
@@ -131,6 +136,212 @@ static void trackBelt() {
     }
 }
 
+// ---- setup wizard -------------------------------------------------------
+// First boot (no stored "setup_done" flag) opens the wizard; tapping the BELT
+// indicator on the main screen re-opens it (only while the belt is stopped).
+static Preferences prefs;
+static wizard::Wizard wiz;
+static bool inWizard = false;
+static bool simSource = false;
+static uint32_t scanEnterMs = 0;
+static bool wizDirty = true;
+static int lastWizPhase = -1;
+static char foundAddrBuf[24] = "";
+// Speed requested by the on-screen START: Kinomap sends no target until the
+// belt moves, so the bridge has to get it moving. 2.0 km/h, a gentle start.
+static constexpr uint8_t kUiStartTenths = 20;
+
+#if UI_SCREENSHOT
+// Screenshot builds script a tour of every screen: the wizard is driven with
+// real button presses but SYNTHETIC belt inputs (there is no belt on the
+// bench), then the main screen runs on the real simulated belt.
+static constexpr uint32_t kDemoDwellMs = 4000;
+static constexpr int kDemoLast = 13;
+static uint32_t demoT0 = 0;
+static int demoIdx = -1;
+static wizard::Inputs demoIn;
+#endif
+
+static void enterWizard(uint32_t now) {
+    applyOutcome(state.setArmed(false));  // nothing may start the belt mid-setup
+    wiz.start(simSource);
+    inWizard = true;
+    wizDirty = true;
+    scanEnterMs = now;
+    ui.setWizardMode(true);
+    (void)ui.tookArmButton(); (void)ui.tookStop(); (void)ui.tookSetupTap();
+}
+
+static void leaveWizard(bool completed) {
+    inWizard = false;
+    ui.setWizardMode(false);
+    wizDirty = true;
+    (void)ui.tookWizardLeft(); (void)ui.tookWizardRight();
+    if (completed) {
+#if !UI_SCREENSHOT
+        prefs.putBool("setup_done", true);
+#endif
+        Serial.println("setup: complete");
+    }
+}
+
+static wizard::Inputs wizInputs(uint32_t now) {
+#if UI_SCREENSHOT
+    if (demoIdx >= 0 && demoIdx < 8) {
+        demoIn.scanSec = demoIdx == 2 ? 40 : 4;
+        return demoIn;
+    }
+#endif
+    wizard::Inputs in;
+    in.sim = simSource;
+    in.beltUp = theBelt.linkUp() && beltFresh();
+    in.scanSec = (now - scanEnterMs) / 1000;
+    if (!simSource) {
+        switch (beltLink.phase()) {
+            case BeltLink::Phase::Scanning: in.scan = wizard::ScanPhase::Scanning; break;
+            case BeltLink::Phase::Found: in.scan = wizard::ScanPhase::Found; break;
+            case BeltLink::Phase::Connecting: in.scan = wizard::ScanPhase::Connecting; break;
+            default: break;
+        }
+        snprintf(foundAddrBuf, sizeof foundAddrBuf, "%s", beltLink.foundAddress().c_str());
+        in.foundAddr = foundAddrBuf;
+    }
+    return in;
+}
+
+static void wizPress(wizard::Btn b, uint32_t now) {
+    const wizard::Inputs in = wizInputs(now);
+    const wizard::Step before = wiz.step();
+    const wizard::Result r = wiz.press(b, in);
+    if (wiz.step() == wizard::Step::Scan && before != wizard::Step::Scan) scanEnterMs = now;
+    wizDirty = true;
+    if (r == wizard::Result::Later) leaveWizard(false);
+    else if (r == wizard::Result::Finished) leaveWizard(true);
+}
+
+#if UI_SCREENSHOT
+// Any console command ends the scripted tour, so scripted captures are deterministic.
+static void demoCancel() {
+    if (demoIdx >= kDemoLast) return;
+    demoIdx = kDemoLast;
+    if (inWizard) leaveWizard(false);
+}
+
+static void demoAdvance(int i, uint32_t now) {
+    switch (i) {
+        case 0: demoIn = wizard::Inputs{}; wiz.start(false); inWizard = true; ui.setWizardMode(true); break;
+        case 1: demoIn.scan = wizard::ScanPhase::Scanning; wizPress(wizard::Btn::Right, now); break;
+        case 2: break;  // same screen, 40 s in: the "not found yet" hint
+        case 3: demoIn.scan = wizard::ScanPhase::Found; demoIn.foundAddr = "AA:BB:CC:DD:EE:01"; break;
+        case 4: demoIn.beltUp = true; break;  // update() advances to Linked
+        case 5: wizPress(wizard::Btn::Right, now); break;
+        case 6: wizPress(wizard::Btn::Right, now); break;
+        case 7: demoIn = wizard::Inputs{}; demoIn.sim = true; wiz.start(true); break;
+        case 8: leaveWizard(false); break;  // main screen, disarmed
+        case 9: applyOutcome(state.setArmed(true)); break;
+        case 10: applyOutcome(state.startFromUi(kUiStartTenths)); break;  // real START path
+        case 11: case 12: break;  // belt counts down, then ramps: new frames land by themselves
+        case 13: applyOutcome(state.stopFromUi()); break;
+    }
+    wizDirty = true;
+}
+#endif
+
+// ---- serial console -----------------------------------------------------
+// One command per line on the USB-CDC serial (the only remote control surface
+// this board has). Every command ends with exactly one "ok" / "err <reason>"
+// line. Commands run the same paths as the touch UI: BridgeState, applyOutcome
+// and (through it) BeltGate. Nothing here talks to the belt directly.
+static console::LineBuffer conLine;
+static bool shotPending = false;  // "shot" replies after the next frame is drawn
+
+static const char* stepName() {
+    if (!inWizard) return "off";
+    switch (wiz.step()) {
+        case wizard::Step::Welcome: return "welcome";
+        case wizard::Step::Scan: return "scan";
+        case wizard::Step::Linked: return "linked";
+        case wizard::Step::Arm: return "arm";
+        case wizard::Step::Done: return "done";
+        case wizard::Step::SimInfo: return "siminfo";
+    }
+    return "?";
+}
+
+static void consoleStatus() {
+    const bool fresh = beltFresh();
+    // speed in 0.1 km/h, target in 0.01 km/h (as Kinomap sends it), so every
+    // value is an integer a host script can compare.
+    Serial.printf(
+        "status armed=%d running=%d belt_link=%d phone_link=%d belt_state=%d "
+        "speed=%u target=%u wizard=%s src=%s setup_done=%d\n",
+        (int)state.armed(), (int)state.beltRunning(), (int)(theBelt.linkUp() && fresh),
+        (int)bleServer.phoneConnected(), fresh ? (int)lastStatus.beltState : -1,
+        fresh ? (unsigned)lastStatus.tenthKmh : 0u, (unsigned)targetCenti, stepName(),
+        simSource ? "sim" : "real", (int)prefs.getBool("setup_done", false));
+}
+
+static void consoleRun(const char* line, bool overflow, uint32_t now) {
+    using console::Cmd;
+#if UI_SCREENSHOT
+    demoCancel();
+#endif
+    if (overflow) { Serial.println("err line-too-long"); return; }
+    wizDirty = true;  // whatever happens, redraw
+    switch (console::parse(line)) {
+        case Cmd::Empty:
+            return;
+        case Cmd::Status:
+            consoleStatus();
+            break;
+        case Cmd::Arm:
+            if (inWizard) { Serial.println("err wizard-active"); return; }
+            applyOutcome(state.setArmed(true));
+            break;
+        case Cmd::Disarm:
+            applyOutcome(state.setArmed(false));
+            break;
+        case Cmd::Start:
+            if (inWizard) { Serial.println("err wizard-active"); return; }
+            if (!state.armed()) { Serial.println("err not-armed"); return; }
+            if (state.beltRunning()) { Serial.println("err already-running"); return; }
+            if (!(theBelt.linkUp() && beltFresh())) { Serial.println("err belt-down"); return; }
+            applyOutcome(state.startFromUi(kUiStartTenths));
+            break;
+        case Cmd::Stop:
+            applyOutcome(state.stopFromUi());  // also disarms, like the button
+            break;
+        case Cmd::SimOn:
+        case Cmd::SimOff: {
+            // The belt source (and the BeltGate wrapped around it) is bound at
+            // boot; switching live would orphan a pending start. Honest answer.
+            const bool want = console::parse(line) == Cmd::SimOn;
+            if (want != simSource) { Serial.println("err reboot-required"); return; }
+            break;
+        }
+        case Cmd::Wizard:
+            if (state.beltRunning()) { Serial.println("err belt-running"); return; }
+            enterWizard(now);
+            break;
+        case Cmd::WizardNext:
+        case Cmd::WizardBack:
+            if (!inWizard) { Serial.println("err not-in-wizard"); return; }
+            wizPress(console::parse(line) == Cmd::WizardNext ? wizard::Btn::Right : wizard::Btn::Left, now);
+            break;
+        case Cmd::Shot:
+            shotPending = true;  // answered once the frame has been drawn and emitted
+            return;
+        case Cmd::Help:
+            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | shot | help");
+            break;
+        case Cmd::Unknown:
+        case Cmd::TooLong:
+            Serial.println("err unknown-command");
+            return;
+    }
+    Serial.println("ok");
+}
+
 void setup() {
     auto cfg = M5.config();
     M5.begin(cfg);
@@ -157,6 +368,7 @@ void setup() {
     bool sim = USE_SIM_BELT;
     if (M5.Touch.getCount() > 0) sim = !sim;
     Serial.printf("belt source: %s\n", sim ? "SimBelt" : "BeltLink");
+    simSource = sim;
     belt::Belt& chosen = sim ? static_cast<belt::Belt&>(simBelt)
                              : static_cast<belt::Belt&>(beltLink);
     ui.setSim(sim);
@@ -164,8 +376,19 @@ void setup() {
     // BeltLink shares the NimBLE stack, so only start it after bleServer.begin().
     if (!sim && !beltLink.begin()) Serial.println("belt link task failed to start");
 
+    prefs.begin("bridge", false);
+    const bool setupDone = prefs.getBool("setup_done", false);
+    Serial.printf("setup: %s\n", setupDone ? "already done" : "first boot, starting wizard");
+
     std::lock_guard<std::recursive_mutex> g(mtx);
-    ui.render(0, 0, 0, false, false, state.armed());  // boots disarmed
+#if UI_SCREENSHOT
+    demoT0 = millis();  // the tour is started by demoAdvance(0) from loop()
+    (void)setupDone;
+    ui.render(0, 0, 0, false, false, state.armed(), false);
+#else
+    if (!setupDone) enterWizard(millis());
+    else ui.render(0, 0, 0, false, false, state.armed(), false);  // boots disarmed
+#endif
 }
 
 void loop() {
@@ -176,18 +399,42 @@ void loop() {
     bool redraw = false;
     uint16_t centi;
     uint32_t dist, elapsed;
-    bool beltUp, phoneUp, armed;
+    bool beltUp, phoneUp, armed, running;
+    wizard::Screen wscreen;
+    // (console `shot` forces a redraw via wizDirty so the frame is current)
+    bool wizSim = false;
     {
         std::lock_guard<std::recursive_mutex> g(mtx);
         trackPhone();
         trackBelt();
-        if (ui.tookArmToggle()) {
-            applyOutcome(state.setArmed(!state.armed()));
-            redraw = true;
+        const uint32_t now = millis();
+        while (Serial.available()) {
+            if (conLine.feed((char)Serial.read())) consoleRun(conLine.line(), conLine.overflowed(), now);
         }
-        if (ui.tookStop()) {
-            applyOutcome(state.stopFromUi());  // also disarms
-            redraw = true;
+#if UI_SCREENSHOT
+        while (demoIdx < kDemoLast && demoIdx < (int)((now - demoT0) / kDemoDwellMs))
+            demoAdvance(++demoIdx, now);
+#endif
+        if (inWizard) {
+            // The wizard owns the touch zones. The bridge stays disarmed here
+            // (see enterWizard); FTMS Stop/Pause below still works.
+            if (ui.tookWizardLeft()) wizPress(wizard::Btn::Left, now);
+            if (inWizard && ui.tookWizardRight()) wizPress(wizard::Btn::Right, now);
+        } else {
+            if (ui.tookArmButton()) {
+                const bool canStart =
+                    state.armed() && !state.beltRunning() && theBelt.linkUp() && beltFresh();
+                if (!state.armed()) applyOutcome(state.setArmed(true));
+                else if (canStart) applyOutcome(state.startFromUi(kUiStartTenths));
+                else applyOutcome(state.setArmed(false));  // ARMED face: tap disarms
+                redraw = true;
+            }
+            if (ui.tookStop()) {
+                applyOutcome(state.stopFromUi());  // also disarms
+                redraw = true;
+            }
+            // Re-open setup, but never under a moving belt.
+            if (ui.tookSetupTap() && !state.beltRunning()) enterWizard(now);
         }
         if (stopRequested) {  // FTMS Stop/Pause: honour it
             stopRequested = false;
@@ -199,7 +446,6 @@ void loop() {
             auto d = speedPolicy.onTarget(targetCenti, millis());
             applyOutcome(state.apply(d));
         }
-        uint32_t now = millis();
         theBelt.tick(now);  // paced belt writes
         if (now - lastTick >= 1000) {
             lastTick = now;
@@ -226,8 +472,30 @@ void loop() {
         beltUp = theBelt.linkUp() && fresh;
         phoneUp = bleServer.phoneConnected();
         armed = state.armed();
+        running = state.beltRunning();
+        if (inWizard) {
+            const wizard::Inputs in = wizInputs(now);
+            if (wiz.update(in)) {
+                if (wiz.step() == wizard::Step::Scan) scanEnterMs = now;
+                wizDirty = true;
+            }
+            wscreen = wiz.screen(in);
+            wizSim = in.sim;
+            if (wscreen.phase != lastWizPhase) { lastWizPhase = wscreen.phase; wizDirty = true; }
+        } else {
+            lastWizPhase = -1;
+        }
     }
     // Drawing (~150 KB sprite push) happens outside the lock.
-    if (redraw) ui.render(centi, dist, elapsed, beltUp, phoneUp, armed);
+    if (inWizard) {
+        if (wizDirty || redraw) { wizDirty = false; ui.renderWizard(wscreen, wizSim); }
+    } else if (redraw || wizDirty) {
+        wizDirty = false;
+        ui.render(centi, dist, elapsed, beltUp, phoneUp, armed, running);
+    }
+    if (shotPending) {
+        shotPending = false;
+        Serial.println(ui.shotNow() ? "ok" : "err not-built");
+    }
     delay(20);
 }

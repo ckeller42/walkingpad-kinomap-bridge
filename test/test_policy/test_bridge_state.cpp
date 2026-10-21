@@ -231,3 +231,32 @@ void test_target_after_observed_stop_starts_the_belt_again(void) {
     auto o = s.apply({policy::Action::SetSpeed, 40});
     TEST_ASSERT_EQUAL(policy::Emit::StartSequence, o.emits[0]);
 }
+
+void test_ui_start_while_disarmed_emits_nothing(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true);
+    auto o = s.startFromUi(20);
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+    TEST_ASSERT_FALSE(s.beltRunning());
+}
+
+void test_ui_start_armed_runs_start_sequence_and_notifies(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    auto o = s.startFromUi(20);
+    TEST_ASSERT_EQUAL_size_t(3, o.count);
+    TEST_ASSERT_EQUAL(policy::Emit::StartSequence, o.emits[0]);
+    TEST_ASSERT_EQUAL(policy::Emit::NotifyStarted, o.emits[1]);
+    TEST_ASSERT_EQUAL(policy::Emit::ResetPolicy, o.emits[2]);
+    TEST_ASSERT_EQUAL_UINT8(20, o.tenthKmh);
+    TEST_ASSERT_TRUE(s.beltRunning());
+}
+
+void test_ui_start_with_belt_down_or_already_running_emits_nothing(void) {
+    policy::BridgeState s;
+    (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    TEST_ASSERT_EQUAL_size_t(0, s.startFromUi(20).count);   // belt link down
+    (void)s.onBeltLink(true);
+    (void)s.startFromUi(20);
+    TEST_ASSERT_EQUAL_size_t(0, s.startFromUi(20).count);   // already running
+}
