@@ -143,10 +143,30 @@ void test_speed_value_parsing(void) {
     TEST_ASSERT_EQUAL(SpeedArg::Bad, parseSpeedArg("speed 3.5x", 50, 600, t));
 }
 
+// "url" has to be its own word: "ota urlhttp://x" used to be accepted as the
+// URL "http://x", so a typo became a stored setting with no complaint.
+void test_ota_url_requires_a_separator_after_url(void) {
+    char u[160];
+    TEST_ASSERT_TRUE(parseOtaUrlArg("ota url http://example.invalid/m.json", u, sizeof u));
+    TEST_ASSERT_EQUAL_STRING("http://example.invalid/m.json", u);
+
+    TEST_ASSERT_FALSE(parseOtaUrlArg("ota urlhttp://example.invalid/m.json", u, sizeof u));
+
+    // "ota url" alone still clears the stored value.
+    TEST_ASSERT_TRUE(parseOtaUrlArg("ota url", u, sizeof u));
+    TEST_ASSERT_EQUAL_STRING("", u);
+
+    // Case and surrounding whitespace stay forgiving.
+    TEST_ASSERT_TRUE(parseOtaUrlArg("  OTA URL  https://x/y  ", u, sizeof u));
+    TEST_ASSERT_EQUAL_STRING("https://x/y", u);
+}
+
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_every_documented_command_parses);
     RUN_TEST(test_wifi_arg_preserves_case_and_spaces);
+    RUN_TEST(test_ota_url_requires_a_separator_after_url);
     RUN_TEST(test_case_and_whitespace_are_forgiven);
     RUN_TEST(test_unknown_and_prefix_commands_are_unknown_not_silent);
     RUN_TEST(test_blank_line_is_empty);

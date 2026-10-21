@@ -58,6 +58,9 @@ bool parseOtaUrlArg(const char* rawLine, char* url, size_t cap) {
     while (*p == ' ' || *p == '\t') ++p;
     if (strncasecmp(p, "url", 3) != 0) return false;
     p += 3;
+    // "url" must be its own word. Without this, "ota urlhttp://x" was accepted
+    // as the URL "http://x" - a typo silently stored as a real setting.
+    if (*p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') return false;
     while (*p == ' ' || *p == '\t') ++p;
     if (*p == 0 || *p == '\r' || *p == '\n') return true;  // "ota url" alone: forget
     const char* end = p;
