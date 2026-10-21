@@ -1,0 +1,22 @@
+#pragma once
+// Test cases defined in test_bridge_state.cpp, registered in test_speed_policy.cpp's main().
+void test_disarmed_target_emits_nothing(void);
+void test_arming_alone_does_not_start_the_belt(void);
+void test_armed_target_on_stopped_belt_runs_start_sequence_then_notifies(void);
+void test_armed_target_on_running_belt_is_a_plain_set_speed(void);
+void test_phone_link_loss_stops_the_belt_but_stays_armed(void);
+void test_reconnect_does_not_restart_the_belt_by_itself(void);
+void test_ui_stop_works_while_disarmed(void);
+void test_belt_link_loss_stops_notifications(void);
+void test_phone_link_loss_while_running_emits_stop(void);
+void test_phone_link_loss_while_stopped_emits_nothing(void);
+void test_repeated_phone_link_loss_is_idempotent(void);
+void test_disarmed_stop_decision_still_emits_stop(void);
+void test_armed_setspeed_with_belt_link_down_emits_nothing(void);
+void test_armed_setspeed_with_phone_link_down_emits_nothing(void);
+void test_notifying_false_when_phone_link_down(void);
+void test_ui_stop_clears_running_and_reports_one_stop(void);
+void test_ui_stop_disarms_so_next_target_emits_nothing(void);
+void test_arming_emits_reset_policy_once(void);
+void test_belt_link_loss_while_running_emits_reset_policy(void);
+void test_none_decision_emits_nothing(void);

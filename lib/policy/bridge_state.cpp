@@ -2,18 +2,42 @@
 
 namespace policy {
 
-void BridgeState::onBeltLink(bool up) {
-    beltUp_ = up;
-    if (!up) running_ = false;
+namespace {
+Outcome empty(uint8_t tenth = 0) {
+    return Outcome{{Emit::None, Emit::None, Emit::None}, 0, tenth};
+}
+}  // namespace
+
+Outcome BridgeState::setArmed(bool armed) {
+    Outcome o = empty();
+    if (armed && !armed_) o.emits[o.count++] = Emit::ResetPolicy;
+    armed_ = armed;
+    return o;
 }
 
-void BridgeState::onPhoneLink(bool up) {
+Outcome BridgeState::onBeltLink(bool up) {
+    Outcome o = empty();
+    beltUp_ = up;
+    if (!up && running_) {
+        running_ = false;
+        o.emits[o.count++] = Emit::ResetPolicy;
+    }
+    return o;
+}
+
+Outcome BridgeState::onPhoneLink(bool up) {
+    Outcome o = empty();
     phoneUp_ = up;
-    if (!up) running_ = false;
+    if (!up && running_) {  // build the outcome before clearing running_
+        o.emits[o.count++] = Emit::Stop;
+        o.emits[o.count++] = Emit::ResetPolicy;
+        running_ = false;
+    }
+    return o;
 }
 
 Outcome BridgeState::apply(const Decision& d) {
-    Outcome o = {{Emit::None, Emit::None, Emit::None}, 0, d.tenthKmh};
+    Outcome o = empty(d.tenthKmh);
     switch (d.action) {
     case Action::None:
         break;
@@ -23,11 +47,14 @@ Outcome BridgeState::apply(const Decision& d) {
         running_ = false;
         break;
     case Action::SetSpeed:
-        // Disarmed (or belt unreachable): accepted and ignored.
-        if (!armed_ || !beltUp_) break;
+        // Disarmed or either link down: accepted and ignored.
+        if (!armed_ || !beltUp_ || !phoneUp_) break;
         if (running_) {
             o.emits[o.count++] = Emit::SetSpeed;
         } else {
+            // A belt reconnect may re-emit StartSequence and a duplicate
+            // NotifyStarted to a Kinomap session that already started. This
+            // is accepted; do not add a latch, it could swallow a real restart.
             o.emits[o.count++] = Emit::StartSequence;
             o.emits[o.count++] = Emit::NotifyStarted;
             running_ = true;
@@ -38,8 +65,11 @@ Outcome BridgeState::apply(const Decision& d) {
 }
 
 Outcome BridgeState::stopFromUi() {
-    Outcome o = {{Emit::Stop, Emit::None, Emit::None}, 1, 0};
+    Outcome o = empty();
+    o.emits[o.count++] = Emit::Stop;
+    o.emits[o.count++] = Emit::ResetPolicy;
     running_ = false;
+    armed_ = false;
     return o;
 }
 

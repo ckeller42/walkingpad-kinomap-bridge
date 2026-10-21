@@ -1,14 +1,6 @@
 #include <unity.h>
 #include "speed_policy.h"
-
-void test_disarmed_target_emits_nothing(void);
-void test_arming_alone_does_not_start_the_belt(void);
-void test_armed_target_on_stopped_belt_runs_start_sequence_then_notifies(void);
-void test_armed_target_on_running_belt_is_a_plain_set_speed(void);
-void test_phone_link_loss_stops_the_belt_but_stays_armed(void);
-void test_reconnect_does_not_restart_the_belt_by_itself(void);
-void test_ui_stop_works_while_disarmed(void);
-void test_belt_link_loss_stops_notifications(void);
+#include "cases.h"
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -207,5 +199,17 @@ int main(int, char**) {
     RUN_TEST(test_reconnect_does_not_restart_the_belt_by_itself);
     RUN_TEST(test_ui_stop_works_while_disarmed);
     RUN_TEST(test_belt_link_loss_stops_notifications);
+    RUN_TEST(test_phone_link_loss_while_running_emits_stop);
+    RUN_TEST(test_phone_link_loss_while_stopped_emits_nothing);
+    RUN_TEST(test_repeated_phone_link_loss_is_idempotent);
+    RUN_TEST(test_disarmed_stop_decision_still_emits_stop);
+    RUN_TEST(test_armed_setspeed_with_belt_link_down_emits_nothing);
+    RUN_TEST(test_armed_setspeed_with_phone_link_down_emits_nothing);
+    RUN_TEST(test_notifying_false_when_phone_link_down);
+    RUN_TEST(test_ui_stop_clears_running_and_reports_one_stop);
+    RUN_TEST(test_ui_stop_disarms_so_next_target_emits_nothing);
+    RUN_TEST(test_arming_emits_reset_policy_once);
+    RUN_TEST(test_belt_link_loss_while_running_emits_reset_policy);
+    RUN_TEST(test_none_decision_emits_nothing);
     return UNITY_END();
 }
