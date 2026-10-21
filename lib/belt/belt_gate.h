@@ -12,6 +12,8 @@
 // Send order is stop > mode > start > speed. stop() discards everything
 // queued and is re-sent until a poll shows the belt stopped (speed 0, state
 // 0 or 4), because a lost stop leaves the belt running with nobody holding it.
+// stop() is skipped (no beep) only when a recent poll, with no write since,
+// already shows the belt idle; stale data never suppresses a stop.
 // Plain C++, no Arduino types; time arrives through tick().
 namespace belt {
 
@@ -31,9 +33,8 @@ public:
     // elapsed. Call often (every loop pass is fine).
     void tick(uint32_t nowMs);
 
-    bool stopOutstanding() const { return stopWanted_; }
-
 private:
+    static constexpr uint32_t kFreshMs = 1500;  // a poll older than this is stale
     Belt& inner_;
     uint32_t gapMs_, retryMs_;
     uint32_t now_ = 0, lastWriteMs_ = 0, lastStopMs_ = 0;
@@ -50,10 +51,15 @@ private:
     bool speedQueued_ = false;
     uint8_t speed_ = 0;
     uint8_t lastSpeed_ = 0;
-    bool haveStatus_ = false;
+    // True from a poll until the next inner write: only then does lastIdle_
+    // describe the belt as it is now rather than before our last command.
+    bool statusFresh_ = false;
+    bool lastIdle_ = false;
+    uint32_t lastPollMs_ = 0;
 
     void cancelStop() { stopWanted_ = stopQueued_ = stopSent_ = false; }
-    void wrote() { haveWritten_ = true; lastWriteMs_ = now_; }
+    void wrote() { haveWritten_ = true; lastWriteMs_ = now_; statusFresh_ = false; }
+    bool knownIdle() const;
 };
 
 }  // namespace belt

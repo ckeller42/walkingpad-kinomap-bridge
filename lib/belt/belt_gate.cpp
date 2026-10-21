@@ -20,8 +20,13 @@ void BeltGate::start() {
     startQueued_ = true;
 }
 
+bool BeltGate::knownIdle() const {
+    return statusFresh_ && lastIdle_ && (now_ - lastPollMs_) <= kFreshMs;
+}
+
 void BeltGate::stop() {
     modeQueued_ = startQueued_ = speedQueued_ = false;
+    if (knownIdle()) { cancelStop(); return; }
     stopWanted_ = stopQueued_ = true;
     stopSent_ = false;
 }
@@ -29,9 +34,11 @@ void BeltGate::stop() {
 bool BeltGate::poll(wilink::Status& out) {
     if (!inner_.poll(out)) return false;
     lastSpeed_ = out.tenthKmh;
-    haveStatus_ = true;
+    lastPollMs_ = now_;
+    statusFresh_ = true;
+    lastIdle_ = out.tenthKmh == 0 && (out.beltState == 0 || out.beltState == 4);
     if (stopWanted_ && stopSent_) {
-        if (out.tenthKmh == 0 && (out.beltState == 0 || out.beltState == 4)) {
+        if (lastIdle_) {
             cancelStop();  // confirmed stopped
         } else if (now_ - lastStopMs_ >= retryMs_ && out.tenthKmh >= speedAtStop_) {
             stopQueued_ = true;  // no sign of deceleration: the stop was lost

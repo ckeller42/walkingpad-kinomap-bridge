@@ -1,0 +1,12 @@
+#pragma once
+// Defined in test_belt_gate.cpp, registered in test_sim_belt.cpp's main().
+void test_gate_mode_then_start_are_at_least_a_gap_apart(void);
+void test_gate_stop_after_start_drops_queued_start_and_goes_on_next_clear_tick(void);
+void test_gate_ignored_stop_is_resent_until_poll_shows_stopped(void);
+void test_gate_state_zero_also_confirms_stop(void);
+void test_gate_two_speeds_in_one_gap_only_newest_written(void);
+void test_gate_stop_while_start_pending_clears_the_start(void);
+void test_gate_spacing_survives_millis_wraparound(void);
+void test_gate_stop_skipped_when_fresh_poll_shows_idle(void);
+void test_gate_stop_not_skipped_on_stale_poll(void);
+void test_gate_stop_not_skipped_after_a_write_since_the_poll(void);

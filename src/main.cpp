@@ -77,10 +77,13 @@ static void applyOutcome(const policy::Outcome& o) {
     }
 }
 
-static void driveStart(const wilink::Status& st, uint32_t now) {
+static void driveStart(const wilink::Status& st, uint8_t prevTenths, uint32_t now) {
     if (!startPending) return;
     if (st.beltState == 7) sawCountdown = true;
-    if (st.beltState == 1 || (st.beltState == 6 && sawCountdown)) {
+    // State 6 is also "decelerating". Accept it as ramping up if a countdown
+    // was seen, or (the 1 Hz poll can miss the 3 s countdown) speed is rising.
+    const bool rising = st.tenthKmh > prevTenths;
+    if (st.beltState == 1 || (st.beltState == 6 && (sawCountdown || rising))) {
         theBelt.setSpeed(pendingTenths);
         startPending = false;
     } else if (now - pendingSinceMs > START_TIMEOUT_MS) {
@@ -163,9 +166,10 @@ void loop() {
             simBelt.tick(now);
             wilink::Status st{};
             if (theBelt.poll(st)) {
+                const uint8_t prevTenths = lastStatus.tenthKmh;
                 lastStatus = st;
                 speedPolicy.onBeltSpeed(st.tenthKmh);
-                driveStart(st, now);
+                driveStart(st, prevTenths, now);
                 if (state.beltRunning() && !startPending && st.tenthKmh == 0 &&
                     (st.beltState == 0 || st.beltState == 4))
                     applyOutcome(state.onBeltObservedStopped());
