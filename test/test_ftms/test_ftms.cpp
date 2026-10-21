@@ -61,10 +61,66 @@ void test_parse_empty_buffer_is_invalid(void) {
 }
 
 void test_success_response_shape(void) {
-    auto b = ftms::controlPointSuccess(ftms::CpOp::SetTargetSpeed);
+    auto b = ftms::controlPointSuccess(0x02);
     const uint8_t want[] = {0x80, 0x02, 0x01};
     TEST_ASSERT_EQUAL_size_t(3, b.len);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(want, b.bytes, 3);
+}
+
+void test_success_response_echoes_unknown_opcode(void) {
+    auto b = ftms::controlPointSuccess(0x05);   // unrecognised, must not become 0xFF
+    const uint8_t want[] = {0x80, 0x05, 0x01};
+    TEST_ASSERT_EQUAL_size_t(3, b.len);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(want, b.bytes, 3);
+}
+
+void test_parse_unknown_opcode_is_valid_and_keeps_raw(void) {
+    const uint8_t buf[] = {0x05};
+    auto r = ftms::parseControlPoint(buf, 1);
+    TEST_ASSERT_EQUAL(ftms::CpOp::Unknown, r.op);
+    TEST_ASSERT_TRUE(r.valid);
+    TEST_ASSERT_EQUAL_HEX8(0x05, r.rawOp);
+}
+
+void test_parse_set_target_speed_keeps_raw(void) {
+    const uint8_t buf[] = {0x02, 0xA4, 0x01};
+    auto r = ftms::parseControlPoint(buf, 3);
+    TEST_ASSERT_EQUAL_HEX8(0x02, r.rawOp);
+}
+
+void test_parse_set_target_speed_at_len_2_is_invalid(void) {
+    const uint8_t buf[] = {0x02, 0xA4};        // one payload byte short
+    auto r = ftms::parseControlPoint(buf, 2);
+    TEST_ASSERT_FALSE(r.valid);
+}
+
+void test_parse_stop_pause_with_param(void) {
+    const uint8_t buf[] = {0x08, 0x01};
+    auto r = ftms::parseControlPoint(buf, 2);
+    TEST_ASSERT_TRUE(r.valid);
+    TEST_ASSERT_EQUAL(ftms::CpOp::StopPause, r.op);
+    TEST_ASSERT_EQUAL_UINT8(1, r.param);
+}
+
+void test_parse_stop_pause_without_param(void) {
+    const uint8_t buf[] = {0x08};
+    auto r = ftms::parseControlPoint(buf, 1);
+    TEST_ASSERT_TRUE(r.valid);
+    TEST_ASSERT_EQUAL(ftms::CpOp::StopPause, r.op);
+    TEST_ASSERT_EQUAL_UINT8(0, r.param);
+}
+
+void test_parse_start_resume(void) {
+    const uint8_t buf[] = {0x07};
+    auto r = ftms::parseControlPoint(buf, 1);
+    TEST_ASSERT_TRUE(r.valid);
+    TEST_ASSERT_EQUAL(ftms::CpOp::StartResume, r.op);
+}
+
+void test_parse_non_null_zero_len_is_invalid(void) {
+    const uint8_t buf[] = {0x02, 0xA4, 0x01};  // bytes present, but len says none
+    auto r = ftms::parseControlPoint(buf, 0);
+    TEST_ASSERT_FALSE(r.valid);
 }
 
 int main(int, char**) {
@@ -78,5 +134,13 @@ int main(int, char**) {
     RUN_TEST(test_parse_truncated_set_target_speed_is_invalid);
     RUN_TEST(test_parse_empty_buffer_is_invalid);
     RUN_TEST(test_success_response_shape);
+    RUN_TEST(test_success_response_echoes_unknown_opcode);
+    RUN_TEST(test_parse_unknown_opcode_is_valid_and_keeps_raw);
+    RUN_TEST(test_parse_set_target_speed_keeps_raw);
+    RUN_TEST(test_parse_set_target_speed_at_len_2_is_invalid);
+    RUN_TEST(test_parse_stop_pause_with_param);
+    RUN_TEST(test_parse_stop_pause_without_param);
+    RUN_TEST(test_parse_start_resume);
+    RUN_TEST(test_parse_non_null_zero_len_is_invalid);
     return UNITY_END();
 }

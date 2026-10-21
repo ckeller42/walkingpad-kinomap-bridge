@@ -39,12 +39,15 @@ enum class CpOp : uint8_t {
 
 // A decoded write to the Control Point (2AD9). centiKmh is only meaningful for
 // SetTargetSpeed; param is only meaningful for StopPause. valid is false when
-// the buffer is too short for the opcode's required payload.
+// the buffer is too short for the opcode's required payload. rawOp is the
+// first byte as written (0 when there was no byte), kept so the response can
+// echo the request opcode even when op is Unknown.
 struct CpRequest {
     CpOp op;
     uint16_t centiKmh;
     uint8_t param;
     bool valid;
+    uint8_t rawOp;
 };
 
 // Decodes a Control Point write. Never reads past len; a null buf is treated
@@ -53,7 +56,8 @@ struct CpRequest {
 CpRequest parseControlPoint(const uint8_t* buf, size_t len);
 
 // Success indication payload for a Control Point request: 0x80, the request
-// opcode, then 0x01 (Success).
-Buf controlPointSuccess(CpOp op);
+// opcode as written (rawOp), then 0x01 (Success). Always reports Success, even
+// for unrecognised opcodes, so the client never retries in a loop.
+Buf controlPointSuccess(uint8_t rawOp);
 
 }  // namespace ftms

@@ -24,10 +24,11 @@ Buf statusStarted() {
 }
 
 CpRequest parseControlPoint(const uint8_t* buf, size_t len) {
-    CpRequest r{CpOp::Unknown, 0, 0, false};
+    CpRequest r{CpOp::Unknown, 0, 0, false, 0};
     if (buf == nullptr || len == 0) {
         return r;
     }
+    r.rawOp = buf[0];
     switch (buf[0]) {
         case static_cast<uint8_t>(CpOp::RequestControl):
             r.op = CpOp::RequestControl;
@@ -60,8 +61,8 @@ CpRequest parseControlPoint(const uint8_t* buf, size_t len) {
     return r;
 }
 
-Buf controlPointSuccess(CpOp op) {
-    return Buf{{0x80, static_cast<uint8_t>(op), 0x01, 0x00, 0x00, 0x00, 0x00, 0x00}, 3};
+Buf controlPointSuccess(uint8_t rawOp) {
+    return Buf{{0x80, rawOp, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00}, 3};
 }
 
 }  // namespace ftms
