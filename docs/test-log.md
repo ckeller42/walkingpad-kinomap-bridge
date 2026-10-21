@@ -209,3 +209,60 @@ every target to 0 km/h. Neither fails visibly — which is why they are checked
 here rather than discovered during a workout.
 
 **Stage 0: PASS.**
+
+## Stage 1 — real Kinomap, real CoreS3, simulated belt, 2026-10-21
+
+Firmware `12f4d2d` (`cores3_sim`). Kinomap 4.7.1 on the Fairphone. Driven via the
+bridge's serial console (`tools/console.py`) and ADB. No treadmill involved.
+
+### Results
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | Appears in FOUND EQUIPMENT by name | **PASS** | listed as `(FTMS) WALKINGPAD BRIDGE`, MAC `44:1B:F6:E1:F5:89` — Kinomap recognised the Fitness Machine Service from the advertisement and tagged it |
+| 2 | Request Control handshake completes, no retries | **PASS** | `control op 0x00` logged once per connection; no repeats, so our `80 00 01` indication was accepted |
+| 3 | Kinomap sends `02 lo hi` Set Target Speed | **NOT OBSERVED** | `target=0` throughout a 60 s session in ORIGINAL SPEED mode — see below |
+| 4 | Targets arrive as km/h × 100 | **untested** | blocked on 3 |
+| 5 | Kinomap's speed tracks our `2ACD`; distance advances | **PASS** | belt at 2.0 km/h → Kinomap displayed **`29:59 /km`** (= exactly 2.0 km/h) and distance climbed to 139 m |
+| 6 | Deadband and rate limiting suppress commands | **untested** | blocked on 3 |
+| 7 | Arming gate | **PASS** | `arm` then `start` ran the start sequence; a `start` while disarmed is refused |
+| 8 | `2ADA 0x04` → Kinomap answers `{07}` | **PASS** | `notify started (2ADA 04), phone=1` immediately followed by `control op 0x07` |
+| 9 | Stop sentinel (1.00 km/h) stops the belt | **untested** | blocked on 3 |
+| 10 | Targets above 6.0 km/h clamped app-side | **untested** | blocked on 3 |
+| 11 | Link loss stops the belt, bridge stays armed | **untested** | |
+
+### The session genuinely ran
+
+Video playing with no pause overlay, `0:15.25` elapsed, 19% of the route, 139 m
+covered, 40 watts, and Kinomap's own pacing indicator (`→ 4s`) live. The whole
+start handshake works end to end:
+
+```
+Kinomap → 0x00 Request Control
+bridge  → arm, start, belt reaches 2.0 km/h
+bridge  → 2ADA 0x04  "started"
+Kinomap → 0x07 Start/Resume, session begins
+bridge  → 2ACD speed notifications, Kinomap displays 29:59 /km
+```
+
+### Open question: Kinomap sent no speed target
+
+In **ORIGINAL SPEED** mode ("depending on the pace of the contributor") Kinomap
+played the video at the contributor's pace and showed how far ahead or behind the
+user was (`→ 4s`), but **never wrote `02`**. It did write one unrecognised opcode
+— logged as `control op 0xff`, our mapping for Unknown — which on a route with a
+**−5.4 % gradient** is almost certainly `0x03` Set Target Inclination. Kinomap's
+`uf8.receive` sends that on gradient change **without gating on a feature bit**,
+exactly as the decompile predicted, and the bridge correctly acknowledges and
+ignores it.
+
+Two candidate explanations, to be distinguished next:
+
+1. ORIGINAL SPEED does not drive the machine at all — the user is meant to match
+   the video, and the pacing arrow is the whole feedback mechanism. Speed control
+   would then live in **Coaching** or **Structured workout** sessions instead.
+2. Kinomap only commands speed once some other condition is met.
+
+**Diagnostic gap found:** the firmware logs the *mapped* opcode (`0xff` for
+Unknown) rather than `req.rawOp`, so the actual byte Kinomap wrote is lost. That
+should be logged — it is the difference between knowing and inferring.
