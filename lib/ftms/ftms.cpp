@@ -1,0 +1,26 @@
+#include "ftms.h"
+
+namespace ftms {
+
+Buf featureValue() {
+    // Fitness Machine Features = 0x00000000, Target Setting Features = 0x00000001.
+    return Buf{{0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00}, 8};
+}
+
+Buf supportedSpeedRange() {
+    // 0.50 km/h = 50 = 0x0032, 6.00 km/h = 600 = 0x0258, 0.10 km/h = 10 = 0x000A.
+    return Buf{{0x32, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00}, 6};
+}
+
+Buf treadmillData(uint16_t centiKmh) {
+    Buf b{{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 4};
+    b.bytes[2] = static_cast<uint8_t>(centiKmh & 0xFF);
+    b.bytes[3] = static_cast<uint8_t>(centiKmh >> 8);
+    return b;
+}
+
+Buf statusStarted() {
+    return Buf{{0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 1};
+}
+
+}  // namespace ftms
