@@ -33,6 +33,12 @@ uint32_t dropped = 0;
 bool sdReady = false;
 bool wifiTried = false;
 bool udpStarted = false;
+constexpr uint8_t kMaxScan = 6;
+char scanNames[kMaxScan][33] = {};
+uint8_t scanFound = 0;
+bool scanBusy = false;
+char ssidBuf[48] = {};
+char ipBuf[20] = {};
 bool devMode = false;   // master: no radio at all unless this is on
 bool udpWanted = false; // the broadcast itself, inside dev mode
 uint32_t lastFlush = 0, lastWifiTry = 0;
@@ -226,6 +232,50 @@ void setWifi(const char* ssid, const char* pass) {
         wifiTried = false;
     }
 }
+
+const char* storedSsid() {
+    prefs.begin("bridge", true);
+    prefs.getString("wifi_ssid", ssidBuf, sizeof ssidBuf);
+    prefs.end();
+    return ssidBuf;
+}
+
+const char* ipText() {
+    if (WiFi.status() != WL_CONNECTED) { ipBuf[0] = 0; return ipBuf; }
+    snprintf(ipBuf, sizeof ipBuf, "%s", WiFi.localIP().toString().c_str());
+    return ipBuf;
+}
+
+void startScan() {
+    if (!devMode) return;  // the radio is down outside developer mode
+    WiFi.mode(WIFI_STA);
+    WiFi.scanDelete();
+    scanFound = 0;
+    scanBusy = WiFi.scanNetworks(/*async=*/true) == WIFI_SCAN_RUNNING;
+    line("wifi scan started");
+}
+
+bool scanning() {
+    if (!scanBusy) return false;
+    const int n = WiFi.scanComplete();
+    if (n == WIFI_SCAN_RUNNING) return true;
+    scanBusy = false;
+    if (n < 0) {  // failed; report as "none found" rather than hanging
+        scanFound = 0;
+        line("wifi scan failed");
+        return false;
+    }
+    scanFound = (uint8_t)(n < (int)kMaxScan ? n : (int)kMaxScan);
+    for (uint8_t i = 0; i < scanFound; ++i)
+        snprintf(scanNames[i], sizeof scanNames[i], "%s", WiFi.SSID(i).c_str());
+    line("wifi scan: %d found", n);
+    WiFi.scanDelete();
+    return false;
+}
+
+uint8_t scanCount() { return scanFound; }
+
+const char* scanSsid(uint8_t i) { return i < scanFound ? scanNames[i] : ""; }
 
 void describe(char* out, size_t cap) {
     uint32_t d;

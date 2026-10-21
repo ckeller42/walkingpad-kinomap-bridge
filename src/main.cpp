@@ -9,6 +9,7 @@
 #include "bridge_state.h"
 #include "config.h"
 #include "console_cmd.h"
+#include "devmenu.h"
 #include "ftms_server.h"
 #include "logsink.h"
 #include "sim_belt.h"
@@ -37,6 +38,15 @@ static std::recursive_mutex mtx;
 static bool hasTarget = false;
 static uint16_t targetCenti = 0;
 static bool stopRequested = false;
+
+// Developer menu. Entered by tapping the PHONE indicator on the main screen,
+// mirroring the BELT indicator that re-opens setup. It owns the screen while
+// open, and is deliberately unreachable while the wizard is running or the
+// belt is moving: it can take the radio up and down, which is not something to
+// do underfoot.
+static devmenu::DevMenu devMenu;
+static bool inDevMenu = false;
+static bool devDirty = true;
 
 // Pending start: mode manual -> start -> wait for the belt to actually run ->
 // setSpeed. A setSpeed during the countdown (state 7) is discarded by the belt.
@@ -185,10 +195,15 @@ static constexpr uint8_t kUiStartTenths = 20;
 // real button presses but SYNTHETIC belt inputs (there is no belt on the
 // bench), then the main screen runs on the real simulated belt.
 static constexpr uint32_t kDemoDwellMs = 4000;
-static constexpr int kDemoLast = 13;
+static constexpr int kDemoLast = 17;
 static uint32_t demoT0 = 0;
 static int demoIdx = -1;
 static wizard::Inputs demoIn;
+// The scan list and the keyboard depend on what is on the air, which makes
+// them unscreenshottable on a bench with no network. The tour substitutes a
+// fixed set so the captured pages are stable.
+static bool demoDev = false;
+static devmenu::Inputs demoDevIn;
 #endif
 
 static void enterWizard(uint32_t now) {
@@ -271,7 +286,36 @@ static void demoAdvance(int i, uint32_t now) {
         case 10: applyOutcome(state.startFromUi(kUiStartTenths)); break;  // real START path
         case 11: case 12: break;  // belt counts down, then ramps: new frames land by themselves
         case 13: applyOutcome(state.stopFromUi()); break;
+        case 14:  // developer menu, root
+            demoDev = true;
+            demoDevIn = devmenu::Inputs{};
+            demoDevIn.devOn = true;
+            demoDevIn.udpOn = true;
+            demoDevIn.wifiUp = true;
+            demoDevIn.storedSsid = "Insel";
+            demoDevIn.ip = "192.168.178.96";
+            devMenu.open();
+            inDevMenu = true;
+            ui.setMenuMode(true);
+            break;
+        case 15:  // the scan list
+            demoDevIn.networkCount = 3;
+            demoDevIn.networks[0] = "Insel";
+            demoDevIn.networks[1] = "Nachbar-WLAN";
+            demoDevIn.networks[2] = "Gast";
+            devMenu.tapRow(2, demoDevIn);
+            break;
+        case 16:  // the on-screen keyboard
+            devMenu.tapRow(0, demoDevIn);
+            devMenu.append('s');
+            devMenu.append('e');
+            devMenu.append('c');
+            break;
+        case 17:  // the same keyboard, shifted
+            devMenu.toggleShift();
+            break;
     }
+    devDirty = true;
     wizDirty = true;
 }
 #endif
@@ -308,6 +352,88 @@ static const char* manualSpeed(int dir, uint8_t absTenths) {
     if (millis() - lastCmdMs > kCmdBaseMs) base = lastStatus.tenthKmh;  // remote may have moved it
     applyOutcome(dir != 0 ? state.stepSpeedFromUi(dir, base) : state.setSpeedFromUi(absTenths));
     return nullptr;
+}
+
+// Builds the menu's view of the world fresh each frame; the menu keeps no copy.
+static devmenu::Inputs devInputs() {
+#if UI_SCREENSHOT
+    if (demoDev) return demoDevIn;
+#endif
+    devmenu::Inputs in;
+    in.devOn = logsink::devOn();
+    in.udpOn = logsink::udpOn();
+    in.wifiUp = logsink::netOk();
+    in.storedSsid = logsink::storedSsid();
+    in.ip = logsink::ipText();
+    in.scanning = logsink::scanning();
+    in.networkCount = logsink::scanCount();
+    for (uint8_t i = 0; i < in.networkCount && i < devmenu::kMaxNetworks; ++i)
+        in.networks[i] = logsink::scanSsid(i);
+    in.protocol = devmenu::Protocol::Ftms;  // Domyos is unimplemented; see #2
+    return in;
+}
+
+static void leaveDevMenu() {
+    inDevMenu = false;
+    ui.setMenuMode(false);
+    wizDirty = true;  // force the main screen to redraw over the menu
+}
+
+static void devMenuAct(devmenu::Action a) {
+    using A = devmenu::Action;
+    switch (a) {
+        case A::Close:
+            leaveDevMenu();
+            break;
+        case A::ToggleDev:
+            logsink::setDev(!logsink::devOn());
+            break;
+        case A::ToggleUdp:
+            logsink::setUdp(!logsink::udpOn());
+            break;
+        case A::StartScan:
+            logsink::startScan();
+            break;
+        case A::SubmitPassword:
+            logsink::setWifi(devMenu.ssid(), devMenu.password());
+            break;
+        case A::ForgetWifi:
+            logsink::setWifi("", "");
+            break;
+        case A::CycleProtocol:
+            // The enumerator exists so the setting is real rather than invented
+            // later, but Domyos needs a second, proprietary BLE profile.
+            Serial.println("protocol: only FTMS is implemented (see issue #2)");
+            logsink::line("protocol switch refused: Domyos not implemented");
+            break;
+        case A::None:
+            break;
+    }
+    devDirty = true;
+}
+
+// One frame of the developer menu, plus whatever the user just touched.
+static void devMenuTick() {
+    const devmenu::Inputs in = devInputs();
+
+    const int row = ui.tookMenuRow();
+    if (row >= 0) devMenuAct(devMenu.tapRow((uint8_t)row, in));
+    if (ui.tookWizardLeft()) devMenuAct(devMenu.press(false, in));
+    if (ui.tookWizardRight()) devMenuAct(devMenu.press(true, in));
+
+    if (const char c = ui.tookKeyChar()) { devMenu.append(c); devDirty = true; }
+    if (ui.tookKeyBackspace()) { devMenu.backspace(); devDirty = true; }
+    if (ui.tookKeyShift()) { devMenu.toggleShift(); devDirty = true; }
+
+    if (!inDevMenu) return;  // Close was handled above
+
+    // A scan finishing changes the screen with no touch at all, so redraw
+    // while one is running rather than only on input.
+    if (in.scanning) devDirty = true;
+    if (devDirty) {
+        devDirty = false;
+        ui.renderDevMenu(devMenu.screen(devInputs()));
+    }
 }
 
 static void consoleStatus() {
@@ -538,7 +664,10 @@ void loop() {
         while (demoIdx < kDemoLast && demoIdx < (int)((now - demoT0) / kDemoDwellMs))
             demoAdvance(++demoIdx, now);
 #endif
-        if (inWizard) {
+        if (inDevMenu) {
+            // The menu owns the screen and the touch zones while it is open.
+            devMenuTick();
+        } else if (inWizard) {
             // The wizard owns the touch zones. The bridge stays disarmed here
             // (see enterWizard); FTMS Stop/Pause below still works.
             if (ui.tookWizardLeft()) wizPress(wizard::Btn::Left, now);
@@ -561,6 +690,15 @@ void loop() {
             }
             // Re-open setup, but never under a moving belt.
             if (ui.tookSetupTap() && !state.beltRunning()) enterWizard(now);
+            // The developer menu can take the radio up and down and re-pair
+            // Wi-Fi, so it is refused under a moving belt for the same reason.
+            if (ui.tookDevTap() && !state.beltRunning()) {
+                devMenu.open();
+                inDevMenu = true;
+                devDirty = true;
+                ui.setMenuMode(true);
+                logsink::line("dev menu opened");
+            }
         }
         if (stopRequested) {  // FTMS Stop/Pause: honour it
             stopRequested = false;
@@ -622,7 +760,8 @@ void loop() {
         // offered while recent; after that the readout stands alone.
         const uint16_t commanded =
             (millis() - lastCmdMs <= kCmdBaseMs) ? (uint16_t)lastCmdTenths * 10 : centi;
-        ui.render(centi, commanded, dist, elapsed, beltUp, phoneUp, armed, running);
+        if (!inDevMenu)
+            ui.render(centi, commanded, dist, elapsed, beltUp, phoneUp, armed, running);
     }
     if (shotPending) {
         shotPending = false;

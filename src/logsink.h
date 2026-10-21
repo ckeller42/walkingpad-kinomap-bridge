@@ -51,6 +51,30 @@ void setUdp(bool on);
 // device, never in the repo. Pass an empty ssid to forget them.
 void setWifi(const char* ssid, const char* pass);
 
+/** @brief The stored network's name, or "" when none is stored. */
+const char* storedSsid();
+
+/** @brief Current IP as text, or "" when not associated. */
+const char* ipText();
+
+/**
+ * @brief Begin an asynchronous Wi-Fi scan.
+ *
+ * Does nothing outside developer mode, since the radio is down. Asynchronous
+ * because a blocking scan takes seconds, and the UI has to keep drawing - a
+ * frozen screen during setup reads as a crash.
+ */
+void startScan();
+
+/** @brief True while a scan is in progress. */
+bool scanning();
+
+/** @brief Networks found by the last completed scan, strongest first. */
+uint8_t scanCount();
+
+/** @brief Name of scan result @p i, or "" when out of range. */
+const char* scanSsid(uint8_t i);
+
 // One line for the console: sinks, the SD file in use, dropped-line count.
 void describe(char* out, size_t cap);
 

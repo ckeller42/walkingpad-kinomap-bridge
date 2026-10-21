@@ -106,6 +106,7 @@ doxygen Doxyfile && sphinx-build -b html docs build/sphinx
 | [Documentation home](docs/index.md) | architecture, and everything below |
 | [Setup wizard](docs/setup-wizard.md) | first-run pairing, with real screenshots |
 | [Serial console](docs/serial-console.md) | the USB command surface |
+| [Developer menu](docs/developer-menu.md) | on-device Wi-Fi pairing and the radio switches |
 | [Session logging](docs/logging.md) | SD and UDP sinks, and why they exist |
 | [Protocol reference](docs/protocol/reference.md) | generated from `protocol/*.yaml` |
 | [Test log](docs/test-log.md) | what was measured, and how |

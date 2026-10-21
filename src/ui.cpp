@@ -338,13 +338,19 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
         // rather than masked: this is a 320x240 panel in the user's own home,
         // and typing a credential blind on a touch grid is how you end up with
         // a wrong one stored and no way to tell.
+        // Which network, on the title row: there is only one line between the
+        // title and the key grid, and the typed text needs all of it. Drawing
+        // both at the same baseline made the password paint over the SSID.
         g.setFont(&fonts::FreeSans9pt7b);
         g.setTextColor(DIM, BG);
-        g.drawString(s.prompt, 8, 38);
+        g.setTextDatum(middle_right);
+        g.drawString(s.prompt, W - 8, 15);
+
+        g.setTextDatum(middle_left);
         g.setTextColor(TFT_WHITE, BG);
         g.setFont(&fonts::FreeSansBold12pt7b);
         const char* shown = s.typed[0] ? s.typed : "_";
-        g.drawString(shown, 8, 40 + 0);  // baseline tuned against the key grid
+        g.drawString(shown, 8, 38);
 
         const char* const* map = s.shift ? KB_UPPER : KB_LOWER;
         char one[2] = {0, 0};
