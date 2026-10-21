@@ -12,7 +12,9 @@ class NimBLECharacteristic;
 // decoded Control Point requests to callbacks. Holds no policy.
 class FtmsServer {
 public:
-    void begin(const char* advName);
+    // manufacturer/model go to the Device Information service (2A29/2A24). The
+    // manufacturer string selects a code path inside Kinomap (never "decathlon").
+    void begin(const char* advName, const char* manufacturer, const char* model);
     void notifySpeed(uint16_t centiKmh);  // 2ACD Treadmill Data
     void notifyStarted();                 // 2ADA Fitness Machine Status: 0x04
     bool phoneConnected() const;

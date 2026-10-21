@@ -16,10 +16,6 @@ constexpr uint16_t kChrManufacturer = 0x2A29;
 constexpr uint16_t kChrModel = 0x2A24;
 // 2AD5 Supported Inclination Range is deliberately absent: no incline.
 
-// Never "decathlon": that string selects a different path inside Kinomap.
-constexpr const char* kManufacturer = "WalkingPad Bridge";
-constexpr const char* kModel = "R1 Pro FTMS Bridge";
-
 class ServerCb : public NimBLEServerCallbacks {
 public:
     void onConnect(NimBLEServer*, NimBLEConnInfo&) override { connected = true; }
@@ -44,7 +40,7 @@ ServerCb gServerCb;
 
 }  // namespace
 
-void FtmsServer::begin(const char* advName) {
+void FtmsServer::begin(const char* advName, const char* manufacturer, const char* model) {
     NimBLEDevice::init(advName);
     NimBLEServer* srv = NimBLEDevice::createServer();
     srv->setCallbacks(&gServerCb);
@@ -70,8 +66,8 @@ void FtmsServer::begin(const char* advName) {
 
     NimBLEService* dis = srv->createService(NimBLEUUID(kSvcDeviceInfo));
     dis->createCharacteristic(NimBLEUUID(kChrManufacturer), NIMBLE_PROPERTY::READ)
-        ->setValue(kManufacturer);
-    dis->createCharacteristic(NimBLEUUID(kChrModel), NIMBLE_PROPERTY::READ)->setValue(kModel);
+        ->setValue(manufacturer);
+    dis->createCharacteristic(NimBLEUUID(kChrModel), NIMBLE_PROPERTY::READ)->setValue(model);
 
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
     adv->setName(advName);

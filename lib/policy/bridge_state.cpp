@@ -38,6 +38,15 @@ Outcome BridgeState::onPhoneLink(bool up) {
     return o;
 }
 
+Outcome BridgeState::onBeltObservedStopped() {
+    Outcome o = empty();
+    if (running_) {
+        running_ = false;
+        o.emits[o.count++] = Emit::ResetPolicy;
+    }
+    return o;
+}
+
 Outcome BridgeState::apply(const Decision& d) {
     Outcome o = empty(d.tenthKmh);
     switch (d.action) {

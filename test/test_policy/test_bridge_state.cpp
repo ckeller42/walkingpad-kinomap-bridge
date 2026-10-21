@@ -204,3 +204,30 @@ void test_target_dropped_while_belt_down_starts_after_reconnect(void) {
     TEST_ASSERT_EQUAL(policy::Emit::StartSequence, o.emits[0]);
     TEST_ASSERT_EQUAL(policy::Emit::NotifyStarted, o.emits[1]);
 }
+
+void test_observed_stopped_clears_running_and_resets_policy(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.apply({policy::Action::SetSpeed, 40});
+    TEST_ASSERT_TRUE(s.beltRunning());
+    auto o = s.onBeltObservedStopped();
+    TEST_ASSERT_EQUAL_size_t(1, o.count);
+    TEST_ASSERT_EQUAL(policy::Emit::ResetPolicy, o.emits[0]);
+    TEST_ASSERT_FALSE(s.beltRunning());
+}
+
+void test_observed_stopped_when_not_running_emits_nothing(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    auto o = s.onBeltObservedStopped();
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+}
+
+void test_target_after_observed_stop_starts_the_belt_again(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.apply({policy::Action::SetSpeed, 40});
+    (void)s.onBeltObservedStopped();
+    auto o = s.apply({policy::Action::SetSpeed, 40});
+    TEST_ASSERT_EQUAL(policy::Emit::StartSequence, o.emits[0]);
+}

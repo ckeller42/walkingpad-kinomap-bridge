@@ -1,17 +1,19 @@
 #pragma once
-// Single place for the bridge's tunables. Include before speed_policy.h.
+// Single place for the bridge's tunables.
+//
+// The POLICY_* constants (POLICY_DEADBAND_TENTHS, POLICY_MIN_COMMAND_INTERVAL_MS,
+// ...) live in platformio.ini build_flags, NOT here: lib/policy is its own
+// translation unit and never sees this header. Defaults are in speed_policy.h.
 
 #define BRIDGE_ADV_NAME "WalkingPad Bridge"
-#define BRIDGE_MANUFACTURER "WalkingPad Kinomap Bridge"
+// Never "decathlon": that string selects a different path inside Kinomap.
+#define BRIDGE_MANUFACTURER "WalkingPad Bridge"
 #define BRIDGE_MODEL "R1 Pro FTMS Bridge"
 
+// 1 = simulated belt. The real belt link arrives with Task 14.
 #ifndef USE_SIM_BELT
 #define USE_SIM_BELT 1
 #endif
-
-// Policy overrides (consumed by lib/policy/speed_policy.h).
-#define POLICY_DEADBAND_TENTHS 3
-#define POLICY_MIN_COMMAND_INTERVAL_MS 1000
 
 // Give up on a pending belt start if it never reaches state 1/6.
 #define START_TIMEOUT_MS 15000

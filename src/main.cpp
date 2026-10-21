@@ -3,28 +3,46 @@
 
 #include <mutex>
 
-#include "config.h"  // must precede speed_policy.h
+#include "belt_gate.h"
 #include "bridge_state.h"
+#include "config.h"
 #include "ftms_server.h"
 #include "sim_belt.h"
 #include "speed_policy.h"
 #include "ui.h"
 
+#if !USE_SIM_BELT
+#error "Only the simulated belt exists until Task 14 adds the real BLE belt link."
+#endif
+
 static belt::SimBelt simBelt;
-static belt::Belt& theBelt = simBelt;
+// Every belt write goes through the gate, which paces them >= the command
+// interval apart and retries a stop until the belt is seen stopped.
+static belt::BeltGate theBelt(simBelt, policy::kMinCommandIntervalMs);
 static policy::SpeedPolicy speedPolicy;
 static policy::BridgeState state;
 static FtmsServer bleServer;
 static Ui ui;
 
-// BLE callbacks run on the NimBLE task; loop() runs on the Arduino task.
+// BLE callbacks run on the NimBLE task; loop() runs on the Arduino task. The
+// callbacks only record requests under mtx; loop() applies them, so no belt
+// write ever happens inside a NimBLE host-task callback.
 static std::recursive_mutex mtx;
+static bool hasTarget = false;
+static uint16_t targetCenti = 0;
+static bool stopRequested = false;
 
-// Pending start: mode manual -> start -> wait for beltState 1/6 -> setSpeed.
-// A setSpeed during the countdown (state 7) is discarded by the belt.
+// Pending start: mode manual -> start -> wait for the belt to actually run ->
+// setSpeed. A setSpeed during the countdown (state 7) is discarded by the belt.
+// State 6 means "ramping up" only if a countdown was seen first; it also means
+// "decelerating", when the belt has refused our start.
 static bool startPending = false;
+static bool sawCountdown = false;
 static uint8_t pendingTenths = 0;
 static uint32_t pendingSinceMs = 0;
+
+// Latest belt readings (loop thread only).
+static wilink::Status lastStatus{};
 
 static void applyOutcome(const policy::Outcome& o) {
     for (size_t i = 0; i < o.count; ++i) {
@@ -38,9 +56,12 @@ static void applyOutcome(const policy::Outcome& o) {
                 theBelt.stop();
                 break;
             case policy::Emit::StartSequence:
-                theBelt.setMode(wilink::Mode::Manual);
+                // Skip the mode write (and its beep) if already manual.
+                if (lastStatus.mode != (uint8_t)wilink::Mode::Manual)
+                    theBelt.setMode(wilink::Mode::Manual);
                 theBelt.start();
                 startPending = true;
+                sawCountdown = false;
                 pendingTenths = o.tenthKmh;
                 pendingSinceMs = millis();
                 break;
@@ -58,22 +79,16 @@ static void applyOutcome(const policy::Outcome& o) {
 
 static void driveStart(const wilink::Status& st, uint32_t now) {
     if (!startPending) return;
-    if (st.beltState == 1 || st.beltState == 6) {
+    if (st.beltState == 7) sawCountdown = true;
+    if (st.beltState == 1 || (st.beltState == 6 && sawCountdown)) {
         theBelt.setSpeed(pendingTenths);
         startPending = false;
     } else if (now - pendingSinceMs > START_TIMEOUT_MS) {
+        // The belt never started (start refused or lost). Don't stay "running".
         startPending = false;
-        speedPolicy.reset();  // belt never started; let the next target retry
+        applyOutcome(state.onBeltObservedStopped());
         Serial.println("start sequence timed out");
     }
-}
-
-// Latest belt readings, so the UI can be redrawn immediately after a tap.
-static wilink::Status lastStatus{};
-
-static void renderUi() {
-    ui.render((uint16_t)lastStatus.tenthKmh * 10, lastStatus.distance10m, lastStatus.elapsedSec,
-              theBelt.linkUp(), bleServer.phoneConnected(), state.armed());
 }
 
 static bool lastPhone = false;
@@ -93,28 +108,36 @@ void setup() {
 
     bleServer.setOnTarget([](uint16_t centi) {
         std::lock_guard<std::recursive_mutex> g(mtx);
-        auto d = speedPolicy.onTarget(centi, millis());
-        applyOutcome(state.apply(d));
+        hasTarget = true;  // latest wins; applied by loop()
+        targetCenti = centi;
     });
     bleServer.setOnControlOp([](ftms::CpOp op) {
         // Kinomap's {07} in reply to our 2ADA 0x04 is just an acknowledgement.
         Serial.printf("control op 0x%02x\n", (unsigned)op);
+        if (op == ftms::CpOp::StopPause) {
+            std::lock_guard<std::recursive_mutex> g(mtx);
+            stopRequested = true;
+        }
     });
-    bleServer.begin(BRIDGE_ADV_NAME);
+    bleServer.begin(BRIDGE_ADV_NAME, BRIDGE_MANUFACTURER, BRIDGE_MODEL);
 
     std::lock_guard<std::recursive_mutex> g(mtx);
     applyOutcome(state.onBeltLink(true));
-    renderUi();  // boots disarmed; ARM is a deliberate tap
+    ui.render(0, 0, 0, theBelt.linkUp(), false, state.armed());  // boots disarmed
 }
 
 void loop() {
     static uint32_t lastTick = 0;
     M5.update();
     ui.poll();
+
+    bool redraw = false;
+    uint16_t centi;
+    uint32_t dist, elapsed;
+    bool beltUp, phoneUp, armed;
     {
         std::lock_guard<std::recursive_mutex> g(mtx);
         trackPhone();
-        bool redraw = false;
         if (ui.tookArmToggle()) {
             applyOutcome(state.setArmed(!state.armed()));
             redraw = true;
@@ -123,7 +146,18 @@ void loop() {
             applyOutcome(state.stopFromUi());  // also disarms
             redraw = true;
         }
+        if (stopRequested) {  // FTMS Stop/Pause: honour it
+            stopRequested = false;
+            applyOutcome(state.apply({policy::Action::Stop, 0}));
+            speedPolicy.reset();
+        }
+        if (hasTarget) {
+            hasTarget = false;
+            auto d = speedPolicy.onTarget(targetCenti, millis());
+            applyOutcome(state.apply(d));
+        }
         uint32_t now = millis();
+        theBelt.tick(now);  // paced belt writes
         if (now - lastTick >= 1000) {
             lastTick = now;
             simBelt.tick(now);
@@ -132,11 +166,21 @@ void loop() {
                 lastStatus = st;
                 speedPolicy.onBeltSpeed(st.tenthKmh);
                 driveStart(st, now);
+                if (state.beltRunning() && !startPending && st.tenthKmh == 0 &&
+                    (st.beltState == 0 || st.beltState == 4))
+                    applyOutcome(state.onBeltObservedStopped());
                 if (state.notifying()) bleServer.notifySpeed((uint16_t)st.tenthKmh * 10);
             }
             redraw = true;
         }
-        if (redraw) renderUi();
+        centi = (uint16_t)lastStatus.tenthKmh * 10;
+        dist = lastStatus.distance10m;
+        elapsed = lastStatus.elapsedSec;
+        beltUp = theBelt.linkUp();
+        phoneUp = bleServer.phoneConnected();
+        armed = state.armed();
     }
+    // Drawing (~150 KB sprite push) happens outside the lock.
+    if (redraw) ui.render(centi, dist, elapsed, beltUp, phoneUp, armed);
     delay(20);
 }

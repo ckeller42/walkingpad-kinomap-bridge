@@ -213,5 +213,8 @@ int main(int, char**) {
     RUN_TEST(test_none_decision_emits_nothing);
     RUN_TEST(test_link_up_emits_reset_policy_only_on_transition);
     RUN_TEST(test_target_dropped_while_belt_down_starts_after_reconnect);
+    RUN_TEST(test_observed_stopped_clears_running_and_resets_policy);
+    RUN_TEST(test_observed_stopped_when_not_running_emits_nothing);
+    RUN_TEST(test_target_after_observed_stop_starts_the_belt_again);
     return UNITY_END();
 }

@@ -44,6 +44,14 @@ public:
     // True while 2ACD Treadmill Data should be sent (both links up).
     bool notifying() const { return beltUp_ && phoneUp_; }
 
+    // The caller saw the belt stopped (speed 0, state 0/4) while beltRunning()
+    // was true and no start was in flight, or a start never took. apply()
+    // sets running_ optimistically and Belt::start() cannot report refusal, so
+    // without this a refused/lost start wedges running_ true and no later
+    // target ever emits StartSequence. Clears running_, emits ResetPolicy.
+    // Emits nothing if the belt was not marked running.
+    Outcome onBeltObservedStopped();
+
     Outcome apply(const Decision& d);
     // UI STOP: emits Stop, ResetPolicy and also disarms, so the app cannot
     // override the user's physical stop with its next target.

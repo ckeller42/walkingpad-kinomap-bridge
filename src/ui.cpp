@@ -6,7 +6,7 @@
 namespace {
 constexpr int W = 320, H = 240;
 constexpr int BAR_Y = 184;  // bottom bar top edge
-constexpr int HIT_Y = 168;  // touch zone starts above the bar (forgiving)
+constexpr int HIT_Y = 180;  // just above the bar, clear of the distance/time row (<= y176)
 constexpr int HALF = W / 2;
 
 constexpr uint16_t BG = TFT_BLACK;
