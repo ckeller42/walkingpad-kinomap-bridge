@@ -22,6 +22,12 @@
 - Deadband **0.3 km/h**; minimum **1000 ms** between belt commands.
 - WiLink frames: `F7 <cmd> <payload…> <crc> FD`, `crc` = low byte of the sum of all bytes between the header and the CRC.
 - Belt speed unit on the wire is **0.1 km/h**.
+- **NEVER emit a frame whose command byte is `0xE8`.** The `z1-walkingpad` project
+  documents `0xE8` as the OTA command group and warns it can brick the pad. The
+  bridge only ever sends `0xA2` (belt control); no code path may construct any
+  other command group. The belt's OTA service is a separate GATT service
+  (`00010203-0405-0607-0809-0a0b0c0d1912`, Telink OAD) which the bridge never
+  connects to — but `0xE8` would reach the same functionality through `FE02`.
 - All code under `lib/` must compile without Arduino — it is built by the `native` test environment.
 
 ## Review Focus
