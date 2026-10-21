@@ -688,7 +688,7 @@ No native test — this is the hardware shell. Its correctness is established by
 
 Service `0x1826` with `2ACC` (read), `2AD4` (read), `2ACD` (notify), `2AD9` (write + indicate), `2ADA` (notify). Service `0x180A` with `2A29` manufacturer and `2A24` model — manufacturer must not be `decathlon`. Advertise `0x1826` and `advName`.
 
-On a `2AD9` write: parse with `ftms::parseControlPoint`, always indicate `ftms::controlPointSuccess(op)` for a valid request, and dispatch Set Target Speed to the `onTarget` callback.
+On a `2AD9` write: parse with `ftms::parseControlPoint`, always indicate `ftms::controlPointSuccess(req.rawOp)` for a valid request — the **raw** opcode byte, so the acknowledgement names what the client actually wrote — and dispatch Set Target Speed to the `onTarget` callback.
 
 - [ ] **Step 2: Build for the board**
 
