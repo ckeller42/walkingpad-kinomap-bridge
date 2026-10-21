@@ -1,0 +1,33 @@
+# Doxygen configuration for the WalkingPad -> Kinomap bridge.
+#
+# EXTRACT_ALL is deliberately NO. With it on, doxygen documents everything and
+# never warns, so "coverage" becomes meaningless. With it off, every
+# undocumented public symbol produces a warning, which tools/doxygen_ratchet.py
+# counts and holds to a baseline.
+
+PROJECT_NAME           = "WalkingPad Kinomap Bridge"
+PROJECT_BRIEF          = "BLE bridge: KingSmith WalkingPad R1 Pro to Kinomap, on an M5Stack CoreS3"
+OUTPUT_DIRECTORY       = build/doxygen
+INPUT                  = lib src
+FILE_PATTERNS          = *.h *.hpp *.c *.cpp
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */.pio/* */build/*
+
+EXTRACT_ALL            = NO
+EXTRACT_STATIC         = NO
+EXTRACT_PRIVATE        = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+WARN_LOGFILE           = build/doxygen/warnings.txt
+QUIET                  = YES
+
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+HAVE_DOT               = NO
+JAVADOC_AUTOBRIEF      = YES
+OPTIMIZE_OUTPUT_FOR_C  = NO

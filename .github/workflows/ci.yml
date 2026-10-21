@@ -47,3 +47,19 @@ jobs:
             exit 1
           fi
           echo "no tracked *.apk/*.dex/*.so/*.bin or sources/ tree"
+  # Doxygen coverage, as a ratchet rather than a gate: the undocumented-symbol
+  # count may fall but never rise, so new code must be documented while the
+  # existing gaps are paid off incrementally.
+  doxygen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y doxygen
+      - run: mkdir -p build/doxygen && doxygen Doxyfile
+      - name: undocumented symbols must not increase
+        run: python3 tools/doxygen_ratchet.py build/doxygen/warnings.txt .doxygen-baseline
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: doxygen-html
+          path: build/doxygen/html
