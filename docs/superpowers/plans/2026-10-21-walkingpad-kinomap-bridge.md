@@ -892,7 +892,23 @@ git commit -m "feat: captured WiLink stop frame, closing the blocking unknown"
 
 - [ ] **Step 1: Implement `BeltLink` in `src/belt_link.cpp`**
 
-Scan for `FE00`, connect, subscribe to `FE01`, decode notifications with `wilink::parseStatus`. Writes are queued with a minimum **1000 ms** spacing; `StartSequence` expands to mode → start → speed honouring that spacing. Poll with `requestStatus()` on the 1 Hz tick — polling is silent and does not beep.
+Scan for `FE00`, connect, subscribe to `FE01`, decode notifications with `wilink::parseStatus`. Writes are queued with a minimum **1000 ms** spacing. Poll with `requestStatus()` on the 1 Hz tick — polling is silent and does not beep.
+
+**`FE02` is write-without-response** (confirmed on the real unit), so there is no
+acknowledgement and no flow control. The belt also sends **no unsolicited status**:
+every reading comes from a poll. The rate limit is the only backpressure there is.
+
+**The start sequence is not three back-to-back writes.** Measured on the real
+belt: a `setSpeed` issued during the countdown (`beltState 7`) is **discarded**,
+and the belt ramps to its own preset — 4.0 km/h — regardless. So `StartSequence`
+expands to: set mode manual → start → **wait for the belt to report `beltState`
+1 or 6** → then send the speed. Between the start and that re-send, the belt will
+transiently run at its preset, so the policy will observe a speed the bridge never
+commanded; `SpeedPolicy`'s resync is what absorbs that.
+
+`SimBelt` does **not** reproduce the preset ramp — it sits at 0 when no speed was
+accepted. This behaviour therefore cannot be validated in stage 1 and must be
+implemented from this paragraph, then confirmed in stage 2 against the real belt.
 
 - [ ] **Step 2: Make the belt source selectable**
 
