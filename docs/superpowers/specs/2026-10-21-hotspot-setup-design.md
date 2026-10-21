@@ -1,8 +1,48 @@
 # First-time setup over a hotspot
 
-**Status:** design. The owner opted out of the brainstorming questions and asked
-for this built and tested end to end on the Fairphone. Everything marked
-*(my call)* is a decision I made on their behalf.
+**Status: REJECTED before implementation.** Kept as a record of the reasoning,
+not as work to be picked up.
+
+> **Why it was rejected.** The owner asked the right question partway through
+> the write-up: *"do we need the WiFi feature? I would assume we can keep this
+> as optional and leave the original wizard flow."*
+>
+> They are correct, and the argument is short. Wi-Fi on this device serves two
+> things — UDP logging and OTA — and both are developer conveniences that are
+> **off by default**. Neither is on the critical path: the bridge drives the
+> belt and feeds Kinomap entirely over BLE. A hotspot portal means AP mode, a
+> DNS server, an HTTP server, captive-portal probe handling for two phone
+> vendors, and a new failure space, all to serve an optional feature.
+>
+> There were already two ways to set Wi-Fi that never touch the panel:
+> `tools/set_wifi.sh <ssid>` (hidden password dialog) and
+> `tools/console.py "wifi <ssid> <pass>"` — both over USB, which you need in
+> order to flash anyway. The on-screen keyboard is a third route for when no
+> computer is nearby, which for a device standing beside a treadmill at home is
+> rare.
+>
+> **The reasoning error worth recording.** The measurement that prompted this
+> was real: a 32 px key on this panel is 4.1 mm against the 9-10 mm research
+> recommends for thumb input. But the right response to "this keyboard is too
+> small to type a password on" is "then do not type passwords here" — which the
+> USB tools already solved. The design fixed the input *method* instead of
+> asking whether the input belonged on the device at all. A true finding pulled
+> a disproportionate solution along behind it.
+>
+> **What was kept instead:** the panel wizard and the on-screen keyboard stay
+> exactly as they are, Wi-Fi setup remains optional in the developer menu, and
+> the USB tools remain the primary route. Nothing was built; `src/setup_portal.h`
+> was deleted unimplemented.
+>
+> The reference below is still worth reading if this is ever revisited —
+> `calictl`'s flow is well judged, particularly its honesty about 2.4 GHz and
+> open networks, and its captive-portal probe handling.
+
+---
+
+**Original design follows.** The owner opted out of the brainstorming questions
+and asked for this built and tested end to end on the Fairphone. Everything
+marked *(my call)* was a decision made on their behalf.
 
 ## Why
 
