@@ -10,6 +10,7 @@
 #include "config.h"
 #include "console_cmd.h"
 #include "ftms_server.h"
+#include "logsink.h"
 #include "sim_belt.h"
 #include "speed_policy.h"
 #include "ui.h"
@@ -56,8 +57,23 @@ static uint8_t lastCmdTenths = 0;
 static uint32_t lastCmdMs = 0;
 static constexpr uint32_t kCmdBaseMs = 3000;
 
+static const char* emitName(policy::Emit e) {
+    switch (e) {
+        case policy::Emit::SetSpeed:      return "SetSpeed";
+        case policy::Emit::Stop:          return "Stop";
+        case policy::Emit::StartSequence: return "StartSequence";
+        case policy::Emit::NotifyStarted: return "NotifyStarted";
+        case policy::Emit::ResetPolicy:   return "ResetPolicy";
+        case policy::Emit::SyncPolicy:    return "SyncPolicy";
+        case policy::Emit::None:          return "None";
+    }
+    return "?";
+}
+
 static void applyOutcome(const policy::Outcome& o) {
     for (size_t i = 0; i < o.count; ++i) {
+        if (o.emits[i] != policy::Emit::None)
+            logsink::line("emit %s tenths=%u", emitName(o.emits[i]), (unsigned)o.tenthKmh);
         switch (o.emits[i]) {
             case policy::Emit::SetSpeed:
                 lastCmdTenths = o.tenthKmh; lastCmdMs = millis();
@@ -354,6 +370,24 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             if (!inWizard) { Serial.println("err not-in-wizard"); return; }
             wizPress(console::parse(line) == Cmd::WizardNext ? wizard::Btn::Right : wizard::Btn::Left, now);
             break;
+        case Cmd::Log: {
+            char buf[160];
+            logsink::describe(buf, sizeof buf);
+            Serial.println(buf);
+            break;
+        }
+        case Cmd::Wifi: {
+            char ssid[48], pass[64];
+            if (!console::parseWifiArg(line, ssid, sizeof ssid, pass, sizeof pass)) {
+                Serial.println("err bad-wifi-args");
+                return;
+            }
+            logsink::setWifi(ssid, pass);
+            // Never echo the password, not even to the local console: this log
+            // is broadcast over UDP and written to a removable card.
+            Serial.printf("wifi ssid=%s stored\n", ssid[0] ? ssid : "(cleared)");
+            break;
+        }
         case Cmd::SpeedUp:
         case Cmd::SpeedDown: {
             const char* e = manualSpeed(console::parse(line) == Cmd::SpeedUp ? 1 : -1, 0);
@@ -383,7 +417,7 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             shotPending = true;  // answered once the frame has been drawn and emitted
             return;
         case Cmd::Help:
-            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | speed up|down|<km/h> | cp | shot | help");
+            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | speed up|down|<km/h> | cp | log | wifi <ssid> <pass> | shot | help");
             break;
         case Cmd::Unknown:
         case Cmd::TooLong:
@@ -397,6 +431,7 @@ void setup() {
     auto cfg = M5.config();
     M5.begin(cfg);
     Serial.begin(115200);
+    logsink::begin();
     ui.begin();
 
     bleServer.setOnTarget([](uint16_t centi) {
@@ -458,6 +493,7 @@ void setup() {
 }
 
 void loop() {
+    logsink::tick(millis());
     static uint32_t lastTick = 0;
     M5.update();
     ui.poll();

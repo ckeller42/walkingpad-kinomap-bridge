@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 
+#include "logsink.h"
 #include "wilink.h"
 
 namespace {
@@ -142,6 +143,7 @@ void BeltLink::onDown() {
 }
 
 void BeltLink::onStatus(const uint8_t* data, size_t len) {
+    logsink::hex("rx", data, len);
     wilink::Status st{};
     if (!wilink::parseStatus(data, len, st)) return;
     std::lock_guard<std::mutex> g(statusMu_);
@@ -155,8 +157,13 @@ void BeltLink::onStatus(const uint8_t* data, size_t len) {
 bool BeltLink::send(const wilink::Frame& f) {
     if (f.len < 2 || f.len > sizeof(f.bytes) || f.bytes[0] != 0xF7 || f.bytes[1] != kCmdByte) return false;
     std::lock_guard<std::mutex> g(gattMu_);
-    if (!cmd_) return false;
-    return cmd_->writeValue(f.bytes, f.len, false);  // without response
+    if (!cmd_) {
+        logsink::hex("tx-nolink", f.bytes, f.len);
+        return false;
+    }
+    const bool ok = cmd_->writeValue(f.bytes, f.len, false);  // without response
+    logsink::hex(ok ? "tx" : "tx-fail", f.bytes, f.len);
+    return ok;
 }
 
 void BeltLink::setSpeed(uint8_t tenthKmh) { send(wilink::setSpeed(tenthKmh)); }

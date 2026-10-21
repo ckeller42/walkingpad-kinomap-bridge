@@ -28,6 +28,7 @@ enum class Cmd {
     Wizard, WizardNext, WizardBack,
     SpeedUp, SpeedDown, SpeedSet,
     Cp, Shot, Help,
+    Log, Wifi,
     Unknown,   // -> "err unknown-command"
     TooLong,   // -> "err line-too-long"
 };
@@ -38,6 +39,13 @@ enum class SpeedArg { Bad, OutOfRange, Ok };
 // For Cmd::SpeedSet: reads "speed <km/h>" (at most 2 decimals, a multiple of
 // 0.1) into tenthKmh (0.1 km/h units) if it is within [minCenti, maxCenti].
 SpeedArg parseSpeedArg(const char* line, unsigned minCenti, unsigned maxCenti, unsigned char& tenthKmh);
+
+// For Cmd::Wifi: reads "wifi <ssid> <password>" from the RAW line, not the
+// normalised one, because both fields are case-sensitive and a password may
+// contain runs of spaces that normalising would collapse. The password is
+// everything after the single space that follows the ssid, trailing CR/LF
+// removed. "wifi" alone (no arguments) clears both and returns true.
+bool parseWifiArg(const char* rawLine, char* ssid, size_t ssidCap, char* pass, size_t passCap);
 
 // Accumulates bytes into lines. feed() returns true when a full line is ready
 // (take it with line()); a line longer than the buffer is reported as TooLong

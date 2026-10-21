@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdio.h>
 #include <unity.h>
 
 #include "console_cmd.h"
@@ -25,6 +26,51 @@ void test_every_documented_command_parses(void) {
     TEST_ASSERT_EQUAL(Cmd::Cp, parse("cp"));
     TEST_ASSERT_EQUAL(Cmd::Shot, parse("shot"));
     TEST_ASSERT_EQUAL(Cmd::Help, parse("help"));
+    TEST_ASSERT_EQUAL(Cmd::Log, parse("log"));
+    TEST_ASSERT_EQUAL(Cmd::Wifi, parse("wifi"));
+    TEST_ASSERT_EQUAL(Cmd::Wifi, parse("wifi MyNet hunter2"));
+}
+
+// parseWifiArg deliberately reads the RAW line, because normalise() lower-cases
+// and collapses whitespace - either of which silently corrupts a credential.
+void test_wifi_arg_preserves_case_and_spaces(void) {
+    char ssid[48], pass[64];
+
+    TEST_ASSERT_TRUE(parseWifiArg("wifi MyNet hunter2", ssid, sizeof ssid, pass, sizeof pass));
+    TEST_ASSERT_EQUAL_STRING("MyNet", ssid);
+    TEST_ASSERT_EQUAL_STRING("hunter2", pass);
+
+    // Case must survive on both fields.
+    TEST_ASSERT_TRUE(parseWifiArg("wifi FRITZ!Box-ABC PaSsWoRd", ssid, sizeof ssid, pass, sizeof pass));
+    TEST_ASSERT_EQUAL_STRING("FRITZ!Box-ABC", ssid);
+    TEST_ASSERT_EQUAL_STRING("PaSsWoRd", pass);
+
+    // Everything after the one separating space is password, runs of spaces
+    // included - collapsing these would store a credential that never works.
+    TEST_ASSERT_TRUE(parseWifiArg("wifi Net correct  horse battery", ssid, sizeof ssid, pass, sizeof pass));
+    TEST_ASSERT_EQUAL_STRING("Net", ssid);
+    TEST_ASSERT_EQUAL_STRING("correct  horse battery", pass);
+
+    // Trailing CRLF from the serial line must not become part of the password.
+    TEST_ASSERT_TRUE(parseWifiArg("wifi Net secret\r\n", ssid, sizeof ssid, pass, sizeof pass));
+    TEST_ASSERT_EQUAL_STRING("secret", pass);
+
+    // An open network: ssid, no password.
+    TEST_ASSERT_TRUE(parseWifiArg("wifi OpenNet", ssid, sizeof ssid, pass, sizeof pass));
+    TEST_ASSERT_EQUAL_STRING("OpenNet", ssid);
+    TEST_ASSERT_EQUAL_STRING("", pass);
+
+    // "wifi" alone forgets both.
+    TEST_ASSERT_TRUE(parseWifiArg("wifi", ssid, sizeof ssid, pass, sizeof pass));
+    TEST_ASSERT_EQUAL_STRING("", ssid);
+    TEST_ASSERT_EQUAL_STRING("", pass);
+
+    // Overlong fields are refused, not truncated into something half-right.
+    char longLine[200];
+    snprintf(longLine, sizeof longLine, "wifi %.*s pw", 60, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    TEST_ASSERT_FALSE(parseWifiArg(longLine, ssid, sizeof ssid, pass, sizeof pass));
+
+    TEST_ASSERT_FALSE(parseWifiArg("speed 3.5", ssid, sizeof ssid, pass, sizeof pass));
 }
 
 void test_case_and_whitespace_are_forgiven(void) {
@@ -92,6 +138,7 @@ void test_speed_value_parsing(void) {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_every_documented_command_parses);
+    RUN_TEST(test_wifi_arg_preserves_case_and_spaces);
     RUN_TEST(test_case_and_whitespace_are_forgiven);
     RUN_TEST(test_unknown_and_prefix_commands_are_unknown_not_silent);
     RUN_TEST(test_blank_line_is_empty);

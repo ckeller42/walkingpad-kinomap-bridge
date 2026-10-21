@@ -53,3 +53,36 @@ if it goes stale — wireless-debugging ports are random (see the memory note).
 
 Vendor-app analysis lives in the separate private repo `~/src/ksfit-decompile`
 (binaries in `~/apks/ksfit`). Nothing vendor-derived belongs in this repo.
+
+## Session logging (SD + UDP)
+
+The serial console resets the ESP32-S3 when the port is opened, which drops the
+belt link and Kinomap's GATT link. It is therefore unusable during a live
+session, and findings from a running workout had to be inferred from the phone's
+screen instead of counted. Two sinks close that gap. Both are fed from one ring
+buffer; all I/O happens in `loop()`, never in a BLE callback.
+
+Logged at the choke points: every FE02 write and every FE01 status frame
+(`tx` / `rx`, verbatim hex), every FTMS Control Point write (`cp`), and every
+policy emit (`emit SetSpeed tenths=20`).
+
+    tools/logcat.py                 # live, over UDP broadcast on port 9999
+    tools/logcat.py run.log         # and append to a file
+
+Neither sink touches the serial port, so `logcat.py` can run for a whole workout
+without disturbing anything.
+
+**Wi-Fi credentials are not in the repository.** They live in NVS on the device:
+
+    wifi <ssid> <password>     # on the bridge console; "wifi" alone forgets them
+    log                        # sinks, SD file in use, IP, dropped-line count
+
+`wifi` is parsed from the raw console line, not the normalised one, because
+normalising lower-cases and collapses whitespace - either of which silently
+stores a credential that never works.
+
+**SD card:** pins come from M5Unified's own per-board table, not hardcoded
+(CoreS3 reports sck=36 miso=35 mosi=37 cs=4). The mount is retried at 25/10/4/1
+MHz. `log` shows `type=0` when no card responds at all - reseat it and check it
+is FAT32, since the ESP32 SD library does not read exFAT, which is how most
+cards above 32 GB ship.

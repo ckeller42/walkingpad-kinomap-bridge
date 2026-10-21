@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <string.h>
+#include <strings.h>
 
 namespace console {
 
@@ -30,13 +31,43 @@ Cmd parse(const char* line) {
         {"start", Cmd::Start},     {"stop", Cmd::Stop},       {"sim on", Cmd::SimOn},
         {"sim off", Cmd::SimOff},  {"wizard", Cmd::Wizard},   {"wizard next", Cmd::WizardNext},
         {"wizard back", Cmd::WizardBack}, {"cp", Cmd::Cp}, {"shot", Cmd::Shot}, {"help", Cmd::Help},
+        {"log", Cmd::Log},         {"wifi", Cmd::Wifi},
     };
     for (const Entry& e : kTable)
         if (strcmp(s, e.text) == 0) return e.cmd;
     if (strcmp(s, "speed up") == 0) return Cmd::SpeedUp;
     if (strcmp(s, "speed down") == 0) return Cmd::SpeedDown;
     if (strncmp(s, "speed ", 6) == 0) return Cmd::SpeedSet;
+    if (strncmp(s, "wifi ", 5) == 0) return Cmd::Wifi;
     return Cmd::Unknown;
+}
+
+bool parseWifiArg(const char* rawLine, char* ssid, size_t ssidCap, char* pass, size_t passCap) {
+    ssid[0] = pass[0] = 0;
+    const char* p = rawLine;
+    while (*p == ' ' || *p == '\t') ++p;
+    if (strncasecmp(p, "wifi", 4) != 0) return false;
+    p += 4;
+    while (*p == ' ' || *p == '\t') ++p;
+    if (*p == 0 || *p == '\r' || *p == '\n') return true;  // "wifi" alone: forget
+
+    const char* ssidEnd = p;
+    while (*ssidEnd && *ssidEnd != ' ' && *ssidEnd != '\t' &&
+           *ssidEnd != '\r' && *ssidEnd != '\n') ++ssidEnd;
+    const size_t sn = (size_t)(ssidEnd - p);
+    if (sn == 0 || sn >= ssidCap) return false;
+    memcpy(ssid, p, sn);
+    ssid[sn] = 0;
+
+    p = ssidEnd;
+    if (*p == ' ' || *p == '\t') ++p;  // exactly one separator; the rest is the password
+    const char* end = p;
+    while (*end && *end != '\r' && *end != '\n') ++end;
+    const size_t pn = (size_t)(end - p);
+    if (pn >= passCap) return false;
+    memcpy(pass, p, pn);
+    pass[pn] = 0;
+    return true;
 }
 
 SpeedArg parseSpeedArg(const char* line, unsigned minCenti, unsigned maxCenti, unsigned char& tenthKmh) {

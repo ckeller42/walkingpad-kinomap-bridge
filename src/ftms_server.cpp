@@ -1,5 +1,6 @@
 #include "ftms_server.h"
 
+#include "logsink.h"
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 
@@ -107,7 +108,11 @@ void FtmsServer::handleControlPointWrite(const uint8_t* data, size_t len) {
         if (len > 1) Serial.printf("cp op=0x%02x len=%u payload=%s%s\n", data[0], (unsigned)len, pl, req.valid ? "" : " (invalid)");
         else Serial.printf("cp op=0x%02x len=1%s\n", data[0], req.valid ? "" : " (invalid)");
     }
-    if (!req.valid) return;
+    if (data && len) logsink::hex("cp", data, len);
+    if (!req.valid) {
+        logsink::line("cp invalid");
+        return;
+    }
 
     if (req.op == ftms::CpOp::SetTargetSpeed) {
         if (onTarget_) onTarget_(req.centiKmh);

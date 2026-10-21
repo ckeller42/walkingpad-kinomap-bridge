@@ -38,3 +38,9 @@
 // may well never fire for Kinomap. It is here for FTMS apps that do drive the
 // machine, and for the Kinomap paths not yet exercised with a walker aboard.
 #define PHONE_START_CENTI_KMH 200  // 2.0 km/h
+
+// UDP port the session log is broadcast to. Listen with:  nc -ul 9999
+// Broadcast rather than a fixed host, so the log needs no address configured
+// on this side. Wi-Fi credentials are NOT here: they live in NVS, set with the
+// console's "wifi <ssid> <password>", so they never reach the repository.
+#define LOG_UDP_PORT 9999
