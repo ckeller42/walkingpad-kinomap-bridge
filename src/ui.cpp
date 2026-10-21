@@ -17,8 +17,8 @@ constexpr uint16_t ARM_OFF = 0x2104;   // dark grey
 M5Canvas canvas(&M5.Display);
 bool canvasOk = false;
 
-void dot(lgfx::LovyanGFX& g, int cx, const char* label, bool up) {
-    g.fillCircle(cx - 40, 14, 9, up ? TFT_GREEN : TFT_RED);
+void dot(lgfx::LovyanGFX& g, int cx, const char* label, bool up, bool sim = false) {
+    g.fillCircle(cx - 40, 14, 9, sim ? TFT_ORANGE : (up ? TFT_GREEN : TFT_RED));
     g.setTextColor(TFT_WHITE, BG);
     g.setTextDatum(middle_left);
     g.setFont(&fonts::FreeSansBold12pt7b);
@@ -52,7 +52,9 @@ void Ui::render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
                                   : static_cast<lgfx::LovyanGFX&>(M5.Display);
     g.fillScreen(BG);
 
-    dot(g, HALF / 2, "BELT", beltUp);
+    // A simulated belt must never look like a healthy real one: amber "SIM".
+    if (sim_) dot(g, HALF / 2, "SIM BELT", true, true);
+    else dot(g, HALF / 2, "BELT", beltUp);
     dot(g, HALF + HALF / 2, "PHONE", phoneUp);
 
     char buf[24];

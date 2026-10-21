@@ -47,6 +47,7 @@ public:
     void start() override;
     void stop() override;  // setMode(Standby): the only stop the belt honours
     bool poll(wilink::Status& out) override;  // read-only: never writes
+    uint32_t statusAgeMs() const override;
     bool requestStatus() override;            // the FE02 write; paced by BeltGate
     bool linkUp() const override { return linked_.load(); }
 
@@ -64,7 +65,7 @@ private:
     std::mutex gattMu_;  // guards cmd_ (the FE02 handle) for the write path
     NimBLERemoteCharacteristic* cmd_ = nullptr;
 
-    std::mutex statusMu_;
+    mutable std::mutex statusMu_;
     wilink::Status status_{};
     bool haveStatus_ = false;
     uint32_t statusAtMs_ = 0;

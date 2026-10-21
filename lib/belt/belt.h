@@ -20,6 +20,10 @@ public:
     // subject to the same ~0.7 s rule as commands). Returns true only if a
     // write actually happened. Default: nothing to ask (SimBelt).
     virtual bool requestStatus() { return false; }
+    // Age of the status poll() would return, in ms (UINT32_MAX if none yet).
+    // Lets the pacer ask for a refresh only when the reading is actually
+    // stale. Default 0: a belt with no request/reply round trip is always fresh.
+    virtual uint32_t statusAgeMs() const { return 0; }
     virtual bool linkUp() const = 0;
     // Time-driven housekeeping (SimBelt's physics, BeltGate's pacing). Call
     // every loop pass. A no-op by default, so a belt with no clock-driven

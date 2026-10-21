@@ -13,11 +13,14 @@ public:
     void poll();
     void render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
                 bool beltUp, bool phoneUp, bool armed);
+    // Marks the belt indicator as "SIM BELT" (amber) while the simulated belt is bound.
+    void setSim(bool sim) { sim_ = sim; }
     // Edge-triggered: true once per press, then cleared.
     bool tookArmToggle();
     bool tookStop();
 
 private:
+    bool sim_ = false;
     bool armPressed_ = false;
     bool stopPressed_ = false;
 };

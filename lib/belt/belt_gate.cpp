@@ -27,7 +27,9 @@ void BeltGate::stop() {
 }
 
 bool BeltGate::poll(wilink::Status& out) {
-    pollWanted_ = true;  // tick() sends the request once the gap allows
+    const uint32_t age = inner_.statusAgeMs();
+    if (age > kStatusRefreshMs) pollWanted_ = true;  // tick() sends it when the gap allows
+    pollUrgent_ = age > kStatusUrgentMs;
     if (!inner_.poll(out)) return false;
     lastSpeed_ = out.tenthKmh;
     const bool idle = out.tenthKmh == 0 && (out.beltState == 0 || out.beltState == 4);
@@ -52,9 +54,8 @@ void BeltGate::tick(uint32_t nowMs) {
         lastStopMs_ = now_;
         speedAtStop_ = lastSpeed_;
         wrote();
-    } else if (pollWanted_) {
-        pollWanted_ = false;
-        if (inner_.requestStatus()) wrote();
+    } else if (pollWanted_ && pollUrgent_) {
+        sendStatusRequest();
     } else if (modeQueued_) {
         inner_.setMode(mode_);
         modeQueued_ = false;
@@ -67,7 +68,14 @@ void BeltGate::tick(uint32_t nowMs) {
         inner_.setSpeed(speed_);
         speedQueued_ = false;
         wrote();
+    } else if (pollWanted_) {
+        sendStatusRequest();
     }
+}
+
+void BeltGate::sendStatusRequest() {
+    pollWanted_ = pollUrgent_ = false;
+    if (inner_.requestStatus()) wrote();
 }
 
 }  // namespace belt

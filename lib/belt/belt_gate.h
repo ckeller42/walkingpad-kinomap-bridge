@@ -9,9 +9,12 @@
 // belt::Belt, so a BLE-client belt slots in underneath unchanged.
 //
 // Queue depth is 1 per command type: a newer speed supersedes an older one.
-// Send order is stop > status request > mode > start > speed. The status
-// request is an FE02 write like any other, so poll() only marks one as owed
-// and tick() sends it inside the same gap. stop() discards everything
+// Send order is stop > mode > start > speed > status request: a command is a
+// user intention, a status request is housekeeping. The request is an FE02
+// write like any other, so it shares the gap. poll() owes one only when the
+// reading is stale (> kStatusRefreshMs), which decouples the request cadence
+// from the loop cadence; past kStatusUrgentMs it jumps ahead of commands
+// (still below stop) so commands cannot starve status. stop() discards everything
 // queued and is re-sent until a poll shows the belt stopped (speed 0, state
 // 0 or 4), because a lost stop leaves the belt running with nobody holding it.
 // stop() always writes: a belt that keeps running outranks one extra beep.
@@ -29,6 +32,13 @@ public:
     void stop() override;
     bool poll(wilink::Status& out) override;
     bool linkUp() const override { return inner_.linkUp(); }
+    uint32_t statusAgeMs() const override { return inner_.statusAgeMs(); }
+
+    // A status refresh is owed once the reading is older than this...
+    static constexpr uint32_t kStatusRefreshMs = 1500;
+    // ...and outranks queued commands (never a stop) once older than this, so
+    // a steady stream of commands cannot starve status forever.
+    static constexpr uint32_t kStatusUrgentMs = 3000;
 
     // Sends at most one queued command if the gap since the last write has
     // elapsed, and ticks the wrapped belt. Call often (every loop pass is fine).
@@ -40,6 +50,7 @@ private:
     uint32_t now_ = 0, lastWriteMs_ = 0, lastStopMs_ = 0;
     bool haveWritten_ = false;
     bool pollWanted_ = false;   // a status refresh is owed (paced like a command)
+    bool pollUrgent_ = false;
 
     bool stopWanted_ = false;   // stop queued or sent but not yet confirmed
     bool stopQueued_ = false;   // needs (re)sending
@@ -53,6 +64,7 @@ private:
     uint8_t speed_ = 0;
     uint8_t lastSpeed_ = 0;
 
+    void sendStatusRequest();
     void cancelStop() { stopWanted_ = stopQueued_ = stopSent_ = false; }
     void wrote() { haveWritten_ = true; lastWriteMs_ = now_; }
 };

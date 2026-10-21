@@ -104,11 +104,12 @@ static void checkStartTimeout(uint32_t now) {
 
 // A reading is only trusted while recent. Past STATUS_STALE_MS the belt counts
 // as down (UI, policy), however connected the link claims to be.
+// Age comes from the belt itself (when the frame was actually received), not
+// from when poll() last returned true: a cached reading must not look fresh.
 static bool haveFresh = false;
-static uint32_t lastFreshMs = 0;
-static bool beltFresh(uint32_t now) {
-    return haveFresh && now - lastFreshMs <= STATUS_STALE_MS;
-}
+static bool beltFresh() { return haveFresh && theBelt.statusAgeMs() <= STATUS_STALE_MS; }
+// Do not push a reading to Kinomap that is older than this.
+#define NOTIFY_MAX_AGE_MS 2500
 
 static bool lastPhone = false;
 static void trackPhone() {
@@ -122,7 +123,7 @@ static void trackPhone() {
 // The belt link can drop and return (BeltLink); the policy must hear of it.
 static bool lastBelt = false;
 static void trackBelt() {
-    bool now = theBelt.linkUp() && beltFresh(millis());
+    bool now = theBelt.linkUp() && beltFresh();
     if (now != lastBelt) {
         lastBelt = now;
         if (!now) startPending = false;  // a pending start died with the link
@@ -158,6 +159,7 @@ void setup() {
     Serial.printf("belt source: %s\n", sim ? "SimBelt" : "BeltLink");
     belt::Belt& chosen = sim ? static_cast<belt::Belt&>(simBelt)
                              : static_cast<belt::Belt&>(beltLink);
+    ui.setSim(sim);
     gate = new belt::BeltGate(chosen, policy::kMinCommandIntervalMs);
     // BeltLink shares the NimBLE stack, so only start it after bleServer.begin().
     if (!sim && !beltLink.begin()) Serial.println("belt link task failed to start");
@@ -204,7 +206,6 @@ void loop() {
             wilink::Status st{};
             if (theBelt.poll(st)) {
                 haveFresh = true;
-                lastFreshMs = now;
                 const uint8_t prevTenths = lastStatus.tenthKmh;
                 lastStatus = st;
                 speedPolicy.onBeltSpeed(st.tenthKmh);
@@ -212,13 +213,13 @@ void loop() {
                 if (state.beltRunning() && !startPending && st.tenthKmh == 0 &&
                     (st.beltState == 0 || st.beltState == 4))
                     applyOutcome(state.onBeltObservedStopped());
-                if (state.notifying()) bleServer.notifySpeed((uint16_t)st.tenthKmh * 10);
+                if (state.notifying() && theBelt.statusAgeMs() <= NOTIFY_MAX_AGE_MS) bleServer.notifySpeed((uint16_t)st.tenthKmh * 10);
             }
             checkStartTimeout(now);
             redraw = true;
         }
         // Never show a stale reading as if it were live.
-        const bool fresh = beltFresh(now);
+        const bool fresh = beltFresh();
         centi = fresh ? (uint16_t)lastStatus.tenthKmh * 10 : 0;
         dist = lastStatus.distance10m;
         elapsed = lastStatus.elapsedSec;

@@ -154,6 +154,11 @@ void BeltLink::setMode(wilink::Mode mode) { send(wilink::setMode(mode)); }
 void BeltLink::start() { send(wilink::startBelt()); }
 void BeltLink::stop() { send(wilink::setMode(wilink::Mode::Standby)); }
 
+uint32_t BeltLink::statusAgeMs() const {
+    std::lock_guard<std::mutex> g(statusMu_);
+    return haveStatus_ ? millis() - statusAtMs_ : UINT32_MAX;
+}
+
 bool BeltLink::requestStatus() {
     return send(wilink::requestStatus());  // the reply arrives later on FE01
 }
