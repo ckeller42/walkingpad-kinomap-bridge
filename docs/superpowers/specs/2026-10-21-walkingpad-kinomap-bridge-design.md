@@ -192,7 +192,19 @@ each is cheap to change.
 
 - **Deadband 0.3 km/h**, minimum write spacing **1 s** (the belt ignores anything
   under ~0.7 s; 1 s gives margin). Both configurable rather than compiled in.
-- **NimBLE** rather than Bluedroid — dual-role in roughly 40 KB RAM.
+- **Framework: Arduino + M5Unified, built with PlatformIO.** The owner delegated
+  this choice. The deciding factor is the CoreS3's hardware: its display, touch
+  controller, AXP2101 power management and I²C expander are all handled by
+  M5Unified/M5GFX out of the box, where ESP-IDF would mean bringing up that stack
+  by hand or depending on M5's less-mature IDF component. The bridge's own logic
+  is small; almost all of the incidental work here is board bring-up and GUI, and
+  that is exactly what M5Unified removes.
+  *Cost, stated plainly:* this diverges from the owner's existing ESP-IDF CoreS3
+  project on `bar`, so the two will not share build tooling. Judged worth it —
+  the flashing workflow is the only thing they would have shared, and `esptool`
+  is common to both anyway.
+- **NimBLE-Arduino** rather than Bluedroid — dual-role in roughly 40 KB RAM, and
+  the simultaneous central + peripheral case is well-trodden there.
 - The bridge presents itself with a **distinctive advertised name**, since the
   owner picks it from a list by name.
 - **Minimal `2ACD` payload**: flags `0x0000`, instantaneous speed only. Justified
@@ -261,10 +273,7 @@ state) and STOP, side by side, each half the width.
 ## What is left to the builder
 
 - Firmware structure, task layout, and how the two BLE roles are scheduled.
-- Framework choice: ESP-IDF (consistent with the owner's existing CoreS3 project)
-  versus Arduino + M5Unified (faster for the GUI). **Flagged for the owner** —
-  the trade-off is consistency against GUI effort.
-- How the screen is drawn and how ARM/STOP are hit-tested.
+- How the screen is drawn and how ARM/STOP are hit-tested, within M5GFX.
 - Exact `2ACC` feature bits beyond the required speed-target bit.
 - How configuration (deadband, spacing, advertised name) is surfaced and stored.
 - Reconnection and retry strategy for both links.
