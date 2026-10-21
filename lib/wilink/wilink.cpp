@@ -66,4 +66,53 @@ bool parseStatus(const uint8_t* buf, size_t len, Status& out) {
     return true;
 }
 
+namespace {
+// A chunk starts a frame when it carries the F8 A2 header. Both bytes are
+// checked when both are present, so a continuation that happens to begin 0xF8
+// is not mistaken for a new frame.
+bool looksLikeStart(const uint8_t* data, size_t len) {
+    if (len == 0 || data[0] != kStatusHeader0) return false;
+    return len < 2 || data[1] == kStatusHeader1;
+}
+}  // namespace
+
+void StatusReassembler::reset() { len_ = 0; }
+
+StatusReassembler::Result StatusReassembler::feed(const uint8_t* data, size_t len,
+                                                  Status& out) {
+    if (data == nullptr || len == 0) return Result::Ignored;
+
+    if (looksLikeStart(data, len)) {
+        // A new frame abandons whatever was pending: the old one lost its tail
+        // and will never complete.
+        if (len_ != 0) ++discarded_;
+        len_ = 0;
+        if (parseStatus(data, len, out)) return Result::Parsed;  // whole frame
+        if (len > kCap) {
+            ++discarded_;
+            return Result::Ignored;
+        }
+        for (size_t i = 0; i < len; ++i) buf_[i] = data[i];
+        len_ = len;
+        return Result::Buffered;
+    }
+
+    if (len_ == 0) return Result::Ignored;  // stray continuation, nothing to join
+
+    if (len_ + len > kCap) {  // cannot be a status frame; give up on it
+        ++discarded_;
+        len_ = 0;
+        return Result::Ignored;
+    }
+    for (size_t i = 0; i < len; ++i) buf_[len_ + i] = data[i];
+    len_ += len;
+
+    if (parseStatus(buf_, len_, out)) {
+        ++reassembled_;
+        len_ = 0;
+        return Result::Parsed;
+    }
+    return Result::Buffered;
+}
+
 }  // namespace wilink

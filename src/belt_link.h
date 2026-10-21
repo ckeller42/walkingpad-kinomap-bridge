@@ -36,6 +36,11 @@ class NimBLERemoteCharacteristic;
 // callbacks run on the NimBLE host task and only touch mutex-guarded state.
 class BeltLink : public belt::Belt {
 public:
+    /** @brief Status frames recovered from split notifications. */
+    uint32_t reassembled() const { return reasm_.reassembled(); }
+    /** @brief Status fragments abandoned without completing. */
+    uint32_t fragmentsLost() const { return reasm_.discarded(); }
+
     static constexpr uint32_t kStatusStaleMs = STATUS_STALE_MS;
 
     // Initialises NimBLE if needed (safe after FtmsServer::begin) and starts
@@ -73,6 +78,8 @@ private:
     std::mutex gattMu_;  // guards cmd_ (the FE02 handle) for the write path
     NimBLERemoteCharacteristic* cmd_ = nullptr;
 
+    // Rejoins status frames the belt splits across two notifications.
+    wilink::StatusReassembler reasm_;
     mutable std::mutex statusMu_;
     wilink::Status status_{};
     bool haveStatus_ = false;

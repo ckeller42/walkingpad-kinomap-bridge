@@ -68,3 +68,21 @@ every screen (4 s each); any console command ends the tour.
 truncated or damaged ones (capture at least 12 s per frame, and the whole tour
 needs about 60 s). The shot build is for documentation only: it never writes
 the `setup_done` flag.
+
+## Status fields for split status frames
+
+`status` reports two counters from the belt link:
+
+```text
+rx_join=0 rx_lost=0
+```
+
+- **`rx_join`** — status frames rejoined from two or more notifications. The
+  belt can split its 20-byte frame across two FE01 notifications, and parsing
+  each alone would reject both halves and lose the reading.
+- **`rx_lost`** — fragments abandoned without ever completing, for instance
+  when the tail never arrived and a fresh frame started instead.
+
+Both read 0 on the simulated belt. A steadily climbing `rx_lost` would mean
+readings are being dropped, which matters because `STATUS_STALE_MS` is 5000:
+enough consecutive losses and the bridge declares a running belt down.

@@ -95,4 +95,53 @@ struct Status {
  */
 bool parseStatus(const uint8_t* buf, size_t len, Status& out);
 
+/**
+ * @brief Reassembles status frames that arrive split across notifications.
+ *
+ * Measured on hardware: the belt's 20-byte status frame can be delivered as
+ * two FE01 notifications (`f8 a2 00`, then a 17-byte remainder). Handing each
+ * notification to parseStatus() on its own rejects both halves, so the reading
+ * is lost without a trace. A single loss is harmless at a 1 Hz poll, but
+ * `STATUS_STALE_MS` is 5000, so a run of them makes the bridge declare a
+ * running belt down and stop notifying the phone.
+ *
+ * Pure logic with no I/O, so the split cases are unit-tested on the host.
+ * Self-healing by construction: any chunk that begins a new frame abandons a
+ * pending fragment, so a lost tail cannot wedge it shut.
+ */
+class StatusReassembler {
+public:
+    /** @brief What feed() did with the chunk. */
+    enum class Result : uint8_t {
+        Ignored,   ///< Not a frame start and nothing pending; discarded.
+        Buffered,  ///< Kept as a fragment, waiting for the remainder.
+        Parsed,    ///< A whole frame was decoded into the caller's Status.
+    };
+
+    /**
+     * @brief Offer one notification's bytes.
+     * @param data Bytes as received; may be null.
+     * @param len  Number of bytes in @p data.
+     * @param out  Filled in only when the result is Result::Parsed.
+     * @return What happened to the chunk.
+     */
+    Result feed(const uint8_t* data, size_t len, Status& out);
+
+    /** @brief Forget any pending fragment, e.g. on disconnect. */
+    void reset();
+
+    /** @brief Frames recovered from two or more fragments. */
+    uint32_t reassembled() const { return reassembled_; }
+
+    /** @brief Fragments abandoned without ever completing. */
+    uint32_t discarded() const { return discarded_; }
+
+private:
+    static constexpr size_t kCap = 32;  ///< Frame is 20 bytes; this is slack.
+    uint8_t buf_[kCap] = {};
+    size_t len_ = 0;
+    uint32_t reassembled_ = 0;
+    uint32_t discarded_ = 0;
+};
+
 }  // namespace wilink

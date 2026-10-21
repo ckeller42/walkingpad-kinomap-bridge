@@ -133,6 +133,9 @@ bool BeltLink::connectOnce() {
 }
 
 void BeltLink::onDown() {
+    // A half-received frame cannot be completed by the next connection, and
+    // joining it to one would fabricate a reading.
+    reasm_.reset();
     {
         std::lock_guard<std::mutex> g(gattMu_);
         cmd_ = nullptr;  // before linked_: nobody may see "up" with no handle
@@ -145,7 +148,15 @@ void BeltLink::onDown() {
 void BeltLink::onStatus(const uint8_t* data, size_t len) {
     logsink::hex("rx", data, len);
     wilink::Status st{};
-    if (!wilink::parseStatus(data, len, st)) return;
+    // The belt can split a status frame across two notifications, so each one
+    // goes through the reassembler rather than straight to the parser. Both
+    // halves of a split would otherwise be rejected and the reading lost.
+    const auto r = reasm_.feed(data, len, st);
+    if (r == wilink::StatusReassembler::Result::Buffered) {
+        logsink::line("rx fragment buffered");
+        return;
+    }
+    if (r != wilink::StatusReassembler::Result::Parsed) return;
     std::lock_guard<std::mutex> g(statusMu_);
     status_ = st;
     haveStatus_ = true;

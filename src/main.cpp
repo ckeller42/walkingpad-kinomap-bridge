@@ -316,11 +316,15 @@ static void consoleStatus() {
     // value is an integer a host script can compare.
     Serial.printf(
         "status armed=%d running=%d belt_link=%d phone_link=%d belt_state=%d "
-        "speed=%u target=%u wizard=%s src=%s setup_done=%d\n",
+        "speed=%u target=%u wizard=%s src=%s setup_done=%d rx_join=%lu rx_lost=%lu\n",
         (int)state.armed(), (int)state.beltRunning(), (int)(theBelt.linkUp() && fresh),
         (int)bleServer.phoneConnected(), fresh ? (int)lastStatus.beltState : -1,
         fresh ? (unsigned)lastStatus.tenthKmh : 0u, (unsigned)targetCenti, stepName(),
-        simSource ? "sim" : "real", (int)prefs.getBool("setup_done", false));
+        simSource ? "sim" : "real", (int)prefs.getBool("setup_done", false),
+        // Frames rejoined from split notifications, and fragments that never
+        // completed. Reported so the rate is measured rather than assumed.
+        simSource ? 0ul : (unsigned long)beltLink.reassembled(),
+        simSource ? 0ul : (unsigned long)beltLink.fragmentsLost());
 }
 
 static void consoleRun(const char* line, bool overflow, uint32_t now) {
