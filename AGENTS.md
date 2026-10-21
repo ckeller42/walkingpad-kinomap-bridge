@@ -51,7 +51,7 @@ Consequences you will hit:
 | `docs/` | Also the Sphinx source directory. |
 | `tools/` | Host-side test and analysis scripts. |
 
-The `lib`/`src` split is what makes 145 tests runnable with no hardware. When
+The `lib`/`src` split is what makes 153 tests runnable with no hardware. When
 adding behaviour, put the decision in `lib/` returning a value, and the effect
 in `src/`. `BridgeState` is the model: every state-changing entry point returns
 a `[[nodiscard]] Outcome` that exactly one `applyOutcome()` drains.

@@ -57,6 +57,25 @@ def read_baseline(path: pathlib.Path):
     return count, (lines[1] if len(lines) > 1 else "unknown")
 
 
+def headers_without_file_block(roots=("lib", "src")):
+    """Headers that carry no `@file` block.
+
+    This is not cosmetic. Without one, Doxygen extracts a header's free
+    functions but never reports them as undocumented — so they are missing
+    from the docs *and* invisible to this ratchet. The count can be driven to
+    zero by omitting documentation, which is the opposite of what it is for.
+
+    Found the hard way: logsink.h sat at an apparent zero while five of its
+    functions had no documentation at all.
+    """
+    missing = []
+    for root in roots:
+        for path in sorted(pathlib.Path(root).rglob("*.h")):
+            if "@file" not in path.read_text(errors="replace"):
+                missing.append(str(path))
+    return missing
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         sys.exit("usage: doxygen_ratchet.py <warnings.txt> <baseline-file>")
@@ -66,6 +85,15 @@ def main() -> int:
     hits = [ln for ln in text.splitlines() if UNDOCUMENTED.search(ln)]
     count = len(hits)
     version = doxygen_version()
+
+    blind = headers_without_file_block()
+    if blind:
+        print("\nHeaders with no @file block. Doxygen will not report their free")
+        print("functions as undocumented, so this count cannot be trusted until")
+        print("they are fixed:\n")
+        for f in blind:
+            print("  " + f)
+        return 1
 
     baseline, base_version = read_baseline(base_path)
     if baseline is None:

@@ -45,7 +45,7 @@ const char* version();
 
 /**
  * @brief Where the last update attempt got to.
- * @return The current @ref State.
+ * @return The current ota::State.
  */
 State state();
 

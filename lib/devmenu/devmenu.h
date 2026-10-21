@@ -1,4 +1,8 @@
 #pragma once
+/**
+ * @file devmenu.h
+ * @brief The developer menu: the radio switches, Wi-Fi pairing and OTA.
+ */
 // The developer menu: the radio switches, Wi-Fi pairing and OTA.
 //
 // Arduino-free and unit-tested, like lib/wizard. It decides *what* should
@@ -35,7 +39,7 @@ enum class Action : uint8_t {
     StartScan,       ///< Begin a Wi-Fi scan.
     SubmitPassword,  ///< Connect using ssid() and password().
     ForgetWifi,      ///< Clear the stored credentials.
-    CycleProtocol,   ///< Ask for the next protocol mode (see @ref Protocol).
+    CycleProtocol,   ///< Ask for the next protocol mode (see devmenu::Protocol).
 };
 
 /**
@@ -110,12 +114,12 @@ struct Screen {
  */
 class DevMenu {
 public:
-    /** @brief Reset to @ref Step::Root and clear any half-typed password. */
+    /** @brief Reset to devmenu::Step::Root and clear any half-typed password. */
     void open();
 
     /**
      * @brief Which screen is showing.
-     * @return The current @ref Step.
+     * @return The current devmenu::Step.
      */
     Step step() const { return step_; }
 
@@ -144,6 +148,8 @@ public:
 
     /**
      * @brief Append one character to the password being typed.
+     *
+     * @param c The character to add.
      *
      * A character that would overflow is **refused**, not truncated: a cut-off
      * credential looks accepted and then never connects.

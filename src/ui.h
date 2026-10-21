@@ -28,6 +28,14 @@
  * setMenuMode(); the menu is tested first, so a row tap cannot also read as a
  * speed button.
  */
+
+/**
+ * @brief The bridge's screen and its latched touch input.
+ *
+ * Owns the panel: draws the main screen, the setup wizard and the developer
+ * menu, and records what was touched for `loop()` to act on. Holds no policy —
+ * every press becomes a flag that main.cpp turns into a BridgeState call.
+ */
 class Ui {
 public:
     /** @brief Set up the panel and the off-screen canvas. Call once. */

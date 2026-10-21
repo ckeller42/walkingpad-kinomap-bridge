@@ -30,6 +30,17 @@ QUIET                  = YES
 # is the real output of this step.
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
+# Strip GCC attributes before they reach the XML. logsink::line() carries
+# __attribute__((format(printf, 1, 2))), which is load-bearing - it is what
+# makes the compiler check those call sites, and it caught a mismatched
+# argument list that had put the firmware in a boot loop - but Sphinx's C++
+# domain cannot parse it. Erasing it here keeps the attribute in the code and
+# out of the docs.
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = __attribute__(x)=
+
 GENERATE_XML           = YES
 XML_OUTPUT             = xml
 XML_PROGRAMLISTING     = NO
