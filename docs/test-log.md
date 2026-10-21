@@ -421,11 +421,14 @@ have dropped both the arming and Kinomap's link.
    predicted for 307 s at 2.0 km/h. Kinomap is integrating the bridge's measured
    speed, not estimating from the route.
 
-4. **Kinomap never wrote `0x02` Set Target Speed**, across a full eight-minute
-   session with a walker aboard and three speed changes. Taken with the counted
-   `00=1 03=2 07=1` from the earlier session, treat this as settled for video
-   modes in 4.7.1. `PHONE_START_CENTI_KMH` never fired either, consistent with
-   Kinomap never initiating `0x07`.
+4. **No sign of Kinomap writing `0x02` Set Target Speed** - but note the
+   weaker provenance here than elsewhere in this log. The control-point counters
+   were *not* readable during the walk, because reading them means opening the
+   serial console, which reboots the bridge. This is inferred from the speed
+   holding at 2.0 km/h for five minutes and then moving only when a button was
+   pressed. The counted evidence remains the earlier session's `00=1 03=2 07=1`.
+   `PHONE_START_CENTI_KMH` never visibly fired, consistent with Kinomap never
+   initiating `0x07`, and equally uncounted.
 
 ### The shape of the finished system
 
