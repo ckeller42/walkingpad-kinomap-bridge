@@ -63,6 +63,7 @@ Example frames carry a CRC computed by the generator from the group, function an
 |---|---|---|---|---|
 | 0x00 | idle |  | measured | test-log: Stage 2, state machine |
 | 0x03 | waking | Seen briefly on the way out of standby | measured | test-log: Stage 2, start probe |
+| 0x08 | spin_up | Seen between pre-countdown and starting | measured | test-log: Stage 3, decoded from a captured UDP log |
 | 0x09 | pre_countdown | Seen between start and countdown | measured | test-log: Stage 2, start probe |
 | 0x07 | countdown | Countdown immediately after start | measured | test-log: Stage 2, state machine |
 | 0x06 | starting | Starting / transitioning | measured | test-log: Stage 2, state machine |
@@ -85,6 +86,7 @@ Example frames carry a CRC computed by the generator from the group, function an
 
 | Key | Value | Statement | Provenance | Evidence |
 |---|---|---|---|---|
+| `status_may_fragment` | yes | A status frame can arrive split across two FE01 notifications, so a handler that parses each notification alone silently drops that reading. | measured | test-log: Stage 3, captured as 'f8 a2 00' then a 17-byte remainder ending fd |
 | `unattended_auto_stop_s` | 15 s | With nobody walking on it the belt stops by itself a short time after starting, returning to state 0 with speed 0. | measured | test-log: Stage 2, observed on every unattended start; the window varied and shortened on repeated starts |
 | `display_shows_setpoint` | yes | The belt's console shows the commanded speed even while the belt is not moving, so the display alone does not prove motion. | measured | test-log: Stage 2, camera read 2.0 and 3.5 while status reported state 0 speed 0 |
 | `unsolicited_notifications` | no | The belt sends no unsolicited notifications on FE01; every status reading must be requested. | measured | test-log: Stage 2, a 10 s subscription yielded zero notifications |

@@ -175,6 +175,7 @@ enums:
     values:
       - {value: 0, name: idle, provenance: measured, evidence: "test-log: Stage 2, state machine"}
       - {value: 3, name: waking, meaning: "Seen briefly on the way out of standby", provenance: measured, evidence: "test-log: Stage 2, start probe"}
+      - {value: 8, name: spin_up, meaning: "Seen between pre-countdown and starting", provenance: measured, evidence: "test-log: Stage 3, decoded from a captured UDP log"}
       - {value: 9, name: pre_countdown, meaning: "Seen between start and countdown", provenance: measured, evidence: "test-log: Stage 2, start probe"}
       - {value: 7, name: countdown, meaning: "Countdown immediately after start", provenance: measured, evidence: "test-log: Stage 2, state machine"}
       - {value: 6, name: starting, meaning: "Starting / transitioning", provenance: measured, evidence: "test-log: Stage 2, state machine"}
@@ -220,6 +221,12 @@ status_frame:
       note: Mode 1, elapsed 11 s, distance 0, steps 2, preset 0x0a (1.0 km/h).
 
 constraints:
+  - id: fragmented_status_notifications
+    statement: A status frame can arrive split across two FE01 notifications, so a handler that parses each notification alone silently drops that reading.
+    key: status_may_fragment
+    value: true
+    provenance: measured
+    evidence: "test-log: Stage 3, captured as 'f8 a2 00' then a 17-byte remainder ending fd"
   - id: unattended_auto_stop
     statement: With nobody walking on it the belt stops by itself a short time after starting, returning to state 0 with speed 0.
     key: unattended_auto_stop_s

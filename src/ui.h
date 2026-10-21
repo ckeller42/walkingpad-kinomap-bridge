@@ -55,6 +55,7 @@ public:
 
 private:
     void finishFrame(int phase);
+    void pollKeyboard(int x, int y);
     bool sim_ = false;
     bool wizardMode_ = false;
     bool armPressed_ = false;
