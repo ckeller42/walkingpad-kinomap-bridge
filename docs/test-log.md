@@ -436,3 +436,61 @@ The user and the bridge drive the belt; Kinomap reads and records it. Kinomap
 supplies the route, the video, the gradient display and the session record, and
 takes its speed, distance and power from the bridge. It does not drive the
 machine, and no setting in it makes it do so.
+
+## Why Kinomap never commands speed — and proof the bridge is ready for it
+
+### The cause is one account flag, not the bridge and not the workout type
+
+Every Kinomap code path that sends `0x02` Set Target Speed sits behind
+`bqj.J()`:
+
+```java
+public final boolean J() {
+    return whj.a(this.n).getBoolean("controlSpeedTreadmill", false) && a();
+}
+```
+
+`ag8.receive(a.c.h /* FEATURE_SPEED */, f)` -> `y0(f)` is the sink. Its callers:
+
+| Caller | Sends | Gate |
+|---|---|---|
+| `ch1` (video-route player) | FEATURE_SLOPE | none |
+| `kti:872,1449` | FEATURE_SPEED | `J()` and `instanceof jh8` |
+| `n5r:128` | FEATURE_SPEED | `J()` |
+
+The video player drives **slope only**, which is exactly the measured
+`cp 00=1 03=2 07=1`. `controlSpeedTreadmill` is a `TrainingParametersModel`
+field delivered by Kinomap's server, default false, toggled in a section driven
+by `AdminSettingsState`.
+
+Walked on this account and **not found**: Settings (My Subscribe, Equipment
+Management, Remote display, Try the new screen, My account, My profile, My
+notifications, Privacy policy, Language, Assistance, FAQ, Report an issue), the
+paired bridge's own Edit screen, and all of Training settings (Display,
+Sounds, Units, Maximum slope — the last being `maxSlopeInDiscovery`, a sibling
+field of the very same model).
+
+### The bridge honours 0x02 correctly — counted on real hardware
+
+`tools/ftms_client.py` stands in for Kinomap and writes the same bytes
+`ag8.y0()` would. With the real belt, armed, nobody aboard:
+
+```
+53778 cp 00                      <- Request Control
+55803 cp 02 fa 00                <- Set Target Speed 2.5 km/h (0x00fa = 250)
+55810 emit StartSequence tenths=25
+55810 emit NotifyStarted tenths=25
+56699 tx f7 a2 02 01 a5 fd       <- set mode manual
+57710 tx f7 a2 04 01 a7 fd       <- start belt
+63770 tx f7 a2 01 19 bc fd       <- set speed 0x19 = 25 = 2.5 km/h
+```
+
+`2ACD` then reported 0.40 -> 1.00 -> 2.20 km/h as the belt ramped to target, and
+both control-point indications were Success (`80 00 01`, `80 02 01`) — the
+format `ag8.z()` requires.
+
+**So the app-driven path works end to end on hardware.** An FTMS client writing
+`0x02` starts the belt and sets the exact speed asked for. Nothing in the bridge
+needs to change for Kinomap to drive it; the flag has to be enabled on the
+account. When it is, re-run `tools/ftms_client.py` for the baseline and then
+check `cp` for a `02` from Kinomap itself.
