@@ -24,8 +24,14 @@
 // Give up on a pending belt start if it never reaches state 1/6.
 #define START_TIMEOUT_MS 15000
 
-// Speed the belt starts at when the phone presses play (FTMS 0x07 StartResume).
-// Kinomap never sends 0x02 Set Target Speed, so without this its Start button
-// would have nothing to do. A deliberate slow walk: the user is standing on a
-// belt that is about to move, and the bridge's +/- buttons take it from here.
-#define PHONE_START_CENTI_KMH 200  // 2.0 km/h
+// Speed the belt starts at when the phone writes FTMS 0x07 StartResume.
+// 0 disables app-initiated starts entirely, which is the default.
+//
+// Measured on hardware: Kinomap never initiates 0x07. It waits for the belt to
+// report motion and only ever sends 0x07 in reply to our own 2ADA 0x04, so for
+// Kinomap this does nothing either way. It is off by default because of what it
+// would cost if it were wrong: the belt auto-stops when nobody walks on it,
+// which clears running_, and a later 0x07 would then start a treadmill with
+// nobody standing on it. Set it to e.g. 200 (2.0 km/h) for an FTMS app that
+// does drive the machine, and only with someone on the belt.
+#define PHONE_START_CENTI_KMH 0  // disabled

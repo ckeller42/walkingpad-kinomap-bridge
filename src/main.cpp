@@ -421,7 +421,7 @@ void setup() {
             // that it passes the same gates every other target does: BridgeState
             // drops it unless the user armed the bridge, and SpeedPolicy owns
             // the start sequence and the command pacing.
-            if (!state.beltRunning()) {
+            if (PHONE_START_CENTI_KMH > 0 && !state.beltRunning()) {
                 hasTarget = true;
                 targetCenti = PHONE_START_CENTI_KMH;
             }

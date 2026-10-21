@@ -46,13 +46,13 @@ Example frames carry a CRC computed by the generator from the group, function an
 | Request status | 0xA2 | 0x00 | fixed `0x00` | `F7 A2 00 00 A2 FD` request status | measured | test-log: Stage 2, the belt does not push status |
 | Set speed | 0xA2 | 0x01 | `speed` (× 0.1 km/h) | `F7 A2 01 28 CB FD` 4.0 km/h<br>`F7 A2 01 1C BF FD` 2.8 km/h<br>`F7 A2 01 00 A3 FD` 0 (NOT a stop) | community | design doc: Established facts |
 | Set mode | 0xA2 | 0x02 | `mode`, enum `mode` | `F7 A2 02 01 A5 FD` manual | community | design doc: Established facts; modes 1 and 2 also measured |
-| Start belt | 0xA2 | 0x04 | fixed `0x01` | `F7 A2 04 01 A7 FD` start | community | design doc: Established facts |
+| Start belt | 0xA2 | 0x04 | fixed `0x01` | `F7 A2 04 01 A7 FD` start | measured | test-log: Stage 2, direct FE02 probe and via the bridge |
 | Stop belt (set mode standby) | 0xA2 | 0x02 | fixed `0x02` | `F7 A2 02 02 A6 FD` stop | measured | test-log: Stage 2, active FE02 probe, confirmed on a moving belt |
 
 - **Request status**: Ask the belt for one status frame; the reply arrives on FE01. Silent. Needed for every reading; the bridge polls at 1 Hz.
 - **Set speed**: Set the target belt speed. Discarded during the countdown (state 7); the belt then uses its own preset. A speed of 0 is not a stop.
 - **Set mode**: Select the belt mode. Mode 0 (auto) is never produced by the bridge.
-- **Start belt**: Start the belt (countdown, then run at the belt's preset speed). Sent after mode manual. The variant with argument 0 (F7 A2 04 00 A6 FD) is not a stop; see the constraints.
+- **Start belt**: Start the belt (countdown, then run at the belt's preset speed). Sent after mode manual. The variant with argument 0 (F7 A2 04 00 A6 FD) is not a stop; see the constraints. Confirmed on an R1 Pro from standby and from idle, at mode-to-start gaps of 1.0, 1.5, 2.0 and 3.0 s - every gap started the belt, so the pacing interval is not load-bearing here. The belt ramps to its own preset speed (~1.1 km/h) unless a speed is set.
 - **Stop belt (set mode standby)**: The only stop. Sets mode standby; the belt decelerates to 0 and parks in state 4. Same wire format as Set mode with mode 2. Leaves the belt in standby, so it will not start again until mode is set back to manual.
 
 ### Enumerations
@@ -62,6 +62,8 @@ Example frames carry a CRC computed by the generator from the group, function an
 | Value | Name | Meaning | Provenance | Evidence |
 |---|---|---|---|---|
 | 0x00 | idle |  | measured | test-log: Stage 2, state machine |
+| 0x03 | waking | Seen briefly on the way out of standby | measured | test-log: Stage 2, start probe |
+| 0x09 | pre_countdown | Seen between start and countdown | measured | test-log: Stage 2, start probe |
 | 0x07 | countdown | Countdown immediately after start | measured | test-log: Stage 2, state machine |
 | 0x06 | starting | Starting / transitioning | measured | test-log: Stage 2, state machine |
 | 0x01 | running |  | measured | test-log: Stage 2, state machine |
@@ -83,6 +85,8 @@ Example frames carry a CRC computed by the generator from the group, function an
 
 | Key | Value | Statement | Provenance | Evidence |
 |---|---|---|---|---|
+| `unattended_auto_stop_s` | 15 s | With nobody walking on it the belt stops by itself a short time after starting, returning to state 0 with speed 0. | measured | test-log: Stage 2, observed on every unattended start; the window varied and shortened on repeated starts |
+| `display_shows_setpoint` | yes | The belt's console shows the commanded speed even while the belt is not moving, so the display alone does not prove motion. | measured | test-log: Stage 2, camera read 2.0 and 3.5 while status reported state 0 speed 0 |
 | `unsolicited_notifications` | no | The belt sends no unsolicited notifications on FE01; every status reading must be requested. | measured | test-log: Stage 2, a 10 s subscription yielded zero notifications |
 | `min_command_interval_ms` | 700 ms | Commands closer together than this are silently ignored. | community | design doc: Established facts; the test log cites it (~0.7 s) but records no measurement of it |
 | `set_speed_honoured_in_countdown` | no | A Set speed sent during the countdown (state 7) is discarded; the belt uses its own preset and reached 4.0 km/h. | measured | test-log: Stage 2, honest note |

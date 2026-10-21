@@ -324,3 +324,68 @@ remains the place where `02` would be expected — still to be tested.
 **Consequence for the project goal.** "Kinomap controls the belt" may hold only in
 specific workout types. The bridge's own speed controls (`+`/`−` on the screen,
 `speed` on the console) make it usable regardless, which is why they were added.
+
+## Stage 2/3 — the real belt, and the loop closed
+
+`USE_SIM_BELT=0` (`cores3`), the real WalkingPad R1 Pro, Kinomap 4.7.1 on the
+Fairphone. Nobody on the belt for any of it.
+
+### The loop runs end to end
+
+One session, no hands on anything:
+
+```
+> status   cp op=0x00            <- Kinomap reconnected by itself
+  armed=0 running=0 belt_link=1 phone_link=1 belt_state=0 speed=0  src=real
+> arm
+> start    notify started (2ADA 04), phone=1
+> status   cp op=0x07            <- Kinomap accepted the start
+  armed=1 running=1 belt_link=1 phone_link=1 belt_state=1 speed=4
+> status   cp op=0x03 x2
+  armed=1 running=1 belt_link=1 phone_link=1 belt_state=1 speed=20
+```
+
+and Kinomap, at that moment, displayed **`29:59 /km` = exactly 2.0 km/h**, with
+the timer running, 40 watts, distance accumulating and the video playing. The
+`cp op=0x03` writes only happen once its session is live, so they are themselves
+evidence that it started.
+
+Bridge -> real belt -> `F8 A2` status -> `2ACD` -> Kinomap. Proven on hardware.
+
+### What actually controls what
+
+**Kinomap is passive.** It waits for the machine to report motion before it
+starts its session ("Begin running to start the training…"), and it only ever
+writes `0x07` in *reply* to our `2ADA 0x04`. It never initiates, and it never
+writes `0x02` Set Target Speed in any video mode. The in-workout settings panel
+is seven video/display toggles with no speed control on it.
+
+So the division of labour is: **the bridge drives the belt** (its own `+`/`-`
+buttons, STOP, and the console) and **Kinomap reads it**. That is the whole
+system, and it works. `PHONE_START_CENTI_KMH` exists for FTMS apps that do drive
+the machine, and is 0 (off) by default - see `src/config.h` for why.
+
+### Start belt is now measured, not inherited
+
+`F7 A2 04 01 A7 FD` had been carried since the design doc with provenance
+`community`: the A1/C1 command set, never checked on an R1 Pro. A direct FE02
+probe confirms it, from standby and from idle, at mode-to-start gaps of 1.0,
+1.5, 2.0 and 3.0 s - **every** gap started the belt, so the pacing interval is
+not load-bearing. Two undocumented states turned up on the way: **9** between
+start and countdown, and **3** leaving standby. Both are now in `wilink.yaml`.
+
+### Two traps worth keeping
+
+1. **The belt auto-stops when nobody walks on it**, about 15 s after starting,
+   returning to state 0 / speed 0. The window varied and got shorter on repeated
+   starts. Every "the bridge failed to start the belt" result earlier in this
+   session was this: the belt had started, run, and stopped again before a
+   status read 35 s later caught it.
+
+2. **The console displays the setpoint, not motion.** The camera read a clear
+   `2.0` and later `3.5` while the status stream said `state=0 speed=0`. A photo
+   of the display is *not* proof the belt is moving; only the state is.
+
+Trap 1 is why the camera cross-check needs to fire inside a ~15 s window, and
+trap 2 is why the cross-check needs the status stream next to the photo rather
+than the photo alone.
