@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 
+#include "devmenu.h"
 #include "wizard.h"
 
 // Main screen ("layout A") on the 320x240 CoreS3 panel:
@@ -25,6 +26,20 @@ public:
     // Emits the current frame now (console `shot`). False if not a screenshot build.
     bool shotNow();
     void renderWizard(const wizard::Screen& s, bool sim);
+
+    // Developer menu. A list screen draws rows 0..rowCount-1 between the title
+    // and the bottom bar; a keyboard screen draws the key grid instead. The
+    // rendered screen decides which, so the caller never sets a second flag
+    // that could disagree with what is on the glass.
+    void renderDevMenu(const devmenu::Screen& s);
+    void setMenuMode(bool on) { menuMode_ = on; }
+
+    // Edge-triggered, like the other took*() accessors.
+    int tookMenuRow();        // row index, or -1
+    bool tookDevTap();        // main screen, tap on the PHONE indicator
+    char tookKeyChar();       // typed character, or 0
+    bool tookKeyShift();
+    bool tookKeyBackspace();
     // Marks the belt indicator as "SIM BELT" (amber) while the simulated belt is bound.
     void setSim(bool sim) { sim_ = sim; }
     // Selects which screen family owns the touch zones.
@@ -49,5 +64,13 @@ private:
     bool setupTapped_ = false;
     bool wizL_ = false;
     bool wizR_ = false;
+    bool menuMode_ = false;
+    bool menuKeyboard_ = false;  // set by renderDevMenu from the screen it drew
+    bool menuShift_ = false;
+    int menuRow_ = -1;
+    bool devTapped_ = false;
+    char keyChar_ = 0;
+    bool keyShift_ = false;
+    bool keyBack_ = false;
     int shotPhase_ = -1;
 };

@@ -525,3 +525,24 @@ fixing; Kinomap simply will not send one to a non-Domyos machine.
 The shipped behaviour is therefore: **the user and the bridge drive the belt;
 Kinomap reads, displays and records it.** That is the whole of what this pairing
 can do, and it works.
+
+### Pairing needs the belt *moving*, not merely switched on
+
+Confirmed by a real pairing of a second phone (iPhone, Kinomap in German): the
+final confirmation step would not complete until the bridge was **armed and
+started**, so that the belt was actually running while the app checked.
+
+Kinomap's confirmation reads live values. A belt that is connected but sitting
+at 0.00 km/h presents the same thing to that check as no data at all, and the
+app reports a generic "could not pair" error that points at the bridge.
+
+So the full precondition for pairing is all three of:
+
+1. the belt switched on and linked (`belt_link=1`),
+2. no other client holding the belt's single BLE connection — the KS Fit app
+   counts, and so does Kinomap on another phone,
+3. the belt **running** during the confirmation step: ARM, then START.
+
+The setup wizard's last screen now says so directly ("Belt ON, ARM and START
+first: pairing needs it moving"), and the belt-off case still gets its own
+screen before that.

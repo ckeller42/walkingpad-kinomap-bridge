@@ -162,9 +162,13 @@ Screen Wizard::screen(const Inputs& in) const {
             set(s.title, "Last step");
             set(s.action[0], "Open Kinomap, ARM here,");
             set(s.action[1], "then press START.");
-            set(s.detail[0], "Leave the belt ON: Kinomap");
-            set(s.detail[1], "will not pair without data.");
-            set(s.detail[2], "Kinomap never starts the belt.");
+            // Measured during a real pairing: Kinomap's confirmation step reads
+            // live values, and a belt sitting at 0.00 km/h looks the same to it
+            // as no data at all. Belt merely ON is necessary but not
+            // sufficient - it has to be moving while the app checks.
+            set(s.detail[0], "Belt ON, ARM and START first:");
+            set(s.detail[1], "pairing needs it moving.");
+            set(s.detail[2], "Kinomap never starts it.");
             set(s.detail[3], "Re-run setup: tap BELT dot.");
             break;
     }
