@@ -64,6 +64,84 @@ void test_two_divergent_polls_do_not_resync(void) {
     TEST_ASSERT_EQUAL(policy::Action::None, d.action);
 }
 
+void test_stop_works_after_remote_start_following_a_stop(void) {
+    policy::SpeedPolicy p;
+    p.onTarget(400, 0);
+    p.onTarget(100, 2000);                       // app stop
+    for (int i = 0; i < 10; i++) p.onBeltSpeed(20);  // remote starts belt at 2.0
+    auto d = p.onTarget(100, 30000);
+    TEST_ASSERT_EQUAL(policy::Action::Stop, d.action);
+}
+
+void test_remote_start_after_stop_adopts_reference(void) {
+    policy::SpeedPolicy p;
+    p.onTarget(100, 0);
+    for (int i = 0; i < 3; i++) p.onBeltSpeed(20);
+    auto d = p.onTarget(200, 10000);             // belt already at 2.0
+    TEST_ASSERT_EQUAL(policy::Action::None, d.action);
+}
+
+void test_resync_threshold_matches_send_threshold(void) {
+    policy::SpeedPolicy p;
+    p.onTarget(400, 0);
+    for (int i = 0; i < 3; i++) p.onBeltSpeed(43);   // exactly deadband away
+    auto d = p.onTarget(430, 10000);
+    TEST_ASSERT_EQUAL(policy::Action::None, d.action);   // no beep to 4.3
+}
+
+void test_difference_of_exactly_deadband_is_sent(void) {
+    policy::SpeedPolicy p;
+    p.onTarget(400, 0);
+    auto d = p.onTarget(430, 2000);
+    TEST_ASSERT_EQUAL(policy::Action::SetSpeed, d.action);
+    TEST_ASSERT_EQUAL_UINT8(43, d.tenthKmh);
+}
+
+void test_exactly_min_interval_is_allowed(void) {
+    policy::SpeedPolicy p;
+    p.onTarget(400, 0);
+    TEST_ASSERT_EQUAL(policy::Action::None, p.onTarget(500, policy::kMinCommandIntervalMs - 1).action);
+    TEST_ASSERT_EQUAL(policy::Action::SetSpeed, p.onTarget(500, policy::kMinCommandIntervalMs).action);
+}
+
+void test_agreeing_sample_resets_divergent_run(void) {
+    policy::SpeedPolicy p;
+    p.onTarget(400, 0);
+    p.onBeltSpeed(20);
+    p.onBeltSpeed(20);
+    p.onBeltSpeed(40);                           // agrees: run resets
+    p.onBeltSpeed(20);
+    auto d = p.onTarget(400, 10000);
+    TEST_ASSERT_EQUAL(policy::Action::None, d.action);
+}
+
+void test_clamp_happens_before_deadband(void) {
+    policy::SpeedPolicy p;
+    auto a = p.onTarget(900, 0);
+    TEST_ASSERT_EQUAL(policy::Action::SetSpeed, a.action);
+    TEST_ASSERT_EQUAL_UINT8(60, a.tenthKmh);
+    TEST_ASSERT_EQUAL(policy::Action::None, p.onTarget(700, 2000).action);
+}
+
+void test_reset_restores_initial_state(void) {
+    policy::SpeedPolicy p;
+    p.onTarget(100, 0);
+    p.reset();
+    TEST_ASSERT_EQUAL(policy::Action::Stop, p.onTarget(100, 0).action);
+    p.reset();
+    TEST_ASSERT_EQUAL(policy::Action::SetSpeed, p.onTarget(400, 0).action);
+    p.reset();
+    TEST_ASSERT_EQUAL(policy::Action::SetSpeed, p.onTarget(400, 0).action);
+}
+
+void test_target_below_minimum_is_a_stop(void) {
+    policy::SpeedPolicy p;
+    TEST_ASSERT_EQUAL(policy::Action::Stop, p.onTarget(0, 0).action);
+    policy::SpeedPolicy q;
+    TEST_ASSERT_EQUAL(policy::Action::Stop, q.onTarget(49, 0).action);
+    TEST_ASSERT_EQUAL(policy::Action::None, q.onTarget(100, 5000).action);  // no second Stop
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_sentinel_is_a_stop);
@@ -74,5 +152,14 @@ int main(int, char**) {
     RUN_TEST(test_rate_limit_suppresses_second_command_within_one_second);
     RUN_TEST(test_manual_override_resyncs_reference_after_three_polls);
     RUN_TEST(test_two_divergent_polls_do_not_resync);
+    RUN_TEST(test_stop_works_after_remote_start_following_a_stop);
+    RUN_TEST(test_remote_start_after_stop_adopts_reference);
+    RUN_TEST(test_resync_threshold_matches_send_threshold);
+    RUN_TEST(test_difference_of_exactly_deadband_is_sent);
+    RUN_TEST(test_exactly_min_interval_is_allowed);
+    RUN_TEST(test_agreeing_sample_resets_divergent_run);
+    RUN_TEST(test_clamp_happens_before_deadband);
+    RUN_TEST(test_reset_restores_initial_state);
+    RUN_TEST(test_target_below_minimum_is_a_stop);
     return UNITY_END();
 }

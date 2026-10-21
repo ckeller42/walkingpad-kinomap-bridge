@@ -3,11 +3,12 @@
 namespace policy {
 
 namespace {
-uint8_t absDiff(uint8_t a, uint8_t b) { return a > b ? a - b : b - a; }
+uint8_t absDiff(uint8_t a, uint8_t b) { return static_cast<uint8_t>(a > b ? a - b : b - a); }
 }  // namespace
 
 Decision SpeedPolicy::onTarget(uint16_t centiKmh, uint32_t nowMs) {
-    if (centiKmh == kStopSentinelCentiKmh) {
+    // The sentinel and anything slower than the advertised minimum are stops.
+    if (centiKmh == kStopSentinelCentiKmh || centiKmh < kMinCentiKmh) {
         if (stopped_) return {Action::None, 0};  // redundant command = redundant beep
         stopped_ = true;
         hasRef_ = false;                         // belt is at rest; next target is fresh
@@ -33,12 +34,16 @@ Decision SpeedPolicy::onTarget(uint16_t centiKmh, uint32_t nowMs) {
 }
 
 void SpeedPolicy::onBeltSpeed(uint8_t tenthKmh) {
-    if (!hasRef_ || absDiff(tenthKmh, refTenths_) <= kDeadbandTenths) {
+    // Agreement is the exact complement of what onTarget would send.
+    const bool divergent = hasRef_ ? absDiff(tenthKmh, refTenths_) >= kDeadbandTenths
+                                   : tenthKmh > 0;  // no reference: a moving belt was started by the remote
+    if (!divergent) {
         divergentPolls_ = 0;
         return;
     }
     if (++divergentPolls_ >= kResyncPolls) {
         refTenths_ = tenthKmh;
+        hasRef_ = true;
         stopped_ = (tenthKmh == 0);
         divergentPolls_ = 0;
     }
