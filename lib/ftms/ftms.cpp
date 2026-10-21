@@ -23,4 +23,45 @@ Buf statusStarted() {
     return Buf{{0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 1};
 }
 
+CpRequest parseControlPoint(const uint8_t* buf, size_t len) {
+    CpRequest r{CpOp::Unknown, 0, 0, false};
+    if (buf == nullptr || len == 0) {
+        return r;
+    }
+    switch (buf[0]) {
+        case static_cast<uint8_t>(CpOp::RequestControl):
+            r.op = CpOp::RequestControl;
+            r.valid = true;
+            break;
+        case static_cast<uint8_t>(CpOp::SetTargetSpeed):
+            // Opcode plus uint16 little-endian speed in 0.01 km/h.
+            if (len < 3) {
+                return r;
+            }
+            r.op = CpOp::SetTargetSpeed;
+            r.centiKmh = static_cast<uint16_t>(buf[1] | (buf[2] << 8));
+            r.valid = true;
+            break;
+        case static_cast<uint8_t>(CpOp::StartResume):
+            r.op = CpOp::StartResume;
+            r.valid = true;
+            break;
+        case static_cast<uint8_t>(CpOp::StopPause):
+            // Optional stop/pause parameter byte.
+            r.op = CpOp::StopPause;
+            r.param = (len >= 2) ? buf[1] : 0;
+            r.valid = true;
+            break;
+        default:
+            // Unrecognised: keep Unknown but valid so it can be acknowledged.
+            r.valid = true;
+            break;
+    }
+    return r;
+}
+
+Buf controlPointSuccess(CpOp op) {
+    return Buf{{0x80, static_cast<uint8_t>(op), 0x01, 0x00, 0x00, 0x00, 0x00, 0x00}, 3};
+}
+
 }  // namespace ftms

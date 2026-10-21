@@ -27,4 +27,33 @@ Buf treadmillData(uint16_t centiKmh);
 // Fitness Machine Control Point response payload for opcode 0x04 (Start or Resume).
 Buf statusStarted();
 
+// Fitness Machine Control Point opcodes the bridge handles. Unknown is the
+// result for any opcode not listed here.
+enum class CpOp : uint8_t {
+    RequestControl = 0x00,
+    SetTargetSpeed = 0x02,
+    StartResume = 0x07,
+    StopPause = 0x08,
+    Unknown = 0xFF,
+};
+
+// A decoded write to the Control Point (2AD9). centiKmh is only meaningful for
+// SetTargetSpeed; param is only meaningful for StopPause. valid is false when
+// the buffer is too short for the opcode's required payload.
+struct CpRequest {
+    CpOp op;
+    uint16_t centiKmh;
+    uint8_t param;
+    bool valid;
+};
+
+// Decodes a Control Point write. Never reads past len; a null buf is treated
+// as empty. Unrecognised opcodes return op = Unknown with valid = true so the
+// caller can still acknowledge them.
+CpRequest parseControlPoint(const uint8_t* buf, size_t len);
+
+// Success indication payload for a Control Point request: 0x80, the request
+// opcode, then 0x01 (Success).
+Buf controlPointSuccess(CpOp op);
+
 }  // namespace ftms
