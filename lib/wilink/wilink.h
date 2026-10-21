@@ -130,10 +130,16 @@ public:
     /** @brief Forget any pending fragment, e.g. on disconnect. */
     void reset();
 
-    /** @brief Frames recovered from two or more fragments. */
+    /**
+     * @brief How often a frame had to be rejoined.
+     * @return Count of frames recovered from two or more fragments.
+     */
     uint32_t reassembled() const { return reassembled_; }
 
-    /** @brief Fragments abandoned without ever completing. */
+    /**
+     * @brief How often a fragment was given up on.
+     * @return Count of fragments abandoned without completing.
+     */
     uint32_t discarded() const { return discarded_; }
 
 private:

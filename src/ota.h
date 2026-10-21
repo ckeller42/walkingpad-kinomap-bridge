@@ -37,19 +37,34 @@ enum class State : uint8_t {
 /** @brief Reads the running version and the stored manifest URL. */
 void begin();
 
-/** @brief The firmware version this build was compiled with. */
+/**
+ * @brief The firmware version this build was compiled with.
+ * @return The version string; "dev-local" for an untagged build.
+ */
 const char* version();
 
-/** @brief Current @ref State. */
+/**
+ * @brief Where the last update attempt got to.
+ * @return The current @ref State.
+ */
 State state();
 
-/** @brief One line describing the last outcome, for the console and the UI. */
+/**
+ * @brief A human-readable account of the last outcome.
+ * @return One line, for the console and the UI.
+ */
 const char* message();
 
-/** @brief The version the manifest offers, or "" when unknown. */
+/**
+ * @brief The version the manifest offers.
+ * @return The offered version, or "" when no manifest has been read.
+ */
 const char* availableVersion();
 
-/** @brief The manifest URL, or "" when none is stored. */
+/**
+ * @brief Where updates are looked for.
+ * @return The stored manifest URL, or "" when none is set.
+ */
 const char* url();
 
 /**

@@ -113,7 +113,10 @@ public:
     /** @brief Reset to @ref Step::Root and clear any half-typed password. */
     void open();
 
-    /** @brief The screen currently shown. */
+    /**
+     * @brief Which screen is showing.
+     * @return The current @ref Step.
+     */
     Step step() const { return step_; }
 
     /**
@@ -156,16 +159,28 @@ public:
     /** @brief Switch between the letter page and the digits/symbols page. */
     void toggleNumeric();
 
-    /** @brief True while the digits/symbols page is showing. */
+    /**
+     * @brief Which keyboard page is showing.
+     * @return True for the digits/symbols page, false for letters.
+     */
     bool numeric() const { return numeric_; }
 
-    /** @brief Whether the next character should be shifted. */
+    /**
+     * @brief Whether the next character will be shifted.
+     * @return True while shift is pending.
+     */
     bool shift() const { return shift_; }
 
-    /** @brief The network chosen on the scan screen. */
+    /**
+     * @brief The network chosen on the scan screen.
+     * @return Its SSID, or "" when none has been picked.
+     */
     const char* ssid() const { return ssid_; }
 
-    /** @brief The password typed so far. Never logged by this module. */
+    /**
+     * @brief The password typed so far.
+     * @return The characters entered. Never logged by this module.
+     */
     const char* password() const { return typed_; }
 
 private:

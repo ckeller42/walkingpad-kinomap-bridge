@@ -32,18 +32,34 @@ void line(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 // "tag f7 a2 01 14 b7 fd" - for wire frames, the thing worth having verbatim.
 void hex(const char* tag, const uint8_t* data, size_t len);
 
+/**
+ * @brief Whether an SD card is mounted.
+ * @return True when the card responded and mounted.
+ */
 bool sdOk();
+/**
+ * @brief Whether Wi-Fi is usable.
+ * @return True when developer mode is on and the bridge is associated.
+ */
 bool netOk();
 
 // Developer mode is the master switch for everything with a radio: the Wi-Fi
 // pairing UI, the UDP log broadcast and OTA. A shipped firmware has it OFF, so
 // the bridge never brings up Wi-Fi at all, and it is persisted in NVS so it
 // survives a reboot. Turning it off takes the radio down with it.
+/**
+ * @brief Whether developer mode is on.
+ * @return True when the radio features are enabled.
+ */
 bool devOn();
 void setDev(bool on);
 
 // The UDP log broadcast itself, inside developer mode. Also persisted, also
 // off by default; dev mode off means no broadcast whatever this says.
+/**
+ * @brief Whether the UDP log broadcast is enabled.
+ * @return True when it is on; it still needs developer mode to take effect.
+ */
 bool udpOn();
 void setUdp(bool on);
 
@@ -51,10 +67,16 @@ void setUdp(bool on);
 // device, never in the repo. Pass an empty ssid to forget them.
 void setWifi(const char* ssid, const char* pass);
 
-/** @brief The stored network's name, or "" when none is stored. */
+/**
+ * @brief The network the bridge will associate with.
+ * @return Its SSID, or "" when none is stored.
+ */
 const char* storedSsid();
 
-/** @brief Current IP as text, or "" when not associated. */
+/**
+ * @brief The bridge's address on the network.
+ * @return The IP as text, or "" when not associated.
+ */
 const char* ipText();
 
 /**
@@ -66,13 +88,23 @@ const char* ipText();
  */
 void startScan();
 
-/** @brief True while a scan is in progress. */
+/**
+ * @brief Whether a Wi-Fi scan is still running.
+ * @return True while one is in progress.
+ */
 bool scanning();
 
-/** @brief Networks found by the last completed scan, strongest first. */
+/**
+ * @brief How many networks the last scan found.
+ * @return The count, strongest first, capped at the stored maximum.
+ */
 uint8_t scanCount();
 
-/** @brief Name of scan result @p i, or "" when out of range. */
+/**
+ * @brief One scan result.
+ * @param i Zero-based index.
+ * @return Its SSID, or "" when @p i is out of range.
+ */
 const char* scanSsid(uint8_t i);
 
 // One line for the console: sinks, the SD file in use, dropped-line count.

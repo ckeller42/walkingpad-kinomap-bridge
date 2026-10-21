@@ -4,61 +4,151 @@
 #include "devmenu.h"
 #include "wizard.h"
 
-// Main screen ("layout A") on the 320x240 CoreS3 panel:
-//   y   0..27   link indicators (belt left half, phone right half)
-//   y  28..149  instantaneous speed, very large
-//   y  40..139  speed readout flanked by large "-" (x 0..71) and "+" (x 248..319)
-//               touch targets; enabled only while armed (disarmed = dim)
-//   y 150..175  distance (left) and elapsed time (right)
-//   y 184..239  bottom bar: left = ARM / START / ARMED, right = STOP
-// The left button is one control with three faces: ARM (disarmed), START
-// (armed, belt stopped, belt linked), ARMED (armed and running; tap disarms).
-//
-// Wizard screens reuse the bottom bar as two buttons (left / right) under a
-// title, an action (what to do next) and a few detail lines.
+/**
+ * @file ui.h
+ * @brief The 320x240 touchscreen: drawing, and latching what was touched.
+ *
+ * Main screen layout:
+ *
+ * | y        | content |
+ * |----------|---------|
+ * | 0..27    | link indicators (BELT left, PHONE right) and the settings gear |
+ * | 28..149  | instantaneous speed, very large |
+ * | 44..139  | the readout flanked by `-` (x 0..71) and `+` (x 248..319), enabled only while armed |
+ * | 150..175 | distance (left) and elapsed time (right) |
+ * | 184..239 | bottom bar: left = ARM / START / DISARM, right = STOP |
+ *
+ * The left button is one control with three faces, and each label names what
+ * tapping *does* rather than what the bridge *is*; the armed state is shown in
+ * the top bar instead.
+ *
+ * The wizard and the developer menu reuse the bottom bar as two buttons. Which
+ * screen family owns the touch zones is selected by setWizardMode() and
+ * setMenuMode(); the menu is tested first, so a row tap cannot also read as a
+ * speed button.
+ */
 class Ui {
 public:
+    /** @brief Set up the panel and the off-screen canvas. Call once. */
     void begin();
-    // Call once per loop, right after M5.update(): samples touch, latches presses.
+
+    /**
+     * @brief Sample touch and latch any press.
+     *
+     * Call once per loop, right after `M5.update()`. A held finger yields
+     * exactly one event.
+     */
     void poll();
-    // centiKmh is what the belt reports; commandedCentiKmh is what was last
-    // asked for. They differ for a second or two after a +/- press, because
-    // the belt lags a command by a poll. Showing only the first makes the
-    // buttons look dead and invites a second press that overshoots.
-    // Pass commandedCentiKmh == centiKmh (or 0) when there is nothing pending.
+
+    /**
+     * @brief Draw the main screen.
+     *
+     * @param centiKmh          What the belt reports, in 0.01 km/h units.
+     * @param commandedCentiKmh What was last asked for. The two differ for a
+     *        second or two after a `+`/`-` press, because the belt lags a
+     *        command by a poll; showing only the first makes the buttons look
+     *        dead and invites a second press that overshoots. Pass the same
+     *        value as @p centiKmh (or 0) when nothing is pending.
+     * @param distance10m       Session distance in 10 m units.
+     * @param elapsedSec        Session time in seconds.
+     * @param beltUp            Belt linked and delivering fresh status.
+     * @param phoneUp           A phone is connected.
+     * @param armed             The bridge is armed; also enables `+`/`-`.
+     * @param running           The belt is moving.
+     */
     void render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
                 uint32_t elapsedSec, bool beltUp, bool phoneUp, bool armed,
-                bool running);  // armed also enables the +/- buttons
-    // Emits the current frame now (console `shot`). False if not a screenshot build.
+                bool running);
+
+    /**
+     * @brief Emit the current frame over serial (the console's `shot`).
+     * @return False when this is not a screenshot build.
+     */
     bool shotNow();
+
+    /**
+     * @brief Draw one wizard screen.
+     * @param s   The screen to draw.
+     * @param sim True while a simulated belt is bound.
+     */
     void renderWizard(const wizard::Screen& s, bool sim);
 
-    // Developer menu. A list screen draws rows 0..rowCount-1 between the title
-    // and the bottom bar; a keyboard screen draws the key grid instead. The
-    // rendered screen decides which, so the caller never sets a second flag
-    // that could disagree with what is on the glass.
+    /**
+     * @brief Draw one developer-menu screen.
+     *
+     * A list screen draws its rows between the title and the bottom bar; a
+     * keyboard screen draws the key grid instead. The screen itself decides
+     * which, so the caller never sets a second flag that could disagree with
+     * what is on the glass.
+     *
+     * @param s The screen to draw.
+     */
     void renderDevMenu(const devmenu::Screen& s);
+
+    /**
+     * @brief Hand the touch zones to the developer menu, or take them back.
+     * @param on True while the menu is open.
+     */
     void setMenuMode(bool on) { menuMode_ = on; }
 
-    // Edge-triggered, like the other took*() accessors.
-    int tookMenuRow();        // row index, or -1
-    bool tookDevTap();        // main screen, tap on the PHONE indicator
-    char tookKeyChar();       // typed character, or 0
-    bool tookKeyShift();
-    bool tookKeyBackspace();
-    bool tookKeyNumeric();  // the 123 / ABC page toggle
-    // Marks the belt indicator as "SIM BELT" (amber) while the simulated belt is bound.
+    /**
+     * @brief Mark the belt indicator as amber "SIM BELT".
+     * @param sim True while a simulated belt is bound.
+     * @note A simulated belt must never read as a healthy real one.
+     */
     void setSim(bool sim) { sim_ = sim; }
-    // Selects which screen family owns the touch zones.
+
+    /**
+     * @brief Hand the touch zones to the setup wizard, or take them back.
+     * @param on True while the wizard is running.
+     */
     void setWizardMode(bool on) { wizardMode_ = on; }
-    // Edge-triggered: true once per press, then cleared.
-    bool tookArmButton();  // main screen, left button
+
+    /// @name Latched input
+    /// Edge-triggered: each returns true (or a value) once per press, then
+    /// clears, so a caller cannot process the same press twice.
+    /// @{
+
+    /** @brief A tapped developer-menu row. @return Row index, or -1. */
+    int tookMenuRow();
+
+    /** @brief The settings gear. @return True once per tap. */
+    bool tookDevTap();
+
+    /** @brief A keyboard character. @return The character, or 0. */
+    char tookKeyChar();
+
+    /** @brief The keyboard's shift key. @return True once per tap. */
+    bool tookKeyShift();
+
+    /** @brief The keyboard's DEL key. @return True once per tap. */
+    bool tookKeyBackspace();
+
+    /** @brief The keyboard's 123 / ABC page toggle. @return True once per tap. */
+    bool tookKeyNumeric();
+
+    /** @brief The main screen's left button. @return True once per tap. */
+    bool tookArmButton();
+
+    /** @brief The STOP button. @return True once per tap. */
     bool tookStop();
-    bool tookSpeedUp();    // main screen, "+" beside the speed readout
-    bool tookSpeedDown();  // main screen, "-"
-    bool tookSetupTap();   // main screen, tap on the BELT indicator
+
+    /** @brief The `+` beside the readout. @return True once per tap. */
+    bool tookSpeedUp();
+
+    /** @brief The `-` beside the readout. @return True once per tap. */
+    bool tookSpeedDown();
+
+    /** @brief The BELT indicator, which re-runs setup. @return True once per tap. */
+    bool tookSetupTap();
+
+    /** @brief The bottom bar's left button. @return True once per tap. */
     bool tookWizardLeft();
+
+    /** @brief The bottom bar's right button. @return True once per tap. */
     bool tookWizardRight();
+
+    /// @}
 
 private:
     void finishFrame(int phase);
