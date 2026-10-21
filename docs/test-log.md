@@ -148,3 +148,64 @@ countdown, and verify it took before letting the belt run.
 
 - Distance and steps are validated only at near-zero values; a real walk is
   needed to confirm their units (10 m for distance is still an assumption).
+
+## Stage 0 — GATT self-check, 2026-10-21
+
+Firmware commit `df1a01b`, flashed to the CoreS3 (819,120 bytes, hash verified).
+Read over the air from this Mac with `tools/blescan.py` plus a one-off value read.
+Belt source: **simulated**. No treadmill involved.
+
+### Advertisement
+
+Advertises as **`WalkingPad Bridge`** with service `00001826` (FTMS), −43 dBm.
+
+### GATT table
+
+```
+service 00001826   Fitness Machine
+   char 00002acc   read              Fitness Machine Feature
+   char 00002ad4   read              Supported Speed Range
+   char 00002acd   notify            Treadmill Data
+   char 00002ad9   indicate, write   Fitness Machine Control Point
+   char 00002ada   notify            Fitness Machine Status
+service 0000180a   Device Information
+   char 00002a29   read              Manufacturer Name String
+   char 00002a24   read              Model Number String
+```
+
+### Pass criteria
+
+| Criterion | Result |
+|---|---|
+| Advertises `1826` under the advertised name | PASS |
+| `2ACC` present | PASS |
+| `2AD4` present | PASS |
+| `2ACD` has notify | PASS |
+| `2AD9` has write **and** indicate | PASS |
+| `2ADA` present | PASS |
+| `180A` present | PASS |
+| **`2AD5` ABSENT** | PASS |
+
+### Characteristic values — the two silent-failure traps
+
+```
+2ACC : 00 00 00 00 01 00 00 00   (8 bytes)
+       target features = 0x00000001
+       bit0 Speed Target Setting   SET     PASS
+       bit1 Inclination            CLEAR   PASS
+       bit2 Resistance             CLEAR   PASS
+
+2AD4 : 32 00 58 02 0a 00          (6 bytes)
+       min 0.50 / max 6.00 / step 0.10 km/h   PASS
+
+2A29 : 'WalkingPad Bridge'  (not 'decathlon')  PASS
+2A24 : 'R1 Pro FTMS Bridge'
+```
+
+Both traps identified in Kinomap's decompile are closed on real hardware: a
+`2ACC` shorter than 8 bytes or without bit 0 would have meant Kinomap connects,
+shows data, and never commands a speed; a missing `2AD4` would have clamped
+every target to 0 km/h. Neither fails visibly — which is why they are checked
+here rather than discovered during a workout.
+
+**Stage 0: PASS.**
