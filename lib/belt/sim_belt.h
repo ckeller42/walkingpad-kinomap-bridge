@@ -8,8 +8,12 @@ namespace belt {
 //  - stop() is "set mode standby": decelerates, ends in state 4 / mode 2,
 //    and never returns to state 0 by itself.
 //  - start() is refused until setMode(Manual) takes the belt out of standby.
-//  - setSpeed() before the belt is running only records the target; it is
-//    applied once running (the real belt discards it during countdown).
+//  - setSpeed() is dropped (not stored) unless the belt is in state 6 or 1;
+//    the real belt discards it during countdown and uses its own preset.
+//  - Command counters count ACCEPTED commands only (each beeps on the real
+//    belt); rejected/dropped commands are not counted. setMode(Standby) is
+//    the same command as stop() and counts as a stop; stop() on an already
+//    stopped or stopping belt is rejected.
 class SimBelt : public Belt {
 public:
     void setSpeed(uint8_t tenthKmh) override;
@@ -20,7 +24,11 @@ public:
     bool linkUp() const override { return true; }
 
     void tick(uint32_t nowMs);
-    uint32_t commandCount() const { return commands_; }
+    uint32_t commandCount() const { return commands_; }   // all accepted
+    uint32_t setSpeedCount() const { return speedCmds_; }
+    uint32_t modeCount() const { return modeCmds_; }
+    uint32_t startCount() const { return startCmds_; }
+    uint32_t stopCount() const { return stopCmds_; }
 
 private:
     static constexpr uint8_t kIdle = 0, kRunning = 1, kStandby = 4,
@@ -41,7 +49,11 @@ private:
     uint32_t countdownMs_ = 0;
     uint32_t lastMs_ = 0;
     bool haveLast_ = false;
-    uint32_t commands_ = 0;
+    uint32_t commands_ = 0, speedCmds_ = 0, modeCmds_ = 0, startCmds_ = 0,
+             stopCmds_ = 0;
+
+    bool doStop();
+    void accept(uint32_t& counter) { ++counter; ++commands_; }
 };
 
 }  // namespace belt
