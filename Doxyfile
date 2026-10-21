@@ -26,8 +26,13 @@ WARN_NO_PARAMDOC       = YES
 WARN_LOGFILE           = build/doxygen/warnings.txt
 QUIET                  = YES
 
+# HTML is a convenience artifact; the XML is what Sphinx/Breathe consumes and
+# is the real output of this step.
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+XML_PROGRAMLISTING     = NO
 HAVE_DOT               = NO
 JAVADOC_AUTOBRIEF      = YES
 OPTIMIZE_OUTPUT_FOR_C  = NO
