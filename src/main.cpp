@@ -405,11 +405,26 @@ void setup() {
         targetCenti = centi;
     });
     bleServer.setOnControlOp([](ftms::CpOp op) {
-        // Kinomap's {07} in reply to our 2ADA 0x04 is just an acknowledgement.
         // (Raw-byte logging and per-opcode counts live in FtmsServer.)
+        std::lock_guard<std::recursive_mutex> g(mtx);
         if (op == ftms::CpOp::StopPause) {
-            std::lock_guard<std::recursive_mutex> g(mtx);
             stopRequested = true;
+        } else if (op == ftms::CpOp::StartResume) {
+            // Counted over a full hardware session, Kinomap writes 00=1 03=2
+            // 07=1 and never 0x02 Set Target Speed: if {07} does not start the
+            // belt, nothing Kinomap does ever will. So treat it as a start
+            // request. Kinomap also sends {07} to acknowledge our own 2ADA
+            // 0x04, but the belt is running by definition in that case, and
+            // the beltRunning() guard drops it.
+            //
+            // This goes through hasTarget rather than straight to the belt so
+            // that it passes the same gates every other target does: BridgeState
+            // drops it unless the user armed the bridge, and SpeedPolicy owns
+            // the start sequence and the command pacing.
+            if (!state.beltRunning()) {
+                hasTarget = true;
+                targetCenti = PHONE_START_CENTI_KMH;
+            }
         }
     });
     bleServer.begin(BRIDGE_ADV_NAME, BRIDGE_MANUFACTURER, BRIDGE_MODEL);

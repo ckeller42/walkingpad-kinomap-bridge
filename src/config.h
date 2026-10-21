@@ -23,3 +23,9 @@
 
 // Give up on a pending belt start if it never reaches state 1/6.
 #define START_TIMEOUT_MS 15000
+
+// Speed the belt starts at when the phone presses play (FTMS 0x07 StartResume).
+// Kinomap never sends 0x02 Set Target Speed, so without this its Start button
+// would have nothing to do. A deliberate slow walk: the user is standing on a
+// belt that is about to move, and the bridge's +/- buttons take it from here.
+#define PHONE_START_CENTI_KMH 200  // 2.0 km/h

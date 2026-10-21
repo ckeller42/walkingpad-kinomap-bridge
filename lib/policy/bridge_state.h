@@ -5,7 +5,9 @@
 
 // Turns a SpeedPolicy decision into what the adapters must actually emit,
 // given whether the user armed the bridge and whether the belt is running.
-// Arming gates speed-driven starts (Kinomap never sends FTMS Start/Stop).
+// Arming gates every phone-driven start. Kinomap does send FTMS StartResume
+// (0x07) but never SetTargetSpeed (0x02), so main.cpp turns its 0x07 into a
+// target at PHONE_START_CENTI_KMH and it arrives here as an ordinary target.
 // Plain C++, no Arduino types.
 namespace policy {
 
