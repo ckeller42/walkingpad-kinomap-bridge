@@ -29,6 +29,7 @@ kinomap-pairing-observed
 
 api
 test-log
+ux-review
 ```
 
 ## How it fits together

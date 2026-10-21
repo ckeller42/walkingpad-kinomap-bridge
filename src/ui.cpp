@@ -182,13 +182,18 @@ void Ui::render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
     g.setTextColor(TFT_WHITE, BG);
     g.setTextDatum(middle_center);
     g.setFont(&fonts::Font7);  // 7-segment, 48px tall
-    g.setTextSize(2.3f);
+    // The -/+ buttons are drawn after this and would paint over anything that
+    // strays under them, so the readout has to fit the gap between them
+    // (W - 2 * SPD_BTN_W = 176 px) rather than merely look centred.
+    g.setTextSize(2.0f);
     g.drawString(buf, HALF, 90);
     g.setTextSize(1);
     g.setFont(&fonts::FreeSansBold12pt7b);
     g.setTextColor(DIM, BG);
+    // Clear of the + button (x >= W - SPD_BTN_W), which otherwise erases half
+    // the unit label.
     g.setTextDatum(bottom_right);
-    g.drawString("km/h", W - 6, 152);
+    g.drawString("km/h", W - SPD_BTN_W - 6, 150);
 
     // Speed -/+ : dim and unmistakably inert while disarmed, like START.
     {
