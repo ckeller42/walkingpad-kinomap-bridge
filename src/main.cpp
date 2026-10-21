@@ -506,10 +506,10 @@ void setup() {
 #if UI_SCREENSHOT
     demoT0 = millis();  // the tour is started by demoAdvance(0) from loop()
     (void)setupDone;
-    ui.render(0, 0, 0, false, false, state.armed(), false);
+    ui.render(0, 0, 0, 0, false, false, state.armed(), false);
 #else
     if (!setupDone) enterWizard(millis());
-    else ui.render(0, 0, 0, false, false, state.armed(), false);  // boots disarmed
+    else ui.render(0, 0, 0, 0, false, false, state.armed(), false);  // boots disarmed
 #endif
 }
 
@@ -617,7 +617,12 @@ void loop() {
         if (wizDirty || redraw) { wizDirty = false; ui.renderWizard(wscreen, wizSim); }
     } else if (redraw || wizDirty) {
         wizDirty = false;
-        ui.render(centi, dist, elapsed, beltUp, phoneUp, armed, running);
+        // lastCmdTenths is what we last asked the belt for. It goes stale as a
+        // "pending" indicator once the belt has had time to obey, so it is only
+        // offered while recent; after that the readout stands alone.
+        const uint16_t commanded =
+            (millis() - lastCmdMs <= kCmdBaseMs) ? (uint16_t)lastCmdTenths * 10 : centi;
+        ui.render(centi, commanded, dist, elapsed, beltUp, phoneUp, armed, running);
     }
     if (shotPending) {
         shotPending = false;

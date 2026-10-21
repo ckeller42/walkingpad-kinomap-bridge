@@ -167,8 +167,9 @@ bool Ui::shotNow() {
     return true;
 }
 
-void Ui::render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
-                bool beltUp, bool phoneUp, bool armed, bool running) {
+void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
+                uint32_t elapsedSec, bool beltUp, bool phoneUp, bool armed,
+                bool running) {
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
 
@@ -176,6 +177,15 @@ void Ui::render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
     if (sim_) dot(g, HALF / 2, "SIM BELT", true, true);
     else dot(g, HALF / 2, "BELT", beltUp);
     dot(g, HALF + HALF / 2, "PHONE", phoneUp);
+
+    // The button below now names its action, so the armed state is shown here
+    // instead of being inferred from a button label.
+    if (armed) {
+        g.setFont(&fonts::FreeSans9pt7b);
+        g.setTextColor(ARM_GO, BG);
+        g.setTextDatum(top_right);
+        g.drawString("ARMED", W - 4, 30);
+    }
 
     char buf[24];
     snprintf(buf, sizeof buf, "%u.%u", centiKmh / 100, (centiKmh % 100) / 10);
@@ -194,6 +204,19 @@ void Ui::render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
     // the unit label.
     g.setTextDatum(bottom_right);
     g.drawString("km/h", W - SPD_BTN_W - 6, 150);
+
+    // While a commanded speed has not been reached yet, show it. Without this
+    // a +/- press changes nothing on screen for a poll or two and reads as a
+    // dead button. Drawn dim so it never competes with the actual speed.
+    if (commandedCentiKmh != 0 && commandedCentiKmh != centiKmh) {
+        char tbuf[20];
+        snprintf(tbuf, sizeof tbuf, "-> %u.%u", commandedCentiKmh / 100,
+                 (commandedCentiKmh % 100) / 10);
+        g.setFont(&fonts::FreeSansBold12pt7b);
+        g.setTextColor(ARM_GO, BG);
+        g.setTextDatum(bottom_left);
+        g.drawString(tbuf, SPD_BTN_W + 6, 150);
+    }
 
     // Speed -/+ : dim and unmistakably inert while disarmed, like START.
     {
@@ -222,12 +245,16 @@ void Ui::render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
     g.drawString(buf, HALF + HALF / 2, 164);
 
     // Bottom bar: two halves flush with the screen edges. STOP is always
-    // saturated red. The left half is one control with three faces:
-    //   disarmed            -> ARM   (dark grey)
-    //   armed, can start    -> START (bright green: this is the call to action)
-    //   armed otherwise     -> ARMED (dark green; tap disarms)
+    // saturated red. The left half is one control with three faces, and each
+    // label names what tapping DOES:
+    //   disarmed            -> ARM    (dark grey)
+    //   armed, can start    -> START  (bright green: this is the call to action)
+    //   armed otherwise     -> DISARM (dark green)
+    // It used to read ARMED in the third case, which named the state rather
+    // than the action, leaving no clue that tapping is how you undo it. The
+    // state is still carried by the colour, and now also by the top bar.
     const bool canStart = armed && !running && beltUp;
-    const char* label = !armed ? "ARM" : (canStart ? "START" : "ARMED");
+    const char* label = !armed ? "ARM" : (canStart ? "START" : "DISARM");
     const uint16_t armBg = !armed ? ARM_OFF : (canStart ? ARM_GO : ARM_ON);
     barButton(g, 0, armBg, label);
     barButton(g, HALF, TFT_RED, "STOP");

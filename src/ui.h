@@ -21,8 +21,14 @@ public:
     void begin();
     // Call once per loop, right after M5.update(): samples touch, latches presses.
     void poll();
-    void render(uint16_t centiKmh, uint32_t distance10m, uint32_t elapsedSec,
-                bool beltUp, bool phoneUp, bool armed, bool running);  // armed also enables the +/- buttons
+    // centiKmh is what the belt reports; commandedCentiKmh is what was last
+    // asked for. They differ for a second or two after a +/- press, because
+    // the belt lags a command by a poll. Showing only the first makes the
+    // buttons look dead and invites a second press that overshoots.
+    // Pass commandedCentiKmh == centiKmh (or 0) when there is nothing pending.
+    void render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
+                uint32_t elapsedSec, bool beltUp, bool phoneUp, bool armed,
+                bool running);  // armed also enables the +/- buttons
     // Emits the current frame now (console `shot`). False if not a screenshot build.
     bool shotNow();
     void renderWizard(const wizard::Screen& s, bool sim);

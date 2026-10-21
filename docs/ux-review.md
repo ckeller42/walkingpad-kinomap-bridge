@@ -43,14 +43,17 @@ exactly how this happened, and nothing in CI could see it.
 
 ## Open issues, in order of how much they would cost a user
 
-### 1. `ARMED` is a state word on an action button
+### 1. `ARMED` was a state word on an action button — FIXED
 
 The left button cycles **ARM → START → ARMED**. The first two name an action;
 the third names a state, and tapping it *disarms*. A user who wants to stop
 arming has no label telling them that tapping is how.
 
-Worth considering: keep the state in the top bar and let the button always name
-its action (`ARM` / `START` / `DISARM`).
+**Fixed.** The button now always names its action — `ARM` / `START` /
+`DISARM` — and the armed state moved to the top bar, where it is a label rather
+than a control. The colour still carries the state too, so nothing was lost.
+
+![Armed and running: the button says DISARM, the state is in the top bar](screens/main-walking.png)
 
 ### 2. The two hidden taps are undiscoverable
 
@@ -62,15 +65,18 @@ is documented nowhere on the device.
 These are reasonable as *expert* gestures, but at least the developer menu
 should be findable without reading the source.
 
-### 3. Pressing `+` appears to do nothing for a second or two
+### 3. Pressing `+` appeared to do nothing for a second or two — FIXED
 
 The big number shows the **actual** belt speed, which lags a command by a poll
 or two. Press `+` and nothing changes, so the natural response is to press
 again — and overshoot. The bridge already tracks the commanded value
 (`lastCmdTenths`); the screen does not show it.
 
-Showing the target faintly beside or under the actual speed while they differ
-would close the loop without adding a mode.
+**Fixed.** While a commanded speed has not been reached, it is shown in green
+beside the readout. It is offered only while recent, so it reads as "pending"
+rather than becoming a second permanent number.
+
+![Commanded 2.0 while the belt still reads 0.0](screens/main-pending.png)
 
 ### 4. Distance and time are unlabelled
 
