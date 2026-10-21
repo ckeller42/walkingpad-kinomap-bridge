@@ -10,6 +10,7 @@ WalkingPad R1 Pro** treadmill as a BLE central and presents itself to
 
 setup-wizard
 serial-console
+logging
 ```
 
 ```{toctree}
