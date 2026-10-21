@@ -1,7 +1,25 @@
 # Domyos protocol mode: letting Kinomap drive the belt's speed
 
-**Status:** design, not yet planned or built. Tracks
-[issue #2](https://github.com/ckeller42/walkingpad-kinomap-bridge/issues/2).
+**Status: ABANDONED, deliberately.** Kept as a record of what was learned and
+why the answer is no. Tracks
+[issue #2](https://github.com/ckeller42/walkingpad-kinomap-bridge/issues/2),
+now closed `wontfix`.
+
+> **The decision.** Task 1 established that Kinomap's equipment-type-42 handler
+> is a **bike** (`jh8.java:23` sets `TYPE_BIKE`; `ih8.java:256` gates the speed
+> write on it). There is no Domyos treadmill handler. This mode would therefore
+> have presented the WalkingPad as an exercise bike: speed commanded, but the
+> session recorded as a ride, in cadence, power and resistance the belt does not
+> have. The project owner's answer was "I don't want a bike, I want a belt."
+>
+> No firmware was written. The verification gate in the plan existed precisely
+> so this would surface before any was.
+>
+> **What this settles, beyond this feature:** taken with Kinomap's own support
+> article, the `controlSpeedTreadmill` flag and counted control-point writes on
+> hardware, there is **no configuration in which Kinomap commands a treadmill's
+> speed** — not a generic FTMS one, and not a Domyos one, because Kinomap has no
+> Domyos treadmill. The bridge drives the belt; Kinomap reads and records it.
 
 **Author's note:** the project owner opted out of the brainstorming questions
 and asked for the design directly. Everything below marked *(my call)* is a
