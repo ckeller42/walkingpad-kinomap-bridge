@@ -67,11 +67,84 @@ Software Revision returns "Hardware Revision", and Manufacturer Name returns
 and `WLT8266M` identifies the Bluetooth module rather than the treadmill. Do not
 rely on any of these to identify the machine.
 
+## Stage 2 (partial) — active FE02 probe for the stop frame, 2026-10-21
+
+Owner authorised an active probe with nobody on the belt. Three candidates were
+written to `FE02`, each from its own start, with status polled throughout.
+
+### Result — the stop frame is `F7 A2 02 02 A6 FD` (set mode = standby)
+
+Confirmed against a **moving** belt, not just during the countdown:
+
+```
+belt running at 2.8 km/h
+  send F7 A2 02 02 A6 FD
+  t+1.2s   state=1 speed=2.3 mode=2
+  t+2.4s   state=4 speed=0.4 mode=2
+  t+3.6s   state=4 speed=0.0 mode=2
+```
+
+Negative results, both useful:
+
+| Candidate | Frame | Effect |
+|---|---|---|
+| start-with-0 | `F7 A2 04 00 A6 FD` | **No stop.** Belt carried on ramping to 4.0 km/h. |
+| set-speed-0 | `F7 A2 01 00 A3 FD` | **No stop.** Belt carried on ramping to 4.0 km/h. |
+| mode-standby | `F7 A2 02 02 A6 FD` | **Stops.** Decelerates to 0 and parks in standby. |
+
+### The belt's state machine, as observed
+
+| `state` | Meaning |
+|---|---|
+| 0 | idle |
+| 7 | countdown, immediately after start |
+| 6 | starting / transitioning |
+| 1 | running |
+| 4 | standby (stopped by the standby command) |
+
+`mode`: 1 = manual, 2 = standby.
+
+### Three consequences for the bridge
+
+1. **A stop leaves the belt in `mode 2` (standby), not idle.** It will not start
+   again until mode is set back to manual. The design's start sequence
+   (mode manual → start → speed) already does this first, so it is correct — but
+   now it is known to be *necessary*, not merely tidy.
+2. **The deceleration ramp is strictly decreasing**: 2.8 → 2.3 → 0.4 → 0.0 over
+   about 3.6 s. This directly validates Task 6's ramp-down discriminator, which
+   rejects a run containing any decrease. A real post-stop ramp will never be
+   misread as a remote start.
+3. **Setting speed to 0 is not a stop.** Anything that wants the belt stopped
+   must send the standby frame.
+
+### Status frame offsets — validated against real data
+
+```
+f8 a2 00 00 01 00 00 0b 00 00 00 00 00 02 0a 00 00 00 ba fd
+      |  |  |  \_____/  \_____/  \_____/  |
+      |  |  |   time=11  dist=0   steps=2  preset speed = 0x0a (1.0 km/h)
+      |  |  mode
+      |  speed
+      state
+```
+
+Byte 2 state, byte 3 speed×10, byte 4 mode, bytes 5–7 elapsed seconds (BE24),
+bytes 8–10 distance, bytes 11–13 steps — **exactly the layout the plan assumed.**
+Frames are 20 bytes with a trailing CRC and `FD`, so Task 3's `len >= 14` check
+is right and an `== 14` check would have rejected every real frame.
+
+Byte 14 carries the preset/target speed, which the plan did not know about.
+
+### Honest note on how the probe went
+
+The probe was written to hold the belt at 1.0 km/h. It did not: the speed command
+sent during the countdown was ignored, and the belt used its own preset, reaching
+**4.0 km/h** unattended in the first two cycles. Nobody was on it and it was
+stopped each time, but the limit intended was not the limit achieved. A future
+probe should set the speed *after* the belt reaches `state 1`, not during the
+countdown, and verify it took before letting the belt run.
+
 ### Still outstanding from Stage 2
 
-- **The stop frame has not been captured.** It needs either an HCI snoop log of
-  the KS Fit app stopping the belt (Developer Options toggle, cannot be set over
-  ADB), or an active probe writing candidate frames to `FE02` and watching the
-  belt — which nobody has authorised.
-- Status frame byte offsets for distance and steps are still unverified: that
-  needs the belt moving, which this capture deliberately did not do.
+- Distance and steps are validated only at near-zero values; a real walk is
+  needed to confirm their units (10 m for distance is still an assumption).
