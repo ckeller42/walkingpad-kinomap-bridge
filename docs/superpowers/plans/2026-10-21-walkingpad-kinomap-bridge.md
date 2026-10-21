@@ -972,7 +972,7 @@ git commit -m "test: stage 3 full-loop results and user documentation"
 - Modify: `README.md` (badge)
 
 **Interfaces:**
-- Consumes: the `native` and `cores3` environments from `platformio.ini`; the 95-test native suite.
+- Consumes: the `native` and `cores3` environments from `platformio.ini`; the native test suite.
 - Produces: a private GitHub repo and green CI on push and pull request.
 
 **Blocked on two things, both outside this repo:**
@@ -1006,7 +1006,7 @@ Expected: `gh auth status` reports a valid token. This is the owner's action, no
 
 - [ ] **Step 2: Write `.github/workflows/ci.yml`**
 
-Three jobs. `test` runs `pio test -e native` and must report 95 passing. `markdownlint` and `gitleaks` mirror `kws-de/ci.yml`. PlatformIO's core and platform packages are cached on `~/.platformio` keyed by the hash of `platformio.ini`, because the pioarduino toolchain download is several minutes.
+Three jobs. `test` runs `pio test -e native`; assert the suite passes, do **not** hardcode a case count — it changes every time a test is added or removed, and a stale number turns CI red for the wrong reason. `markdownlint` and `gitleaks` mirror `kws-de/ci.yml`. PlatformIO's core and platform packages are cached on `~/.platformio` keyed by the hash of `platformio.ini`, because the pioarduino toolchain download is several minutes.
 
 - [ ] **Step 3: Write `.github/workflows/firmware.yml`**
 
