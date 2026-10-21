@@ -961,3 +961,73 @@ What the bridge is, how to flash it, how to pair it with Kinomap, what the two s
 git add docs/test-log.md README.md
 git commit -m "test: stage 3 full-loop results and user documentation"
 ```
+
+---
+
+### Task 16: Publish the repo and set up CI
+
+**Files:**
+- Create: `.github/workflows/ci.yml`
+- Create: `.github/workflows/firmware.yml`
+- Modify: `README.md` (badge)
+
+**Interfaces:**
+- Consumes: the `native` and `cores3` environments from `platformio.ini`; the 95-test native suite.
+- Produces: a private GitHub repo and green CI on push and pull request.
+
+**Blocked on two things, both outside this repo:**
+
+1. **`gh` is not authenticated.** `gh auth status` reports the token for account
+   `ckeller42` is invalid. The owner must run `gh auth refresh -h github.com`.
+   Nothing in this task can create a remote until then.
+2. **Two house-style questions are outstanding**, asked of the `kws-de` and
+   `open-California` sessions and not yet answered. Implement the defaults below
+   if no answer arrives; fold in their replies if one does.
+
+**House conventions, read from the owner's existing repos rather than assumed:**
+
+| Convention | Source | Status |
+|---|---|---|
+| `on: push {branches: [main]}` + `pull_request` | universal across 17 repos | adopt |
+| `permissions: {contents: read}` | universal | adopt |
+| One job per concern | universal | adopt |
+| Actions pinned to full commit SHA with a `# v4` comment | **`kws-de` only** — `open-california` uses plain `@v4` | adopt (the stricter of the two) |
+| `gitleaks` secret scan as its own job | `kws-de` | adopt |
+| `markdownlint` as its own job | `kws-de` | adopt |
+| Build artifact uploaded with `retention-days` | `kws-de/firmware.yml` | adopt |
+| A second build under a **non-default** config | `kws-de/firmware.yml` | adopt — see step 3 |
+| `claude-code-review.yml` + `claude.yml` | 5 repos, **absent** from `kws-de` and `open-california` | **open question** — default: omit, matching the two hardware repos |
+| `dependabot-auto-merge.yml` | several, **absent** from `kws-de` | **open question** — default: omit; a toolchain bump silently changes the binary |
+
+- [ ] **Step 1: Owner refreshes the GitHub token**
+
+Run: `gh auth refresh -h github.com`
+Expected: `gh auth status` reports a valid token. This is the owner's action, not the implementer's.
+
+- [ ] **Step 2: Write `.github/workflows/ci.yml`**
+
+Three jobs. `test` runs `pio test -e native` and must report 95 passing. `markdownlint` and `gitleaks` mirror `kws-de/ci.yml`. PlatformIO's core and platform packages are cached on `~/.platformio` keyed by the hash of `platformio.ini`, because the pioarduino toolchain download is several minutes.
+
+- [ ] **Step 3: Write `.github/workflows/firmware.yml`**
+
+Build `pio run -e cores3`, then upload the merged flashable image as an artifact with `retention-days: 30`.
+
+Then **a second build with `USE_SIM_BELT=0`**. This is the analogue of `kws-de`'s non-default build, and it exists for the same reason: once Task 14 makes `USE_SIM_BELT` a real selector rather than an `#error` guard, a `BeltLink` path that quietly stops compiling is invisible under the default. Until Task 14 lands this job is expected to fail the `#error`, so gate it `continue-on-error: true` with a comment saying to remove that once Task 14 is in.
+
+- [ ] **Step 4: Add a guard against committing vendor-derived material**
+
+The sibling analysis repos (`ksfit-decompile`, `kinomap-decompile`) hold decompiled vendor code under hard rules that it is never committed or pushed. This repo must not acquire any. Add a job that fails on any tracked `*.apk`, `*.dex`, `*.so`, `*.bin`, or a `sources/`-shaped decompile tree. `.gitignore` plus discipline is what this replaces; the whole point is not relying on discipline.
+
+*(`open-California` was asked whether such a guard already exists there — prefer their implementation over a new one if they answer.)*
+
+- [ ] **Step 5: Create the private repo and push**
+
+Run: `gh repo create walkingpad-kinomap-bridge --private --source=. --push`
+**Verify `--private` took** before pushing anything further. Confirm with the owner before running this — it is the first outward-facing action in the project.
+
+- [ ] **Step 6: Confirm CI is green, then commit the badge**
+
+```bash
+git add .github/workflows README.md
+git commit -m "ci: native tests, firmware build, secret scan, vendor-material guard"
+```
