@@ -60,6 +60,7 @@ private:
     bool hasSent_ = false;      // lastSendMs_ is valid
     uint32_t lastSendMs_ = 0;
     uint8_t divergentPolls_ = 0;
+    uint8_t prevTenths_ = 0;    // previous sample while there is no reference
 };
 
 }  // namespace policy

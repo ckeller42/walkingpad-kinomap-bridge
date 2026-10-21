@@ -134,6 +134,33 @@ void test_reset_restores_initial_state(void) {
     TEST_ASSERT_EQUAL(policy::Action::SetSpeed, p.onTarget(400, 0).action);
 }
 
+void test_reset_clears_reference_and_divergent_run(void) {
+    policy::SpeedPolicy p;
+    p.onTarget(400, 0);                          // reference set
+    p.onBeltSpeed(20);
+    p.onBeltSpeed(20);                           // run in progress
+    p.reset();
+    TEST_ASSERT_EQUAL(policy::Action::SetSpeed, p.onTarget(400, 0).action);  // no reference
+    p.reset();
+    p.onTarget(400, 0);
+    p.onBeltSpeed(20);                           // only one divergent sample since reset
+    TEST_ASSERT_EQUAL(policy::Action::None, p.onTarget(400, 10000).action);
+}
+
+void test_deceleration_ramp_after_stop_is_not_adopted(void) {
+    policy::SpeedPolicy p;
+    p.onTarget(400, 0);
+    p.onTarget(100, 2000);                       // app stop
+    const uint8_t ramp[] = {5, 4, 3, 2, 1, 0};
+    for (uint8_t v : ramp) p.onBeltSpeed(v);
+    TEST_ASSERT_EQUAL(policy::Action::None, p.onTarget(100, 30000).action);  // no second Stop
+    // the trailing 0 cleared the previous sample: a fresh rising run adopts
+    p.onBeltSpeed(10);
+    p.onBeltSpeed(20);
+    p.onBeltSpeed(30);
+    TEST_ASSERT_EQUAL(policy::Action::Stop, p.onTarget(100, 40000).action);
+}
+
 void test_target_below_minimum_is_a_stop(void) {
     policy::SpeedPolicy p;
     TEST_ASSERT_EQUAL(policy::Action::Stop, p.onTarget(0, 0).action);
@@ -160,6 +187,8 @@ int main(int, char**) {
     RUN_TEST(test_agreeing_sample_resets_divergent_run);
     RUN_TEST(test_clamp_happens_before_deadband);
     RUN_TEST(test_reset_restores_initial_state);
+    RUN_TEST(test_reset_clears_reference_and_divergent_run);
+    RUN_TEST(test_deceleration_ramp_after_stop_is_not_adopted);
     RUN_TEST(test_target_below_minimum_is_a_stop);
     return UNITY_END();
 }

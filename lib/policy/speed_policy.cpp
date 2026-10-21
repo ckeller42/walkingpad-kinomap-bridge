@@ -13,6 +13,7 @@ Decision SpeedPolicy::onTarget(uint16_t centiKmh, uint32_t nowMs) {
         stopped_ = true;
         hasRef_ = false;                         // belt is at rest; next target is fresh
         divergentPolls_ = 0;
+        prevTenths_ = 0;
         hasSent_ = true;
         lastSendMs_ = nowMs;
         return {Action::Stop, 0};
@@ -34,16 +35,34 @@ Decision SpeedPolicy::onTarget(uint16_t centiKmh, uint32_t nowMs) {
 }
 
 void SpeedPolicy::onBeltSpeed(uint8_t tenthKmh) {
+    if (!hasRef_) {
+        // No reference (after a Stop, or never commanded): a belt that is moving
+        // was started by the remote. A falling sample restarts the run so the
+        // deceleration ramp after our own Stop is not adopted. Flat runs count,
+        // since a belt already at speed has no rise to observe.
+        if (tenthKmh == 0) {
+            divergentPolls_ = 0;
+            prevTenths_ = 0;
+            return;
+        }
+        divergentPolls_ = (tenthKmh < prevTenths_) ? 1 : static_cast<uint8_t>(divergentPolls_ + 1);
+        prevTenths_ = tenthKmh;
+        if (divergentPolls_ >= kResyncPolls) {
+            refTenths_ = tenthKmh;
+            hasRef_ = true;
+            stopped_ = false;
+            divergentPolls_ = 0;
+        }
+        return;
+    }
+
     // Agreement is the exact complement of what onTarget would send.
-    const bool divergent = hasRef_ ? absDiff(tenthKmh, refTenths_) >= kDeadbandTenths
-                                   : tenthKmh > 0;  // no reference: a moving belt was started by the remote
-    if (!divergent) {
+    if (absDiff(tenthKmh, refTenths_) < kDeadbandTenths) {
         divergentPolls_ = 0;
         return;
     }
     if (++divergentPolls_ >= kResyncPolls) {
         refTenths_ = tenthKmh;
-        hasRef_ = true;
         stopped_ = (tenthKmh == 0);
         divergentPolls_ = 0;
     }
