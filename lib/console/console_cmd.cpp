@@ -34,6 +34,8 @@ Cmd parse(const char* line) {
         {"log", Cmd::Log},         {"wifi", Cmd::Wifi},
         {"dev on", Cmd::DevOn},    {"dev off", Cmd::DevOff},
         {"log udp on", Cmd::UdpOn},{"log udp off", Cmd::UdpOff},
+        {"ota", Cmd::Ota},         {"ota check", Cmd::OtaCheck},
+        {"ota apply", Cmd::OtaApply},
     };
     for (const Entry& e : kTable)
         if (strcmp(s, e.text) == 0) return e.cmd;
@@ -41,7 +43,28 @@ Cmd parse(const char* line) {
     if (strcmp(s, "speed down") == 0) return Cmd::SpeedDown;
     if (strncmp(s, "speed ", 6) == 0) return Cmd::SpeedSet;
     if (strncmp(s, "wifi ", 5) == 0) return Cmd::Wifi;
+    if (strncmp(s, "ota url", 7) == 0) return Cmd::OtaUrl;
     return Cmd::Unknown;
+}
+
+bool parseOtaUrlArg(const char* rawLine, char* url, size_t cap) {
+    url[0] = 0;
+    const char* p = rawLine;
+    while (*p == ' ' || *p == '\t') ++p;
+    if (strncasecmp(p, "ota", 3) != 0) return false;
+    p += 3;
+    while (*p == ' ' || *p == '\t') ++p;
+    if (strncasecmp(p, "url", 3) != 0) return false;
+    p += 3;
+    while (*p == ' ' || *p == '\t') ++p;
+    if (*p == 0 || *p == '\r' || *p == '\n') return true;  // "ota url" alone: forget
+    const char* end = p;
+    while (*end && *end != '\r' && *end != '\n' && *end != ' ') ++end;
+    const size_t n = (size_t)(end - p);
+    if (n == 0 || n >= cap) return false;
+    memcpy(url, p, n);
+    url[n] = 0;
+    return true;
 }
 
 bool parseWifiArg(const char* rawLine, char* ssid, size_t ssidCap, char* pass, size_t passCap) {

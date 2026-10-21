@@ -31,6 +31,7 @@ enum class Cmd {
     Log, Wifi,
     DevOn, DevOff,       // developer mode: the radio master switch
     UdpOn, UdpOff,       // the UDP log broadcast, inside developer mode
+    Ota, OtaCheck, OtaApply, OtaUrl,  // firmware update
     Unknown,   // -> "err unknown-command"
     TooLong,   // -> "err line-too-long"
 };
@@ -48,6 +49,11 @@ SpeedArg parseSpeedArg(const char* line, unsigned minCenti, unsigned maxCenti, u
 // everything after the single space that follows the ssid, trailing CR/LF
 // removed. "wifi" alone (no arguments) clears both and returns true.
 bool parseWifiArg(const char* rawLine, char* ssid, size_t ssidCap, char* pass, size_t passCap);
+
+// For Cmd::OtaUrl: reads "ota url <absolute-url>" from the RAW line, because a
+// URL is case-sensitive and normalising would destroy it. "ota url" alone
+// clears the stored value and returns true.
+bool parseOtaUrlArg(const char* rawLine, char* url, size_t cap);
 
 // Accumulates bytes into lines. feed() returns true when a full line is ready
 // (take it with line()); a line longer than the buffer is reported as TooLong

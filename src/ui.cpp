@@ -13,21 +13,33 @@ constexpr int HALF = W / 2;
 constexpr int SPD_BTN_W = 72;     // "-" at x 0..71, "+" at x 248..319
 constexpr int SPD_BTN_Y0 = 44, SPD_BTN_Y1 = 140;
 constexpr int SETUP_HIT_Y = 40;  // top strip: tap the BELT indicator to re-run setup
-constexpr int DEV_HIT_Y = 40;    // top strip, right half: tap PHONE to open the dev menu
+// The settings gear: a visible affordance in the top-right corner. The menu
+// used to be a hidden tap on the PHONE indicator, which nobody could find.
+constexpr int GEAR_W = 30;       // touch target width, from the right edge
+constexpr int GEAR_CX = W - 16, GEAR_CY = 14, GEAR_R = 9;
 
 // Developer menu list: five rows between the title and the bottom bar.
 constexpr int ROW_Y0 = 30, ROW_H = 30, ROW_N = 5;
 
-// On-screen keyboard: ten columns of 32 px is exactly the 320 px panel, so the
+// On-screen keyboard. Ten columns of 32 px is exactly the 320 px panel, so the
 // grid needs no centring and every key is the same width.
-constexpr int KB_Y0 = 50, KB_ROW_H = 32, KB_COLS = 10, KB_COL_W = W / KB_COLS;
-constexpr int KB_ROWS = 4;
+//
+// Three rows, not four. On this 2.0" panel the pixel pitch is 0.127 mm, so a
+// 32 px key is 4.1 mm - well under the 9-10 mm that research recommends for
+// thumb input. Nine millimetres would allow four and a half columns, so a full
+// keyboard at the recommended size is simply not possible here. Height is the
+// lever that remains: moving the digits behind a "123" page, the way phone
+// keyboards do, buys 51 px rows (6.5 mm) instead of 32 px, and letters are
+// still one tap.
+constexpr int KB_Y0 = 30, KB_ROW_H = 51, KB_COLS = 10, KB_COL_W = W / KB_COLS;
+constexpr int KB_ROWS = 3;
 
-// Row 2 is nine letters then backspace; row 3 is shift, eight letters, space.
-// Keeping the letters in one string per row means the hit test and the drawing
-// read from the same source and cannot disagree.
-const char* const KB_LOWER[KB_ROWS] = {"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm."};
-const char* const KB_UPPER[KB_ROWS] = {"!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM_"};
+// Row 1 is nine letters then backspace; row 2 is shift, seven letters, the
+// page toggle and space. Hit testing and drawing read these same tables, so
+// they cannot disagree about what a key is.
+const char* const KB_LOWER[KB_ROWS] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
+const char* const KB_UPPER[KB_ROWS] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
+const char* const KB_NUM[KB_ROWS]   = {"1234567890", "!@#$%^&*()", "-_=+:/?"};
 
 constexpr uint16_t BG = TFT_BLACK;
 constexpr uint16_t DIM = 0x7BEF;       // mid grey
@@ -42,6 +54,18 @@ bool canvasOk = false;
 lgfx::LovyanGFX& target() {
     return canvasOk ? static_cast<lgfx::LovyanGFX&>(canvas)
                     : static_cast<lgfx::LovyanGFX&>(M5.Display);
+}
+
+// A cog, drawn rather than imported: six teeth, a rim and a hole. Small enough
+// for the top bar and still readable as "settings" at arm's length.
+void drawGear(lgfx::LovyanGFX& g, int cx, int cy, int r, uint16_t fg) {
+    for (int i = 0; i < 6; ++i) {
+        const float a = (float)i * 3.14159f / 3.0f;
+        g.fillRect(cx + (int)(cosf(a) * (float)r) - 2,
+                   cy + (int)(sinf(a) * (float)r) - 2, 4, 4, fg);
+    }
+    g.fillCircle(cx, cy, r - 2, fg);
+    g.fillCircle(cx, cy, r - 5, BG);
 }
 
 void dot(lgfx::LovyanGFX& g, int cx, const char* label, bool up, bool sim = false) {
@@ -101,9 +125,10 @@ void Ui::poll() {
         if (wizardMode_) (left ? wizL_ : wizR_) = true;
         else (left ? armPressed_ : stopPressed_) = true;
     } else if (!wizardMode_ && t.y < SETUP_HIT_Y) {
-        // Symmetric hidden taps on the two link indicators: BELT re-runs setup,
-        // PHONE opens the developer menu.
-        (left ? setupTapped_ : devTapped_) = true;
+        // The gear is a real, visible button and owns the right edge. The BELT
+        // indicator still re-runs setup, which the wizard's last screen says.
+        if (t.x >= W - GEAR_W) devTapped_ = true;
+        else if (left) setupTapped_ = true;
     } else if (!wizardMode_ && t.y >= SPD_BTN_Y0 && t.y < SPD_BTN_Y1) {
         if (t.x < SPD_BTN_W) speedDown_ = true;
         else if (t.x >= W - SPD_BTN_W) speedUp_ = true;
@@ -117,21 +142,22 @@ void Ui::pollKeyboard(int x, int y) {
     const int row = (y - KB_Y0) / KB_ROW_H;
     const int col = x / KB_COL_W;
     if (row < 0 || row >= KB_ROWS || col < 0 || col >= KB_COLS) return;
-    const char* const* map = menuShift_ ? KB_UPPER : KB_LOWER;
+    const char* const* map =
+        menuNumeric_ ? KB_NUM : (menuShift_ ? KB_UPPER : KB_LOWER);
 
     switch (row) {
         case 0:
+            keyChar_ = map[0][col];
+            break;
         case 1:
-            keyChar_ = map[row][col];
+            if (col == KB_COLS - 1) keyBack_ = true;  // DEL
+            else keyChar_ = map[1][col];
             break;
         case 2:
-            if (col == KB_COLS - 1) keyBack_ = true;
-            else keyChar_ = map[2][col];
-            break;
-        case 3:
-            if (col == 0) keyShift_ = true;
-            else if (col == KB_COLS - 1) keyChar_ = ' ';
-            else keyChar_ = map[3][col - 1];
+            if (col == 0) { if (menuNumeric_) keyNum_ = true; else keyShift_ = true; }
+            else if (col == KB_COLS - 2) keyNum_ = true;       // 123 / ABC
+            else if (col == KB_COLS - 1) keyChar_ = ' ';       // SP
+            else keyChar_ = map[2][col - 1];
             break;
         default:
             break;
@@ -150,6 +176,7 @@ bool Ui::tookDevTap() { bool r = devTapped_; devTapped_ = false; return r; }
 char Ui::tookKeyChar() { char r = keyChar_; keyChar_ = 0; return r; }
 bool Ui::tookKeyShift() { bool r = keyShift_; keyShift_ = false; return r; }
 bool Ui::tookKeyBackspace() { bool r = keyBack_; keyBack_ = false; return r; }
+bool Ui::tookKeyNumeric() { bool r = keyNum_; keyNum_ = false; return r; }
 
 // Pushes the finished frame, and (screenshot builds) emits it once per phase.
 void Ui::finishFrame(int phase) {
@@ -176,7 +203,10 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     // A simulated belt must never look like a healthy real one: amber "SIM".
     if (sim_) dot(g, HALF / 2, "SIM BELT", true, true);
     else dot(g, HALF / 2, "BELT", beltUp);
-    dot(g, HALF + HALF / 2, "PHONE", phoneUp);
+    // Shifted left of centre to clear the settings gear in the corner.
+    dot(g, HALF + HALF / 2 - 18, "PHONE", phoneUp);
+
+    drawGear(g, GEAR_CX, GEAR_CY, GEAR_R, DIM);
 
     // The button below now names its action, so the armed state is shown here
     // instead of being inferred from a button label.
@@ -323,6 +353,7 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
     // glass rather than a flag the caller has to keep in step.
     menuKeyboard_ = s.keyboard;
     menuShift_ = s.shift;
+    menuNumeric_ = s.numeric;
 
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
@@ -330,47 +361,53 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
     g.setTextDatum(middle_left);
     g.setTextColor(TFT_WHITE, BG);
     g.setFont(&fonts::FreeSansBold12pt7b);
-    g.drawString(s.title, 8, 15);
+    if (!s.keyboard) g.drawString(s.title, 8, 15);
     g.drawFastHLine(0, 27, W, DIM);
 
     if (s.keyboard) {
-        // What is being joined, and what has been typed. The password is shown
-        // rather than masked: this is a 320x240 panel in the user's own home,
-        // and typing a credential blind on a touch grid is how you end up with
-        // a wrong one stored and no way to tell.
-        // Which network, on the title row: there is only one line between the
-        // title and the key grid, and the typed text needs all of it. Drawing
-        // both at the same baseline made the password paint over the SSID.
+        // One row for both: which network on the left, what has been typed on
+        // the right. The password is shown rather than masked - this is a
+        // 320x240 panel in the user's own home, and typing a credential blind
+        // on a touch grid is how you end up with a wrong one stored and no way
+        // to tell.
         g.setFont(&fonts::FreeSans9pt7b);
         g.setTextColor(DIM, BG);
-        g.setTextDatum(middle_right);
-        g.drawString(s.prompt, W - 8, 15);
-
         g.setTextDatum(middle_left);
+        g.drawString(s.prompt, 8, 15);
+
+        // The grid starts at y30, so there is exactly one row for both. The
+        // title said "PASSWORD", which the CONNECT button and the keyboard
+        // already make obvious, and it collided with what was being typed.
+        // The row now carries the two things that matter: which network, on
+        // the left, and the password right-aligned so the end of a long one
+        // stays visible while typing.
+        g.setTextDatum(middle_right);
         g.setTextColor(TFT_WHITE, BG);
         g.setFont(&fonts::FreeSansBold12pt7b);
         const char* shown = s.typed[0] ? s.typed : "_";
-        g.drawString(shown, 8, 38);
+        g.drawString(shown, W - 8, 15);
 
-        const char* const* map = s.shift ? KB_UPPER : KB_LOWER;
+        const char* const* map =
+            s.numeric ? KB_NUM : (s.shift ? KB_UPPER : KB_LOWER);
         char one[2] = {0, 0};
         for (int col = 0; col < KB_COLS; ++col) {
             one[0] = map[0][col];
             drawKey(g, col, 0, one, false);
+        }
+        for (int col = 0; col < KB_COLS - 1; ++col) {
             one[0] = map[1][col];
             drawKey(g, col, 1, one, false);
         }
-        for (int col = 0; col < KB_COLS - 1; ++col) {
-            one[0] = map[2][col];
+        drawKey(g, KB_COLS - 1, 1, "DEL", true);
+        // Shift is meaningless on the digits page, so that key becomes the way
+        // back rather than sitting there inert.
+        drawKey(g, 0, 2, s.numeric ? "ABC" : (s.shift ? "SHF" : "shf"), true);
+        for (int col = 1; col < KB_COLS - 2; ++col) {
+            one[0] = map[2][col - 1];
             drawKey(g, col, 2, one, false);
         }
-        drawKey(g, KB_COLS - 1, 2, "DEL", true);
-        drawKey(g, 0, 3, s.shift ? "SHF" : "shf", true);
-        for (int col = 1; col < KB_COLS - 1; ++col) {
-            one[0] = map[3][col - 1];
-            drawKey(g, col, 3, one, false);
-        }
-        drawKey(g, KB_COLS - 1, 3, "SP", true);
+        drawKey(g, KB_COLS - 2, 2, s.numeric ? "ABC" : "123", true);
+        drawKey(g, KB_COLS - 1, 2, "SP", true);
     } else {
         for (int i = 0; i < s.rowCount && i < ROW_N; ++i) {
             const int y = ROW_Y0 + i * ROW_H;

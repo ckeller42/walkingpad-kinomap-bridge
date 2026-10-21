@@ -46,6 +46,7 @@ public:
     char tookKeyChar();       // typed character, or 0
     bool tookKeyShift();
     bool tookKeyBackspace();
+    bool tookKeyNumeric();  // the 123 / ABC page toggle
     // Marks the belt indicator as "SIM BELT" (amber) while the simulated belt is bound.
     void setSim(bool sim) { sim_ = sim; }
     // Selects which screen family owns the touch zones.
@@ -74,10 +75,12 @@ private:
     bool menuMode_ = false;
     bool menuKeyboard_ = false;  // set by renderDevMenu from the screen it drew
     bool menuShift_ = false;
+    bool menuNumeric_ = false;
     int menuRow_ = -1;
     bool devTapped_ = false;
     char keyChar_ = 0;
     bool keyShift_ = false;
     bool keyBack_ = false;
+    bool keyNum_ = false;
     int shotPhase_ = -1;
 };

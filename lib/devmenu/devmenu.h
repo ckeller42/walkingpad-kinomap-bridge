@@ -99,6 +99,7 @@ struct Screen {
     char prompt[28] = {};  ///< Keyboard screen: which network is being joined.
     char typed[kMaxPassword] = {};  ///< Keyboard screen: the password so far.
     bool shift = false;    ///< Keyboard screen: next character is shifted.
+    bool numeric = false;  ///< Keyboard screen: digits/symbols page is showing.
 };
 
 /**
@@ -152,6 +153,12 @@ public:
     /** @brief Flip shift. It applies to one character, like a phone keyboard. */
     void toggleShift();
 
+    /** @brief Switch between the letter page and the digits/symbols page. */
+    void toggleNumeric();
+
+    /** @brief True while the digits/symbols page is showing. */
+    bool numeric() const { return numeric_; }
+
     /** @brief Whether the next character should be shifted. */
     bool shift() const { return shift_; }
 
@@ -166,6 +173,7 @@ private:
     char ssid_[kMaxSsid] = {};
     char typed_[kMaxPassword] = {};
     bool shift_ = false;
+    bool numeric_ = false;
 };
 
 }  // namespace devmenu

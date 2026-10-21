@@ -12,6 +12,7 @@
 #include "devmenu.h"
 #include "ftms_server.h"
 #include "logsink.h"
+#include "ota.h"
 #include "sim_belt.h"
 #include "speed_policy.h"
 #include "ui.h"
@@ -195,7 +196,7 @@ static constexpr uint8_t kUiStartTenths = 20;
 // real button presses but SYNTHETIC belt inputs (there is no belt on the
 // bench), then the main screen runs on the real simulated belt.
 static constexpr uint32_t kDemoDwellMs = 4000;
-static constexpr int kDemoLast = 17;
+static constexpr int kDemoLast = 18;
 static uint32_t demoT0 = 0;
 static int demoIdx = -1;
 static wizard::Inputs demoIn;
@@ -311,8 +312,17 @@ static void demoAdvance(int i, uint32_t now) {
             devMenu.append('e');
             devMenu.append('c');
             break;
-        case 17:  // the same keyboard, shifted
-            devMenu.toggleShift();
+        case 17:  // the digits and symbols page
+            devMenu.toggleNumeric();
+            break;
+        case 18:
+            // End on the main screen. Leaving the tour inside the menu means a
+            // flashed screenshot build answers no touch but CLOSE, which reads
+            // as a dead touchscreen. leaveDevMenu() is defined further down, so
+            // the two lines it would run are inlined here.
+            demoDev = false;
+            inDevMenu = false;
+            ui.setMenuMode(false);
             break;
     }
     devDirty = true;
@@ -424,6 +434,7 @@ static void devMenuTick() {
     if (const char c = ui.tookKeyChar()) { devMenu.append(c); devDirty = true; }
     if (ui.tookKeyBackspace()) { devMenu.backspace(); devDirty = true; }
     if (ui.tookKeyShift()) { devMenu.toggleShift(); devDirty = true; }
+    if (ui.tookKeyNumeric()) { devMenu.toggleNumeric(); devDirty = true; }
 
     if (!inDevMenu) return;  // Close was handled above
 
@@ -517,6 +528,35 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             }
             break;
         }
+        case Cmd::Ota:
+            Serial.printf("ota running=%s state=%d url=%s msg=%s\n", ota::version(),
+                          (int)ota::state(), ota::url()[0] ? ota::url() : "-",
+                          ota::message());
+            break;
+        case Cmd::OtaUrl: {
+            char u[160];
+            if (!console::parseOtaUrlArg(line, u, sizeof u)) {
+                Serial.println("err bad-ota-url");
+                return;
+            }
+            ota::setUrl(u);
+            Serial.printf("ota url=%s\n", u[0] ? u : "(cleared)");
+            break;
+        }
+        case Cmd::OtaCheck:
+            if (!logsink::devOn()) { Serial.println("err dev-mode-off"); return; }
+            ota::check();
+            Serial.println(ota::message());
+            break;
+        case Cmd::OtaApply:
+            // The download blocks for seconds and the belt link goes stale
+            // meanwhile, so never under a moving belt.
+            if (!logsink::devOn()) { Serial.println("err dev-mode-off"); return; }
+            if (state.beltRunning()) { Serial.println("err belt-running"); return; }
+            applyOutcome(state.setArmed(false));
+            ota::apply();
+            Serial.println(ota::message());
+            break;
         case Cmd::Log: {
             char buf[160];
             logsink::describe(buf, sizeof buf);
@@ -564,7 +604,7 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             shotPending = true;  // answered once the frame has been drawn and emitted
             return;
         case Cmd::Help:
-            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | speed up|down|<km/h> | cp | log | log udp on|off | dev on|off | wifi <ssid> <pass> | shot | help");
+            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | speed up|down|<km/h> | cp | log | log udp on|off | dev on|off | wifi <ssid> <pass> | ota [check|apply|url <u>] | shot | help");
             break;
         case Cmd::Unknown:
         case Cmd::TooLong:
@@ -579,6 +619,7 @@ void setup() {
     M5.begin(cfg);
     Serial.begin(115200);
     logsink::begin();
+    ota::begin();
     ui.begin();
 
     bleServer.setOnTarget([](uint16_t centi) {

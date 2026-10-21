@@ -104,7 +104,10 @@ bool mountSd() {
     sdCs   = M5.getPin(m5::pin_name_t::sd_spi_cs);
     if (sdSck < 0 || sdMiso < 0 || sdMosi < 0 || sdCs < 0) return false;
     SPI.begin(sdSck, sdMiso, sdMosi, sdCs);
-    for (uint32_t hz : {25000000u, 10000000u, 4000000u, 1000000u}) {
+    // Two attempts, not four: each failure makes the SD library log an error,
+    // and with no card inserted that is four lines of noise on every boot for
+    // no extra diagnostic value.
+    for (uint32_t hz : {25000000u, 4000000u}) {
         SD.end();
         if (SD.begin((uint8_t)sdCs, SPI, hz)) {
             sdHz = hz;
