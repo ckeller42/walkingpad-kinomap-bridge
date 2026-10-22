@@ -34,6 +34,7 @@ Outcome BridgeState::onPhoneLink(bool up) {
     Outcome o = empty();
     if (up && !phoneUp_) o.emits[o.count++] = Emit::ResetPolicy;
     phoneUp_ = up;
+    if (!up) pendingMode_ = BeltMode::Unknown;  // every stop path drops a pending request
     if (!up && running_) {  // build the outcome before clearing running_
         o.emits[o.count++] = Emit::Stop;
         o.emits[o.count++] = Emit::ResetPolicy;
@@ -148,7 +149,7 @@ Outcome BridgeState::stopFromUi() {
 Outcome BridgeState::requestMode(BeltMode m, bool observedRunning) {
     Outcome o = empty();
     if (m == BeltMode::Unknown) return o;  // a sentinel, never written
-    if (!armed_ || !beltUp_ || observedRunning) return o;
+    if (!armed_ || !beltUp_ || observedRunning || running_) return o;
     pendingMode_ = m;
     pendingFrom_ = observedMode_;
     pendingFrames_ = 0;

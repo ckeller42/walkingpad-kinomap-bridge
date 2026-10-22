@@ -386,6 +386,21 @@ void test_request_mode_refused_while_observed_running(void) {
     TEST_ASSERT_EQUAL_size_t(0, o.count);
     TEST_ASSERT_FALSE(s.autoPending());
 }
+void test_request_mode_refused_while_start_in_flight(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.startFromUi(20);  // the status poll has not caught up: observedRunning is false
+    auto o = s.requestMode(policy::BeltMode::Auto, false);
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+    TEST_ASSERT_FALSE(s.autoPending());
+}
+void test_phone_loss_clears_a_pending_request(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.requestMode(policy::BeltMode::Auto, false);
+    (void)s.onPhoneLink(false);
+    TEST_ASSERT_FALSE(s.autoPending());
+}
 void test_request_mode_emits_set_mode_and_is_pending_not_active(void) {
     policy::BridgeState s;
     (void)s.onBeltLink(true); (void)s.setArmed(true);
@@ -444,6 +459,25 @@ void test_leaving_auto_emits_reset_policy(void) {
     TEST_ASSERT_EQUAL(policy::Emit::ResetPolicy, o.emits[0]);
     TEST_ASSERT_FALSE(s.autoActive());
 }
+void test_leaving_auto_to_standby_emits_reset_policy(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true);
+    (void)s.observeMode(policy::BeltMode::Auto);
+    auto o = s.observeMode(policy::BeltMode::Standby);
+    TEST_ASSERT_EQUAL_size_t(1, o.count);
+    TEST_ASSERT_EQUAL(policy::Emit::ResetPolicy, o.emits[0]);
+}
+void test_start_after_stop_is_plain_start_sequence_auto_not_remembered(void) {
+    policy::BridgeState s;  // as autoBelt(): armed, links up, confirmed Auto
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.observeMode(policy::BeltMode::Auto);
+    (void)s.stopFromUi();
+    (void)s.observeMode(policy::BeltMode::Manual);  // the belt left Auto
+    (void)s.setArmed(true);
+    auto o = s.startFromUi(20);
+    TEST_ASSERT_EQUAL(policy::Emit::StartSequence, o.emits[0]);
+    for (size_t i = 0; i < o.count; ++i) TEST_ASSERT_NOT_EQUAL(policy::Emit::SetMode, o.emits[i]);
+}
 void test_request_manual_from_auto_at_rest_emits_set_mode_manual(void) {
     policy::BridgeState s;
     (void)s.onBeltLink(true); (void)s.setArmed(true);
@@ -496,8 +530,11 @@ void test_phone_target_while_auto_pending_emits_nothing(void) {
     TEST_ASSERT_EQUAL_size_t(0, o.count);
 }
 void test_stop_in_auto_still_stops_and_clears_pending(void) {
-    auto s = autoBelt();
-    (void)s.requestMode(policy::BeltMode::Manual, false);
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.observeMode(policy::BeltMode::Manual);
+    (void)s.requestMode(policy::BeltMode::Auto, false);
+    TEST_ASSERT_TRUE(s.autoPending());
     auto o = s.stopFromUi();
     TEST_ASSERT_EQUAL(policy::Emit::Stop, o.emits[0]);
     TEST_ASSERT_FALSE(s.autoPending());

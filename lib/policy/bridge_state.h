@@ -190,6 +190,7 @@ public:
      *         nobody is recording the session any more, so the belt must not
      *         keep going. Nothing at all if the belt was not running. On a
      *         down->up transition, Emit::ResetPolicy.
+     * @note Loss also drops any pending mode request, like every stop path.
      * @note The bridge stays armed across phone loss. The user armed it
      *       physically and only they take that back; a dropped phone must not
      *       silently require a walk back to the device.
@@ -231,7 +232,7 @@ public:
     /**
      * @brief Record that a poll shows the belt moving on its own in Auto.
      *
-     * Call when a poll shows the belt moving (state 1 or speed above zero). In
+     * Call when a poll shows the belt moving (state 1). In
      * Auto the walker, not the bridge, starts the belt, so no start sequence
      * ever runs and Kinomap would never begin its session; this is how the
      * bridge notices and tells it.
@@ -333,11 +334,15 @@ public:
      *        refused: it is a sentinel, not a mode that can be written.
      * @param observedRunning Whether the belt is *observed* moving, from its own
      *        status rather than @ref beltRunning(). A mode change under a
-     *        moving belt is not ours to make.
+     *        moving belt is not ours to make. The caller should also fold in
+     *        any start it has in flight, as the status lags a poll.
      * @return Emit::SetMode with Outcome::mode = @p m, and the request becomes
      *         pending until observeMode() confirms or rejects it. Emits nothing
-     *         for BeltMode::Unknown, and nothing unless the bridge is armed, the belt link is up, and the belt is
-     *         not observed running.
+     *         for BeltMode::Unknown, and nothing unless the bridge is armed,
+     *         the belt link is up, the belt is not observed running, and the
+     *         bridge does not believe it is starting or running the belt
+     *         (@ref beltRunning(), which covers a start still in flight: a
+     *         set_mode must never be queued ahead of start_belt).
      */
     Outcome requestMode(BeltMode m, bool observedRunning);
 
