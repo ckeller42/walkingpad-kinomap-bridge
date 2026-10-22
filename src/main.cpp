@@ -685,10 +685,10 @@ void setup() {
 #if UI_SCREENSHOT
     demoT0 = millis();  // the tour is started by demoAdvance(0) from loop()
     (void)setupDone;
-    ui.render(0, 0, 0, 0, false, false, state.armed(), false);
+    ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false);
 #else
     if (!setupDone) enterWizard(millis());
-    else ui.render(0, 0, 0, 0, false, false, state.armed(), false);  // boots disarmed
+    else ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false);  // boots disarmed
 #endif
 }
 
@@ -813,8 +813,12 @@ void loop() {
         // offered while recent; after that the readout stands alone.
         const uint16_t commanded =
             (millis() - lastCmdMs <= kCmdBaseMs) ? (uint16_t)lastCmdTenths * 10 : centi;
+        // Bridge's own battery (AXP2101 via M5Unified); < 0 when no cell.
+        const int battPct = M5.Power.getBatteryLevel();
+        const bool charging = M5.Power.isCharging();
         if (!inDevMenu)
-            ui.render(centi, commanded, dist, elapsed, beltUp, phoneUp, armed, running);
+            ui.render(centi, commanded, dist, elapsed, lastStatus.steps, beltUp, phoneUp,
+                      armed, running, battPct, charging);
     }
     if (shotPending) {
         shotPending = false;

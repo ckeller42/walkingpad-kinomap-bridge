@@ -3,6 +3,7 @@
 #include <M5Unified.h>
 #include <stdio.h>
 
+#include "battery.h"
 #include "logsink.h"
 #include "shot.h"
 
@@ -91,6 +92,33 @@ void barDivider(lgfx::LovyanGFX& g) {
     const int bh = H - BAR_Y;
     g.drawFastVLine(HALF - 1, BAR_Y, bh, BG);
     g.drawFastVLine(HALF, BAR_Y, bh, BG);
+}
+
+// A compact battery gauge for the top-left corner: an outline with a fill bar
+// sized to the charge and coloured by state - green ok, amber low, red
+// critical, cyan charging. Nothing is drawn when the state is Unknown, so a
+// bridge running on USB with no cell shows a clean corner, not an empty box.
+void drawBattery(lgfx::LovyanGFX& g, int x, int y, int pct, battery::State st) {
+    uint16_t col;
+    switch (st) {
+        case battery::State::Charging: col = TFT_CYAN;   break;
+        case battery::State::Ok:       col = TFT_GREEN;  break;
+        case battery::State::Low:      col = TFT_ORANGE; break;
+        case battery::State::Critical: col = TFT_RED;    break;
+        default: return;  // Unknown: nothing to show
+    }
+    constexpr int bw = 22, bh = 12;
+    g.drawRect(x, y, bw, bh, col);
+    g.fillRect(x + bw, y + 3, 2, bh - 6, col);                 // + terminal nub
+    const int clamped = pct < 0 ? 0 : (pct > 100 ? 100 : pct);
+    const int fw = (bw - 4) * clamped / 100;
+    if (fw > 0) g.fillRect(x + 2, y + 2, fw, bh - 4, col);     // charge bar
+    char pb[8];
+    snprintf(pb, sizeof pb, "%d%%", clamped);
+    g.setFont(&fonts::FreeSans9pt7b);
+    g.setTextColor(col, BG);
+    g.setTextDatum(middle_left);
+    g.drawString(pb, x + bw + 6, y + bh / 2);
 }
 }  // namespace
 
@@ -237,8 +265,8 @@ bool Ui::shotNow() {
 }
 
 void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
-                uint32_t elapsedSec, bool beltUp, bool phoneUp, bool armed,
-                bool running) {
+                uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
+                bool armed, bool running, int battPct, bool charging) {
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
 
@@ -249,6 +277,10 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     dot(g, HALF + HALF / 2 - 18, "PHONE", phoneUp);
 
     drawGear(g, GEAR_CX, GEAR_CY, GEAR_R, DIM);
+
+    // Bridge's own battery, top-left. classify() (lib/battery) decides the
+    // state; drawBattery hides it entirely when there is no cell.
+    drawBattery(g, 4, 18, battPct, battery::classify(battPct, charging));
 
     // The button below now names its action, so the armed state is shown here
     // instead of being inferred from a button label.
@@ -303,18 +335,24 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
         g.setTextColor(TFT_WHITE, BG);
     }
 
+    // Bottom metrics as three evenly spaced columns: distance | steps | time.
+    // A smaller face than the two-column original keeps all three clear of one
+    // another on the 320 px row.
     g.setTextColor(TFT_WHITE, BG);
     g.setTextDatum(middle_center);
+    g.setFont(&fonts::FreeSans9pt7b);
     snprintf(buf, sizeof buf, "%lu.%02lu km", (unsigned long)(distance10m / 100),
              (unsigned long)(distance10m % 100));
-    g.drawString(buf, HALF / 2, 164);
+    g.drawString(buf, W / 6, 164);
+    snprintf(buf, sizeof buf, "%lu steps", (unsigned long)steps);
+    g.drawString(buf, HALF, 164);
     if (elapsedSec >= 3600)
         snprintf(buf, sizeof buf, "%lu:%02lu:%02lu", (unsigned long)(elapsedSec / 3600),
                  (unsigned long)(elapsedSec / 60 % 60), (unsigned long)(elapsedSec % 60));
     else
         snprintf(buf, sizeof buf, "%02lu:%02lu", (unsigned long)(elapsedSec / 60),
                  (unsigned long)(elapsedSec % 60));
-    g.drawString(buf, HALF + HALF / 2, 164);
+    g.drawString(buf, W - W / 6, 164);
 
     // Bottom bar: two halves flush with the screen edges. STOP is always
     // saturated red. The left half is one control with three faces, and each

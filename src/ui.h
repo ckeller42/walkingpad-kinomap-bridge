@@ -13,10 +13,10 @@
  *
  * | y        | content |
  * |----------|---------|
- * | 0..27    | link indicators (BELT left, PHONE right) and the settings gear |
+ * | 0..27    | link indicators (BELT left, PHONE right), battery gauge (top-left) and the settings gear |
  * | 28..149  | instantaneous speed, very large |
  * | 44..139  | the readout flanked by `-` (x 0..71) and `+` (x 248..319), enabled only while armed |
- * | 150..175 | distance (left) and elapsed time (right) |
+ * | 150..175 | distance (left), steps (centre) and elapsed time (right) |
  * | 184..239 | bottom bar: left = ARM / START / DISARM, right = STOP |
  *
  * The left button is one control with three faces, and each label names what
@@ -67,14 +67,17 @@ public:
      *        value as @p centiKmh (or 0) when nothing is pending.
      * @param distance10m       Session distance in 10 m units.
      * @param elapsedSec        Session time in seconds.
+     * @param steps             Session step count, from the belt's status frame.
      * @param beltUp            Belt linked and delivering fresh status.
      * @param phoneUp           A phone is connected.
      * @param armed             The bridge is armed; also enables `+`/`-`.
      * @param running           The belt is moving.
+     * @param battPct           Bridge battery charge 0..100, or < 0 if unknown / no cell.
+     * @param charging          True while the bridge is on external power and charging.
      */
     void render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
-                uint32_t elapsedSec, bool beltUp, bool phoneUp, bool armed,
-                bool running);
+                uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
+                bool armed, bool running, int battPct, bool charging);
 
     /**
      * @brief Emit the current frame over serial (the console's `shot`).
