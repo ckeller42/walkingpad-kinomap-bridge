@@ -271,5 +271,7 @@ int main(int, char**) {
     RUN_TEST(test_external_auto_while_running_mutes_and_keeps_running);
     RUN_TEST(test_disarm_in_auto_does_not_stop);
     RUN_TEST(test_request_mode_unknown_is_refused);
+    RUN_TEST(test_start_allowed_requires_armed_link_fresh_and_stopped);
+    RUN_TEST(test_start_allowed_false_while_running_or_auto);
     return UNITY_END();
 }

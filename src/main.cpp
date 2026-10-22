@@ -57,6 +57,11 @@ static bool startPending = false;
 static bool sawCountdown = false;
 static uint8_t pendingTenths = 0;
 static uint32_t pendingSinceMs = 0;
+/// Short refusal text for the screen, valid until #reasonUntilMs.
+static const char* reasonText = nullptr;
+static uint32_t reasonUntilMs = 0;
+/// Show @p s on the screen for 1200 ms (a tap was refused).
+static void showReason(const char* s) { reasonText = s; reasonUntilMs = millis() + 1200; }
 
 // Latest belt readings (loop thread only).
 static wilink::Status lastStatus{};
@@ -177,6 +182,9 @@ static void driveStart(const wilink::Status& st, uint8_t prevTenths, uint32_t no
     // Auto owns the speed: the belt starts and paces itself, so a pending
     // start must never write set_speed under it.
     if (state.autoActive() || state.autoPending()) { startPending = false; return; }
+    // Disarmed while the start was pending: drop it rather than write under a
+    // bridge that no longer owns the belt.
+    if (!state.armed()) { startPending = false; logsink::line("start dropped: disarmed"); return; }
     if (st.beltState == 7) sawCountdown = true;
     // State 6 is also "decelerating". Accept it as ramping up if a countdown
     // was seen, or (the 1 Hz poll can miss the 3 s countdown) speed is rising.
@@ -757,11 +765,11 @@ void setup() {
     demoT0 = millis();  // the tour is started by demoAdvance(0) from loop()
     (void)setupDone;
     ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false,
-                  ModeBadge::None, false);
+                  ModeBadge::None, false, false, nullptr);
 #else
     if (!setupDone) enterWizard(millis());
     else ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false,
-                  ModeBadge::None, false);  // boots disarmed
+                  ModeBadge::None, false, false, nullptr);  // boots disarmed
 #endif
 }
 
@@ -821,12 +829,16 @@ void loop() {
                 redraw = true;
             }
             if (ui.tookArmButton()) {
-                const bool canStart =
-                    state.armed() && !state.beltRunning() && theBelt.linkUp() && beltFresh() &&
-                    !state.autoActive() && !state.autoPending();
+                // The face is derived from policy's startAllowed(); the
+                // DISARM face is refused only while a start is in flight, so
+                // an impatient second tap cannot disarm under a starting belt.
                 if (!state.armed()) applyOutcome(state.setArmed(true));
-                else if (canStart) applyOutcome(state.startFromUi(kUiStartTenths));
-                else applyOutcome(state.setArmed(false));  // ARMED face: tap disarms
+                else if (startPending) showReason("Starting - wait");
+                else if (state.startAllowed(beltFresh())) applyOutcome(state.startFromUi(kUiStartTenths));
+                else if (!(theBelt.linkUp() && beltFresh())) {
+                    showReason("Belt offline");
+                    applyOutcome(state.setArmed(false));
+                } else applyOutcome(state.setArmed(false));  // DISARM face: tap disarms
                 redraw = true;
             }
             // Same path as console `speed up|down`; ignored (button is dim) unless armed.
@@ -929,7 +941,8 @@ void loop() {
         if (!inDevMenu)
             ui.render(centi, commanded, dist, elapsed, lastStatus.steps, beltUp, phoneUp,
                       armed, running, battPct, charging,
-                      badge, autoMode);
+                      badge, autoMode, startPending,
+                      millis() < reasonUntilMs ? reasonText : nullptr);
     }
     if (shotPending) {
         shotPending = false;

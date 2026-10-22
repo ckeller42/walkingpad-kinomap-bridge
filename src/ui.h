@@ -91,11 +91,15 @@ public:
      *        while disarmed.
      * @param autoMode          Auto is observed or pending. Mutes `+`/`-`,
      *        turns the `ARMED` tag into `AUTO` and removes the `START` face.
+     * @param starting          A start sequence is in flight. The left button
+     *        reads `STARTING` in its inert armed colour instead of `DISARM`.
+     * @param reason            Short refusal text to show for about a second,
+     *        or nullptr. Carried only; placement is not drawn yet.
      */
     void render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
                 uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
                 bool armed, bool running, int battPct, bool charging,
-                ModeBadge badge, bool autoMode);
+                ModeBadge badge, bool autoMode, bool starting, const char* reason);
 
     /**
      * @brief Emit the current frame over serial (the console's `shot`).

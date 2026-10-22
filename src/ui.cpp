@@ -287,7 +287,8 @@ bool Ui::shotNow() {
 void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
                 uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
                 bool armed, bool running, int battPct, bool charging,
-                ModeBadge badge, bool autoMode) {
+                ModeBadge badge, bool autoMode, bool starting, const char* reason) {
+    (void)reason;  // drawn by a later change; carried so callers need not change again
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
 
@@ -386,15 +387,15 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     // It used to read ARMED in the third case, which named the state rather
     // than the action, leaving no clue that tapping is how you undo it. The
     // state is still carried by the colour, and now also by the top bar.
-    const bool canStart = armed && !running && beltUp && !autoMode;
-    const char* label = !armed ? "ARM" : (canStart ? "START" : "DISARM");
+    const bool canStart = armed && !running && !starting && beltUp && !autoMode;
+    const char* label = !armed ? "ARM" : (canStart ? "START" : (starting ? "STARTING" : "DISARM"));
     const uint16_t armBg = !armed ? ARM_OFF : (canStart ? ARM_GO : ARM_ON);
     barButton(g, 0, armBg, label);
     barButton(g, HALF, TFT_RED, "STOP");
     barDivider(g);
 
     finishFrame(100 + (armed ? 1 : 0) + (canStart ? 2 : 0) + (centiKmh > 0 ? 4 : 0) + (sim_ ? 8 : 0) +
-                (autoMode ? 16 : 0) + (badge == ModeBadge::AutoPending ? 32 : 0));
+                (autoMode ? 16 : 0) + (starting ? 64 : 0) + (badge == ModeBadge::AutoPending ? 32 : 0));
 }
 
 void Ui::renderWizard(const wizard::Screen& s, bool sim) {

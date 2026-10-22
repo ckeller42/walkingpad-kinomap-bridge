@@ -168,6 +168,21 @@ public:
     bool armed() const { return armed_; }
 
     /**
+     * @brief Whether the START face is offered right now.
+     *
+     * The one definition of whether START is offered; `main.cpp` and the
+     * screen both derive the button face from it, so a tap and a picture
+     * cannot disagree.
+     *
+     * @param beltFresh True while the belt's status frames are recent.
+     * @return True iff armed, the belt link is up and fresh, the belt is not
+     *         believed running, and Auto is neither observed nor pending.
+     */
+    bool startAllowed(bool beltFresh) const {
+        return armed_ && beltUp_ && beltFresh && !running_ && !autoActive() && !autoPending();
+    }
+
+    /**
      * @brief Record the belt link coming up or going down.
      *
      * @param up True when the belt is linked and delivering status.

@@ -594,3 +594,23 @@ void test_request_mode_unknown_is_refused(void) {
     TEST_ASSERT_EQUAL_size_t(0, s.requestMode(policy::BeltMode::Unknown, false).count);
     TEST_ASSERT_FALSE(s.autoPending());
 }
+
+void test_start_allowed_requires_armed_link_fresh_and_stopped(void) {
+    policy::BridgeState s;
+    TEST_ASSERT_FALSE(s.startAllowed(true));            // disarmed
+    (void)s.setArmed(true);
+    TEST_ASSERT_FALSE(s.startAllowed(true));            // belt link down
+    (void)s.onBeltLink(true);
+    TEST_ASSERT_TRUE(s.startAllowed(true));
+    TEST_ASSERT_FALSE(s.startAllowed(false));           // stale status
+}
+void test_start_allowed_false_while_running_or_auto(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.setArmed(true);
+    (void)s.startFromUi(20);                            // optimistic running
+    TEST_ASSERT_FALSE(s.startAllowed(true));
+    (void)s.onBeltObservedStopped();
+    TEST_ASSERT_TRUE(s.startAllowed(true));
+    (void)s.observeMode(policy::BeltMode::Auto);        // Auto: stepping on starts it
+    TEST_ASSERT_FALSE(s.startAllowed(true));
+}

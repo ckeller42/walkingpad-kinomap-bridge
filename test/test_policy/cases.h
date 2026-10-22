@@ -63,3 +63,5 @@ void test_observed_running_outside_auto_emits_nothing(void);
 void test_external_auto_while_running_mutes_and_keeps_running(void);
 void test_disarm_in_auto_does_not_stop(void);
 void test_request_mode_unknown_is_refused(void);
+void test_start_allowed_requires_armed_link_fresh_and_stopped(void);
+void test_start_allowed_false_while_running_or_auto(void);
