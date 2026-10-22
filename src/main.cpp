@@ -67,11 +67,34 @@ static wilink::Status lastStatus{};
 static uint8_t lastCmdTenths = 0;
 static uint32_t lastCmdMs = 0;
 static constexpr uint32_t kCmdBaseMs = 3000;
+// After a Stop the belt keeps reporting motion while it decelerates; do not
+// treat that as a fresh start (it would re-notify Kinomap "started").
+static constexpr uint32_t kPostStopGraceMs = 5000;
+static uint32_t lastStopMs = 0;
+
+static policy::BeltMode toBeltMode(uint8_t wireMode) {
+    switch (wireMode) {
+        case 0: return policy::BeltMode::Auto;
+        case 1: return policy::BeltMode::Manual;
+        case 2: return policy::BeltMode::Standby;
+        default: return policy::BeltMode::Unknown;
+    }
+}
+
+// Never called with Unknown (applyOutcome skips that case).
+static wilink::Mode toWireMode(policy::BeltMode m) {
+    switch (m) {
+        case policy::BeltMode::Auto:    return wilink::Mode::Auto;
+        case policy::BeltMode::Standby: return wilink::Mode::Standby;
+        default:                        return wilink::Mode::Manual;
+    }
+}
 
 static const char* emitName(policy::Emit e) {
     switch (e) {
         case policy::Emit::SetSpeed:      return "SetSpeed";
         case policy::Emit::Stop:          return "Stop";
+        case policy::Emit::SetMode:       return "SetMode";
         case policy::Emit::StartSequence: return "StartSequence";
         case policy::Emit::NotifyStarted: return "NotifyStarted";
         case policy::Emit::ResetPolicy:   return "ResetPolicy";
@@ -94,7 +117,15 @@ static void applyOutcome(const policy::Outcome& o) {
             case policy::Emit::Stop:
                 startPending = false;
                 lastCmdTenths = 0;
+                lastStopMs = millis();
                 theBelt.stop();
+                break;
+            case policy::Emit::SetMode:
+                if (o.mode == policy::BeltMode::Unknown) {
+                    logsink::line("emit SetMode skipped: unknown");
+                    break;
+                }
+                theBelt.setMode(toWireMode(o.mode));
                 break;
             case policy::Emit::StartSequence:
                 // Skip the mode write (and its beep) if already manual.
@@ -703,7 +734,8 @@ void loop() {
     bool redraw = false;
     uint16_t centi;
     uint32_t dist, elapsed;
-    bool beltUp, phoneUp, armed, running;
+    bool beltUp, phoneUp, armed, running, autoMode = false;
+    ModeBadge badge = ModeBadge::None;
     wizard::Screen wscreen;
     // (console `shot` forces a redraw via wizDirty so the frame is current)
     bool wizSim = false;
@@ -728,9 +760,19 @@ void loop() {
             if (ui.tookWizardLeft()) wizPress(wizard::Btn::Left, now);
             if (inWizard && ui.tookWizardRight()) wizPress(wizard::Btn::Right, now);
         } else {
+            if (ui.tookModeTap()) {
+                const bool fresh = beltFresh();
+                const bool stationary = fresh && lastStatus.tenthKmh == 0 &&
+                                        (lastStatus.beltState == 0 || lastStatus.beltState == 4);
+                const auto want = (state.autoActive() || state.autoPending())
+                                      ? policy::BeltMode::Manual : policy::BeltMode::Auto;
+                applyOutcome(state.requestMode(want, !stationary));
+                redraw = true;
+            }
             if (ui.tookArmButton()) {
                 const bool canStart =
-                    state.armed() && !state.beltRunning() && theBelt.linkUp() && beltFresh();
+                    state.armed() && !state.beltRunning() && theBelt.linkUp() && beltFresh() &&
+                    !state.autoActive() && !state.autoPending();
                 if (!state.armed()) applyOutcome(state.setArmed(true));
                 else if (canStart) applyOutcome(state.startFromUi(kUiStartTenths));
                 else applyOutcome(state.setArmed(false));  // ARMED face: tap disarms
@@ -773,6 +815,15 @@ void loop() {
                 haveFresh = true;
                 const uint8_t prevTenths = lastStatus.tenthKmh;
                 lastStatus = st;
+                const auto prevMode = state.observedMode();
+                applyOutcome(state.observeMode(toBeltMode(st.mode)));
+                if (state.observedMode() != prevMode)
+                    logsink::line("belt mode %u -> %u pending=%d active=%d", (unsigned)prevMode,
+                                  (unsigned)state.observedMode(), (int)state.autoPending(),
+                                  (int)state.autoActive());
+                if (state.autoActive() && !state.beltRunning() && st.beltState == 1 &&
+                    now - lastStopMs >= kPostStopGraceMs)
+                    applyOutcome(state.onBeltObservedRunning());
                 speedPolicy.onBeltSpeed(st.tenthKmh);
                 driveStart(st, prevTenths, now);
                 if (state.beltRunning() && !startPending && st.tenthKmh == 0 &&
@@ -792,6 +843,11 @@ void loop() {
         phoneUp = bleServer.phoneConnected();
         armed = state.armed();
         running = state.beltRunning();
+        autoMode = state.autoActive() || state.autoPending();
+        badge = state.autoPending() ? ModeBadge::AutoPending
+              : state.autoActive()  ? ModeBadge::Auto
+              : state.observedMode() == policy::BeltMode::Unknown ? ModeBadge::None
+              : ModeBadge::Manual;
         if (inWizard) {
             const wizard::Inputs in = wizInputs(now);
             if (wiz.update(in)) {
@@ -821,7 +877,7 @@ void loop() {
         if (!inDevMenu)
             ui.render(centi, commanded, dist, elapsed, lastStatus.steps, beltUp, phoneUp,
                       armed, running, battPct, charging,
-                      ModeBadge::None, false);
+                      badge, autoMode);
     }
     if (shotPending) {
         shotPending = false;
