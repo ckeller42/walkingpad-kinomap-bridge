@@ -228,7 +228,7 @@ static constexpr uint8_t kUiStartTenths = 20;
 // real button presses but SYNTHETIC belt inputs (there is no belt on the
 // bench), then the main screen runs on the real simulated belt.
 static constexpr uint32_t kDemoDwellMs = 4000;
-static constexpr int kDemoLast = 18;
+static constexpr int kDemoLast = 21;
 static uint32_t demoT0 = 0;
 static int demoIdx = -1;
 static wizard::Inputs demoIn;
@@ -355,6 +355,19 @@ static void demoAdvance(int i, uint32_t now) {
             demoDev = false;
             inDevMenu = false;
             ui.setMenuMode(false);
+            break;
+        // The three badge states on the main screen: A? (requested), A, M.
+        case 19:
+            inDevMenu = false;
+            ui.setMenuMode(false);
+            applyOutcome(state.setArmed(true));
+            applyOutcome(state.requestMode(policy::BeltMode::Auto, false));
+            break;
+        case 20:
+            applyOutcome(state.observeMode(policy::BeltMode::Auto));
+            break;
+        case 21:
+            applyOutcome(state.observeMode(policy::BeltMode::Manual));
             break;
     }
     devDirty = true;

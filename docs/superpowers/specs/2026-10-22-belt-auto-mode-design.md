@@ -148,8 +148,7 @@ Entry points (each returns a `[[nodiscard]] Outcome`):
   tapping the badge (two taps, the same as ARM → START today).
 - **`onBeltLink(false)`** resets `observedMode` to `Unknown` and clears
   `pendingMode`.
-- **Disarm** (`setArmed(false)`) behaves as today — it stops a moving belt —
-  which in Auto parks it in Standby and so leaves Auto.
+- **Disarm** (`setArmed(false)`) behaves as today — it never stops the belt (documented invariant) — so in Auto it only greys the badge; STOP is the stop.
 
 Leaving Auto therefore has two routes: the badge at rest (`SetMode(Manual)`),
 or STOP → Standby followed by today's Manual start sequence, which already

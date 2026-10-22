@@ -18,6 +18,7 @@ vendor relationship, or silently corrupts the evidence base.
   UUID other than `FE00`/`FE01`/`FE02`.
 - **Never advertise `decathlon` as the manufacturer string.** Kinomap compares
   it case-insensitively and selects different pause/resume behaviour.
+- Auto mode is active only when a status frame reports mode 0; the speed path is muted while Auto is observed or pending.
 - **No vendor-derived material in this repo** — no APK, DEX, `.so`, decompiled
   source or `sources/` tree. It lives in separate private repos. CI enforces
   this (`no-vendor-material`), and it checks what is *tracked*, not what is on
@@ -51,7 +52,7 @@ Consequences you will hit:
 | `docs/` | Also the Sphinx source directory. |
 | `tools/` | Host-side test and analysis scripts. |
 
-The `lib`/`src` split is what makes 153 tests runnable with no hardware. When
+The `lib`/`src` split is what makes 191 tests runnable with no hardware. When
 adding behaviour, put the decision in `lib/` returning a value, and the effect
 in `src/`. `BridgeState` is the model: every state-changing entry point returns
 a `[[nodiscard]] Outcome` that exactly one `applyOutcome()` drains.
@@ -59,7 +60,7 @@ a `[[nodiscard]] Outcome` that exactly one `applyOutcome()` drains.
 ## Commands
 
 ```sh
-pio test -e native            # 145 host tests - NOT "pio run -e native"
+pio test -e native            # 191 host tests - NOT "pio run -e native"
 pio run -e cores3             # real belt (default)
 pio run -e cores3_sim         # simulated belt
 pio run -e cores3 -t upload --upload-port /dev/cu.usbmodem101

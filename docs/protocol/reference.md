@@ -52,7 +52,7 @@ Example frames carry a CRC computed by the generator from the group, function an
 
 - **Request status**: Ask the belt for one status frame; the reply arrives on FE01. Silent. Needed for every reading; the bridge polls at 1 Hz.
 - **Set speed**: Set the target belt speed. Discarded during the countdown (state 7); the belt then uses its own preset. A speed of 0 is not a stop.
-- **Set mode**: Select the belt mode. Mode 0 (auto) is never produced by the bridge.
+- **Set mode**: Select the belt mode. Mode 0 (auto) is produced by the bridge only on an explicit user request, and the bridge treats Auto as active only once a status frame reports mode 0.
 - **Start belt**: Start the belt (countdown, then run at the belt's preset speed). Sent after mode manual. The variant with argument 0 (F7 A2 04 00 A6 FD) is not a stop; see the constraints. Confirmed on an R1 Pro from standby and from idle, at mode-to-start gaps of 1.0, 1.5, 2.0 and 3.0 s - every gap started the belt, so the pacing interval is not load-bearing here. The belt ramps to its own preset speed (~1.1 km/h) unless a speed is set.
 - **Stop belt (set mode standby)**: The only stop. Sets mode standby; the belt decelerates to 0 and parks in state 4. Same wire format as Set mode with mode 2. Leaves the belt in standby, so it will not start again until mode is set back to manual.
 

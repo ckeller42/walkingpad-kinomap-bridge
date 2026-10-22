@@ -135,7 +135,7 @@ commands:
     summary: Select the belt mode.
     provenance: community
     evidence: "design doc: Established facts; modes 1 and 2 also measured"
-    notes: Mode 0 (auto) is never produced by the bridge.
+    notes: Mode 0 (auto) is produced by the bridge only on an explicit user request, and the bridge treats Auto as active only once a status frame reports mode 0.
     examples:
       - {label: manual, argument: 1}
   - id: start_belt
