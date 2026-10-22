@@ -105,10 +105,20 @@ static const char* emitName(policy::Emit e) {
     return "?";
 }
 
+#if UI_SCREENSHOT
+// Tour phase 19 sets this so its SetMode never reaches the (sim) belt; phase 20
+// clears it. Screenshot builds only.
+static bool demoHoldSetMode = false;
+#endif
+
 static void applyOutcome(const policy::Outcome& o) {
     for (size_t i = 0; i < o.count; ++i) {
-        if (o.emits[i] != policy::Emit::None)
-            logsink::line("emit %s tenths=%u", emitName(o.emits[i]), (unsigned)o.tenthKmh);
+        if (o.emits[i] != policy::Emit::None) {
+            if (o.emits[i] == policy::Emit::SetMode)
+                logsink::line("emit SetMode mode=%u", (unsigned)o.mode);
+            else
+                logsink::line("emit %s tenths=%u", emitName(o.emits[i]), (unsigned)o.tenthKmh);
+        }
         switch (o.emits[i]) {
             case policy::Emit::SetSpeed:
                 lastCmdTenths = o.tenthKmh; lastCmdMs = millis();
@@ -126,6 +136,12 @@ static void applyOutcome(const policy::Outcome& o) {
                     logsink::line("emit SetMode skipped: unknown");
                     break;
                 }
+#if UI_SCREENSHOT
+                if (demoHoldSetMode) {  // tour phase 19: keep the request pending for the A? shot
+                    logsink::line("emit SetMode held (shot tour)");
+                    break;
+                }
+#endif
                 theBelt.setMode(toWireMode(o.mode));
                 break;
             case policy::Emit::StartSequence:
@@ -158,6 +174,9 @@ static void applyOutcome(const policy::Outcome& o) {
 
 static void driveStart(const wilink::Status& st, uint8_t prevTenths, uint32_t now) {
     if (!startPending) return;
+    // Auto owns the speed: the belt starts and paces itself, so a pending
+    // start must never write set_speed under it.
+    if (state.autoActive() || state.autoPending()) { startPending = false; return; }
     if (st.beltState == 7) sawCountdown = true;
     // State 6 is also "decelerating". Accept it as ramping up if a countdown
     // was seen, or (the 1 Hz poll can miss the 3 s countdown) speed is rising.
@@ -357,17 +376,24 @@ static void demoAdvance(int i, uint32_t now) {
             ui.setMenuMode(false);
             break;
         // The three badge states on the main screen: A? (requested), A, M.
-        case 19:
+        // The state comes from the sim belt itself, never from a synthetic
+        // observe. Gated on simSource: a real belt must not be sent set_mode.
+        case 19:  // request held back, so the sim keeps its old mode: A?
+            if (!simSource) break;
             inDevMenu = false;
             ui.setMenuMode(false);
             applyOutcome(state.setArmed(true));
+            demoHoldSetMode = true;
             applyOutcome(state.requestMode(policy::BeltMode::Auto, false));
             break;
-        case 20:
-            applyOutcome(state.observeMode(policy::BeltMode::Auto));
+        case 20:  // release: the sim accepts Auto and reports it on its next poll: A
+            if (!simSource) break;
+            demoHoldSetMode = false;
+            applyOutcome(state.requestMode(policy::BeltMode::Auto, false));
             break;
-        case 21:
-            applyOutcome(state.observeMode(policy::BeltMode::Manual));
+        case 21:  // sim reports Manual: M
+            if (!simSource) break;
+            applyOutcome(state.requestMode(policy::BeltMode::Manual, false));
             break;
     }
     devDirty = true;
@@ -780,7 +806,10 @@ void loop() {
                                         (lastStatus.beltState == 0 || lastStatus.beltState == 4);
                 const auto want = (state.autoActive() || state.autoPending())
                                       ? policy::BeltMode::Manual : policy::BeltMode::Auto;
-                applyOutcome(state.requestMode(want, !stationary));
+                // lastStatus lags a poll, so also fold in a start the bridge knows is
+                // pending or running: a set_mode must not precede start_belt.
+                applyOutcome(state.requestMode(
+                    want, !stationary || startPending || state.beltRunning()));
                 redraw = true;
             }
             if (ui.tookArmButton()) {

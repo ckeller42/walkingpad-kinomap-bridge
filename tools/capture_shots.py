@@ -3,7 +3,7 @@
 
     ~/tools/venv-ble/bin/pio run -e cores3_shot -t upload --upload-port /dev/cu.usbmodem101
     ~/tools/venv-ble/bin/python tools/capture_shots.py --port /dev/cu.usbmodem101 \\
-        --seconds 70 --outdir docs/screens --names welcome,scan,...
+        --seconds 100 --outdir docs/screens --names welcome,scan,...
 
 The script pulses RTS to hard-reset the chip (the same way esptool does), so the
 capture starts with the boot log and the scripted tour begins at the first screen.
@@ -26,7 +26,7 @@ from decode_shots import decode_text  # noqa: E402
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", required=True)
-    ap.add_argument("--seconds", type=float, default=70)
+    ap.add_argument("--seconds", type=float, default=100)
     ap.add_argument("--outdir", default="docs/screens", type=Path)
     ap.add_argument("--names", default="")
     ap.add_argument("--raw", type=Path, default=Path("/tmp/shots-capture.txt"))
