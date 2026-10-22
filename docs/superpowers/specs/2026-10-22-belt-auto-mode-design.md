@@ -117,9 +117,10 @@ Entry points (each returns a `[[nodiscard]] Outcome`):
   structural.
 - **`observeMode(Mode m)`** — called once per status frame.
   - `m == pendingMode` → confirmed; clear pending.
-  - a *different* mode arrives while pending (e.g. Manual after an Auto
-    request) → the belt rejected it; clear pending, **no automatic retry**,
-    log it.
+  - the mode that was observed when the request was made keeps arriving →
+    not applied yet; count the frame (timeout below).
+  - any *other* mode arrives while pending → the belt went elsewhere: clear
+    pending (rejection), **no automatic retry**, log it.
   - no pending and `m != observedMode` → an **external** change (belt key).
     Update `observedMode` and emit nothing else: hands-off, even while
     disarmed.

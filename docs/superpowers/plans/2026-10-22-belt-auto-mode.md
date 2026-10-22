@@ -96,21 +96,26 @@ void test_observe_mode_confirms_pending_request(void) {
     TEST_ASSERT_TRUE(s.autoActive());
     TEST_ASSERT_FALSE(s.autoPending());
 }
-void test_observe_mode_other_mode_while_pending_is_a_rejection(void) {
+void test_observe_mode_third_mode_while_pending_is_a_rejection(void) {
     policy::BridgeState s;
     (void)s.onBeltLink(true); (void)s.setArmed(true);
-    (void)s.requestMode(policy::BeltMode::Auto, false);
-    (void)s.observeMode(policy::BeltMode::Manual);
+    (void)s.observeMode(policy::BeltMode::Manual);          // belt is Manual
+    (void)s.requestMode(policy::BeltMode::Auto, false);     // ask for Auto
+    (void)s.observeMode(policy::BeltMode::Standby);         // belt went elsewhere
     TEST_ASSERT_FALSE(s.autoPending());
     TEST_ASSERT_FALSE(s.autoActive());
-    TEST_ASSERT_EQUAL(policy::BeltMode::Manual, s.observedMode());
+    TEST_ASSERT_EQUAL(policy::BeltMode::Standby, s.observedMode());
 }
-void test_observe_mode_times_out_after_confirm_frames(void) {
+void test_observe_mode_unchanged_frames_time_out_after_confirm_frames(void) {
     policy::BridgeState s;
     (void)s.onBeltLink(true); (void)s.setArmed(true);
+    (void)s.observeMode(policy::BeltMode::Manual);          // belt is Manual
     (void)s.requestMode(policy::BeltMode::Auto, false);
-    for (uint8_t i = 0; i < policy::kModeConfirmFrames; ++i)
-        (void)s.observeMode(policy::BeltMode::Standby);  // unchanged mode, no confirmation
+    for (uint8_t i = 0; i + 1 < policy::kModeConfirmFrames; ++i) {
+        (void)s.observeMode(policy::BeltMode::Manual);      // not applied yet
+        TEST_ASSERT_TRUE(s.autoPending());
+    }
+    (void)s.observeMode(policy::BeltMode::Manual);          // the kModeConfirmFrames-th frame
     TEST_ASSERT_FALSE(s.autoPending());
     TEST_ASSERT_FALSE(s.autoActive());
 }
@@ -172,7 +177,7 @@ Add `BeltMode`, `Emit::SetMode`, `Outcome::mode` (set to `BeltMode::Unknown` by 
 
 `requestMode`: refuse (empty) unless `armed_ && beltUp_ && !observedRunning`; else set `pendingMode_ = m`, `pendingFrames_ = 0`, emit `SetMode` with `o.mode = m`.
 
-`observeMode(m)`: the transition table from the spec — confirm when `m == pendingMode_`; a different mode while pending clears pending (rejection); otherwise an external change just updates. While pending and unconfirmed, `++pendingFrames_` and clear pending once it reaches `kModeConfirmFrames`. Whenever `observedMode_` goes from `Auto` to anything else, emit `ResetPolicy`. Update `observedMode_ = m` last.
+`observeMode(m)`, while a request is pending: `m == pendingMode_` → confirmed, clear pending. `m == pendingFrom_` (the mode that was observed when the request was made — the belt has not applied it yet) → `++pendingFrames_`, and clear pending once it reaches `kModeConfirmFrames`. Any other `m` → the belt went somewhere else: clear pending (rejection). With nothing pending, `m != observedMode_` is an external change and just updates. Whenever `observedMode_` goes from `Auto` to anything else, emit `ResetPolicy`. Update `observedMode_ = m` last. Add the private field `BeltMode pendingFrom_ = BeltMode::Unknown;`, which `requestMode` sets to the current `observedMode_`.
 
 `onBeltLink(false)`: additionally `observedMode_ = BeltMode::Unknown; pendingMode_ = BeltMode::Unknown;`.
 
