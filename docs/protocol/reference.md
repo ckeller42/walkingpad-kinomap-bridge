@@ -63,7 +63,7 @@ Example frames carry a CRC computed by the generator from the group, function an
 | Value | Name | Meaning | Provenance | Evidence |
 |---|---|---|---|---|
 | 0x00 | idle |  | measured | test-log: Stage 2, state machine |
-| 0x03 | waking | Seen briefly on the way out of standby | measured | test-log: Stage 2, start probe |
+| 0x03 | waking | Seen briefly on the way out of standby; also the parked state after a STOP, held at speed 0 for 7+ s | measured | test-log: Stage 2, start probe; UDP capture 2026-10-22: 'f8 a2 03 00 02 ...' repeated from 4.5 s after the stop until the next start |
 | 0x08 | spin_up | Seen between pre-countdown and starting | measured | test-log: Stage 3, decoded from a captured UDP log |
 | 0x09 | pre_countdown | Seen between start and countdown | measured | test-log: Stage 2, start probe |
 | 0x07 | countdown | Countdown immediately after start | measured | test-log: Stage 2, state machine |
@@ -100,6 +100,7 @@ Example frames carry a CRC computed by the generator from the group, function an
 | `stop_ramp_strictly_decreasing` | yes | The post-stop deceleration ramp is strictly decreasing (2.8, 2.3, 0.4, 0.0 km/h over about 3.6 s). | measured | test-log: Stage 2, consequence 2 |
 | `set_speed_after_state` | 1 | To hold a speed, send Set speed only once the belt reports state 1 (running), then verify it took. | measured | test-log: Stage 2, honest note |
 | `auto_mode_reported_in_status` | yes | Switched to Auto by its own A key, the belt reports mode 0 in status byte 4 (from standby, state 4 mode 2, to idle, state 0 mode 0); pressing M reports mode 1 again while the belt keeps running. | measured | UDP capture 2026-10-22: 'f8 a2 04 00 02 ...' then 'f8 a2 00 00 00 ...'; later 'f8 a2 01 1d 01 ...' (running 2.9 km/h, mode 1); bridge logged 'belt mode 3 -> 1 raw=0' and 'belt mode 1 -> 2 raw=1' |
+| `parked_state_after_stop` | 3 | After a STOP (mode 2) from 4.0 km/h the belt decelerated in state 1, then reported state 3 at speed 0 with mode 2 and held it for more than 7 s; a stationary check must accept state 3, not only 0 and 4. | measured | UDP capture 2026-10-22: 'f8 a2 01 28 02 ...' 0.5 s after the stop, then 'f8 a2 03 00 02 ...' at 4.5, 6.6, 8.6 and 10.6 s; four badge taps in that window were refused by the bridge |
 | `auto_starts_on_step_on` | yes | In Auto the belt starts with no start command - status went state 6 then state 1 at 0.7 km/h while the bridge sent only status requests - and then followed the walker up to 2.9 km/h; UI speed taps during Auto were muted by the bridge and never reached the wire. | measured | UDP capture 2026-10-22: 'f8 a2 06 00 00 ...' then 'f8 a2 01 07 00 ...' with tx limited to 'f7 a2 00 00 a2 fd'; bridge emitted NotifyStarted; two + taps logged with zero SetSpeed emits |
 
 ## FTMS — the Kinomap side

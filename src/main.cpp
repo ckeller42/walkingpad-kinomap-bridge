@@ -802,14 +802,22 @@ void loop() {
         } else {
             if (ui.tookModeTap()) {
                 const bool fresh = beltFresh();
-                const bool stationary = fresh && lastStatus.tenthKmh == 0 &&
-                                        (lastStatus.beltState == 0 || lastStatus.beltState == 4);
+                const bool stationary = fresh && wilink::parked(lastStatus);
                 const auto want = (state.autoActive() || state.autoPending())
                                       ? policy::BeltMode::Manual : policy::BeltMode::Auto;
                 // lastStatus lags a poll, so also fold in a start the bridge knows is
                 // pending or running: a set_mode must not precede start_belt.
-                applyOutcome(state.requestMode(
-                    want, !stationary || startPending || state.beltRunning()));
+                const auto o = state.requestMode(
+                    want, !stationary || startPending || state.beltRunning());
+                // A refused tap must leave evidence: the first badge test on
+                // hardware was refused four times in silence (belt in state 3).
+                if (o.count == 0)
+                    logsink::line("mode tap refused: want=%u fresh=%d state=%u speed=%u armed=%d "
+                                  "pending=%d running=%d",
+                                  (unsigned)want, (int)fresh, (unsigned)lastStatus.beltState,
+                                  (unsigned)lastStatus.tenthKmh, (int)state.armed(),
+                                  (int)startPending, (int)state.beltRunning());
+                applyOutcome(o);
                 redraw = true;
             }
             if (ui.tookArmButton()) {
@@ -871,8 +879,7 @@ void loop() {
                     applyOutcome(state.onBeltObservedRunning());
                 speedPolicy.onBeltSpeed(st.tenthKmh);
                 driveStart(st, prevTenths, now);
-                if (state.beltRunning() && !startPending && st.tenthKmh == 0 &&
-                    (st.beltState == 0 || st.beltState == 4))
+                if (state.beltRunning() && !startPending && wilink::parked(st))
                     applyOutcome(state.onBeltObservedStopped());
                 if (state.notifying() && theBelt.statusAgeMs() <= NOTIFY_MAX_AGE_MS) bleServer.notifySpeed((uint16_t)st.tenthKmh * 10);
             }

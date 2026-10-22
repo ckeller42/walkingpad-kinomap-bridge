@@ -1,4 +1,5 @@
 #include <unity.h>
+#include <initializer_list>
 #include "wilink.h"
 
 void setUp(void) {}
@@ -19,6 +20,30 @@ void test_crc_matches_documented_status_request(void) {
 void test_crc_truncates_to_low_byte(void) {
     const uint8_t body[] = {0xFF, 0xFF, 0x03};
     TEST_ASSERT_EQUAL_HEX8(0x01, wilink::crc(body, 3));
+}
+
+// Measured 2026-10-22: after a STOP the belt sat in state 3 ("waking") at
+// speed 0 for 7+ s, so a parked check that only accepts 0 and 4 refused every
+// badge tap. Parked = speed 0 in idle (0), waking (3) or standby (4).
+void test_parked_accepts_idle_waking_and_standby_at_speed_zero(void) {
+    wilink::Status st{};
+    st.tenthKmh = 0;
+    for (uint8_t s : {uint8_t{0}, uint8_t{3}, uint8_t{4}}) {
+        st.beltState = s;
+        TEST_ASSERT_TRUE(wilink::parked(st));
+    }
+}
+
+void test_parked_rejects_motion_and_start_states(void) {
+    wilink::Status st{};
+    st.tenthKmh = 0;
+    for (uint8_t s : {uint8_t{1}, uint8_t{6}, uint8_t{7}, uint8_t{8}, uint8_t{9}}) {
+        st.beltState = s;
+        TEST_ASSERT_FALSE(wilink::parked(st));
+    }
+    st.beltState = 4;  // standby mode requested but still decelerating
+    st.tenthKmh = 28;
+    TEST_ASSERT_FALSE(wilink::parked(st));
 }
 
 void test_request_status_matches_documented_frame(void) {
@@ -209,5 +234,7 @@ int main(int, char**) {
     RUN_TEST(test_reassembler_abandons_an_oversized_run);
     RUN_TEST(test_reassembler_tolerates_empty_and_null);
     RUN_TEST(test_reassembler_reset_forgets_a_pending_fragment);
+    RUN_TEST(test_parked_accepts_idle_waking_and_standby_at_speed_zero);
+    RUN_TEST(test_parked_rejects_motion_and_start_states);
     return UNITY_END();
 }

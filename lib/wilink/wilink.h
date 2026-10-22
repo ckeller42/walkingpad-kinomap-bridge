@@ -96,6 +96,20 @@ struct Status {
 bool parseStatus(const uint8_t* buf, size_t len, Status& out);
 
 /**
+ * @brief Whether a status reading shows the belt parked.
+ *
+ * Parked means speed 0 in a non-moving state: idle (0), waking (3) or
+ * standby (4). State 3 is included because, measured on 2026-10-22, the belt
+ * sat in state 3 at speed 0 for more than 7 s after a STOP, so a check that
+ * accepted only 0 and 4 treated a parked belt as moving. Any start or motion
+ * state (1, 6, 7, 8, 9) is never parked, whatever the speed byte says.
+ *
+ * @param st A decoded status frame.
+ * @return True when the belt can be treated as stationary.
+ */
+bool parked(const Status& st);
+
+/**
  * @brief Reassembles status frames that arrive split across notifications.
  *
  * Measured on hardware: the belt's 20-byte status frame can be delivered as

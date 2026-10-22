@@ -174,7 +174,7 @@ enums:
     field: status byte 2
     values:
       - {value: 0, name: idle, provenance: measured, evidence: "test-log: Stage 2, state machine"}
-      - {value: 3, name: waking, meaning: "Seen briefly on the way out of standby", provenance: measured, evidence: "test-log: Stage 2, start probe"}
+      - {value: 3, name: waking, meaning: "Seen briefly on the way out of standby; also the parked state after a STOP, held at speed 0 for 7+ s", provenance: measured, evidence: "test-log: Stage 2, start probe; UDP capture 2026-10-22: 'f8 a2 03 00 02 ...' repeated from 4.5 s after the stop until the next start"}
       - {value: 8, name: spin_up, meaning: "Seen between pre-countdown and starting", provenance: measured, evidence: "test-log: Stage 3, decoded from a captured UDP log"}
       - {value: 9, name: pre_countdown, meaning: "Seen between start and countdown", provenance: measured, evidence: "test-log: Stage 2, start probe"}
       - {value: 7, name: countdown, meaning: "Countdown immediately after start", provenance: measured, evidence: "test-log: Stage 2, state machine"}
@@ -302,6 +302,12 @@ constraints:
     value: true
     provenance: measured
     evidence: "UDP capture 2026-10-22: 'f8 a2 04 00 02 ...' then 'f8 a2 00 00 00 ...'; later 'f8 a2 01 1d 01 ...' (running 2.9 km/h, mode 1); bridge logged 'belt mode 3 -> 1 raw=0' and 'belt mode 1 -> 2 raw=1'"
+  - id: parked_state_after_stop
+    statement: After a STOP (mode 2) from 4.0 km/h the belt decelerated in state 1, then reported state 3 at speed 0 with mode 2 and held it for more than 7 s; a stationary check must accept state 3, not only 0 and 4.
+    key: parked_state_after_stop
+    value: 3
+    provenance: measured
+    evidence: "UDP capture 2026-10-22: 'f8 a2 01 28 02 ...' 0.5 s after the stop, then 'f8 a2 03 00 02 ...' at 4.5, 6.6, 8.6 and 10.6 s; four badge taps in that window were refused by the bridge"
   - id: auto_starts_on_step_on
     statement: In Auto the belt starts with no start command - status went state 6 then state 1 at 0.7 km/h while the bridge sent only status requests - and then followed the walker up to 2.9 km/h; UI speed taps during Auto were muted by the bridge and never reached the wire.
     key: auto_starts_on_step_on

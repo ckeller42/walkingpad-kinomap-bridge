@@ -115,4 +115,9 @@ StatusReassembler::Result StatusReassembler::feed(const uint8_t* data, size_t le
     return Result::Buffered;
 }
 
+bool parked(const Status& st) {
+    if (st.tenthKmh != 0) return false;
+    return st.beltState == 0 || st.beltState == 3 || st.beltState == 4;
+}
+
 }  // namespace wilink
