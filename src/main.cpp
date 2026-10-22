@@ -782,11 +782,13 @@ void setup() {
     demoT0 = millis();  // the tour is started by demoAdvance(0) from loop()
     (void)setupDone;
     ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false,
-                  ModeBadge::None, false, false, nullptr);
+                  ModeBadge::None, false,
+                  policy::leftButton(state.armed(), false, false), nullptr, false);
 #else
     if (!setupDone) enterWizard(millis());
     else ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false,
-                  ModeBadge::None, false, false, nullptr);  // boots disarmed
+                  ModeBadge::None, false,
+                  policy::leftButton(state.armed(), false, false), nullptr, false);  // boots disarmed
 #endif
 }
 
@@ -851,16 +853,29 @@ void loop() {
                 redraw = true;
             }
             if (ui.tookArmButton()) {
-                // The face is derived from policy's startAllowed(); the
-                // DISARM face is refused only while a start is in flight, so
-                // an impatient second tap cannot disarm under a starting belt.
-                if (!state.armed()) applyOutcome(state.setArmed(true));
-                else if (startPending) showReason("Starting - wait");
-                else if (state.startAllowed(beltFresh())) applyOutcome(state.startFromUi(kUiStartTenths));
-                else if (!(theBelt.linkUp() && beltFresh())) {
-                    showReason("Belt offline");
+                // The face comes from policy::leftButton(), the same call the
+                // screen draws from, so the tap does what the picture says.
+                // Wait refuses, so an impatient second tap cannot disarm
+                // under a starting belt.
+                switch (policy::leftButton(state.armed(), startPending,
+                                           state.startAllowed(beltFresh()))) {
+                case policy::LeftFace::Arm:
+                    applyOutcome(state.setArmed(true));
+                    break;
+                case policy::LeftFace::Wait:
+                    showReason("Starting - wait");
+                    break;
+                case policy::LeftFace::Start:
+                    applyOutcome(state.startFromUi(kUiStartTenths));
+                    break;
+                case policy::LeftFace::Disarm:
+                    // Say why START was not on offer; the tap still disarms.
+                    if (!(theBelt.linkUp() && beltFresh())) showReason("Belt offline");
+                    else if (state.autoActive() || state.autoPending())
+                        showReason("AUTO: step on to start");
                     applyOutcome(state.setArmed(false));
-                } else applyOutcome(state.setArmed(false));  // DISARM face: tap disarms
+                    break;
+                }
                 redraw = true;
             }
             // Same path as console `speed up|down`; ignored (button is dim) unless armed.
@@ -976,8 +991,10 @@ void loop() {
         if (!inDevMenu)
             ui.render(centi, commanded, dist, elapsed, lastStatus.steps, beltUp, phoneUp,
                       armed, running, battPct, charging,
-                      badge, autoMode, startPending,
-                      millis() < reasonUntilMs ? reasonText : nullptr);
+                      badge, autoMode,
+                      policy::leftButton(armed, startPending, state.startAllowed(beltFresh())),
+                      millis() < reasonUntilMs ? reasonText : nullptr,
+                      running);
     }
     if (shotPending) {
         shotPending = false;

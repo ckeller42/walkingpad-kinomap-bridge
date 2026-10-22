@@ -170,9 +170,10 @@ public:
     /**
      * @brief Whether the START face is offered right now.
      *
-     * The one definition of whether START is offered; `main.cpp` and the
-     * screen both derive the button face from it, so a tap and a picture
-     * cannot disagree.
+     * The START condition. It is an input to leftButton(), which is the one
+     * definition of the left button's face; `main.cpp`'s tap and the screen
+     * both take the face from leftButton(), so a tap and a picture cannot
+     * disagree.
      *
      * @param beltFresh True while the belt's status frames are recent.
      * @return True iff armed, the belt link is up and fresh, the belt is not
@@ -411,5 +412,34 @@ private:
     /// yet confirmed. Speed-producing entry points emit nothing then.
     bool commandsMuted() const { return autoActive() || autoPending(); }
 };
+
+/// Which face the main screen's left button wears, and so what a tap on it does.
+enum class LeftFace : uint8_t {
+    Arm,     ///< Disarmed: tap arms.
+    Start,   ///< Armed and a start is possible: tap starts the belt.
+    Wait,    ///< A start sequence is in flight: tap is refused.
+    Disarm,  ///< Armed, nothing to start: tap disarms (never stops).
+};
+
+/**
+ * @brief The one decision for the main screen's left button.
+ *
+ * Both the tap handler in `main.cpp` and the picture drawn by `Ui::render()`
+ * take the face from this, so they cannot disagree. Precedence: Arm beats
+ * everything, then Wait beats Start, then Start, else Disarm.
+ *
+ * Link freshness is not a separate argument: it is already folded into
+ * @p startAllowed (see BridgeState::startAllowed()).
+ *
+ * @param armed         BridgeState::armed().
+ * @param startPending  A start sequence is in flight.
+ * @param startAllowed  BridgeState::startAllowed() for the current freshness.
+ * @return The face to draw and act on.
+ */
+inline LeftFace leftButton(bool armed, bool startPending, bool startAllowed) {
+    if (!armed) return LeftFace::Arm;
+    if (startPending) return LeftFace::Wait;
+    return startAllowed ? LeftFace::Start : LeftFace::Disarm;
+}
 
 }  // namespace policy

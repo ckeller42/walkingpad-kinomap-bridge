@@ -2,6 +2,7 @@
 
 #include <M5Unified.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "battery.h"
 #include "logsink.h"
@@ -276,7 +277,8 @@ bool Ui::shotNow() {
 void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
                 uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
                 bool armed, bool running, int battPct, bool charging,
-                ModeBadge badge, bool autoMode, bool starting, const char* reason) {
+                ModeBadge badge, bool autoMode, policy::LeftFace face, const char* reason,
+                bool moving) {
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
 
@@ -376,21 +378,25 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
                  (unsigned long)(elapsedSec % 60));
     g.drawString(buf, W - W / 6, 164);
 
-    // Bottom bar: two halves flush with the screen edges. STOP is always
-    // saturated red. The left half is one control with three faces, and each
+    // Bottom bar: two buttons flush with the screen edges. STOP is always
+    // saturated red. The left button is one control with four faces, chosen by
+    // policy::leftButton() (the same call the tap handler uses), and each
     // label names what tapping DOES:
-    //   disarmed            -> ARM    (dark grey)
-    //   armed, can start    -> START  (bright green: this is the call to action)
-    //   armed otherwise     -> DISARM (dark green)
-    // It used to read ARMED in the third case, which named the state rather
-    // than the action, leaving no clue that tapping is how you undo it. The
-    // state is still carried by the colour, and now also by the top bar.
-    const bool canStart = armed && !running && !starting && beltUp && !autoMode;
-    const char* label = !armed ? "ARM" : (canStart ? "START" : (starting ? "STARTING" : "DISARM"));
-    const uint16_t armBg = !armed ? ARM_OFF : (canStart ? ARM_GO : ARM_ON);
-    // STOP takes two thirds of the bar while the belt moves, so it is the
-    // easier target than DISARM.
-    barSplit_ = (running || starting) ? W / 3 : HALF;
+    //   ARM      disarmed                  (dark grey)
+    //   START    armed, can start          (bright green: the call to action)
+    //   STARTING a start is in flight      (inert armed colour)
+    //   DISARM   armed otherwise           (dark green)
+    // The state itself is carried by the colour and by the top bar.
+    using policy::LeftFace;
+    const bool canStart = face == LeftFace::Start;
+    const bool starting = face == LeftFace::Wait;
+    const char* label = face == LeftFace::Arm ? "ARM"
+                      : face == LeftFace::Start ? "START"
+                      : face == LeftFace::Wait ? "STARTING" : "DISARM";
+    const uint16_t armBg = face == LeftFace::Arm ? ARM_OFF : (canStart ? ARM_GO : ARM_ON);
+    // STOP takes two thirds of the bar while the belt moves (believed or
+    // observed) or a start is in flight, so it is the easier target than DISARM.
+    barSplit_ = (moving || starting) ? W / 3 : HALF;
     barButton(g, 0, barSplit_, armBg, label);
     barButton(g, barSplit_, W - barSplit_, TFT_RED, "STOP");
     barDivider(g, barSplit_);
@@ -479,7 +485,21 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
         g.setFont(&fonts::FreeSans9pt7b);
         g.setTextColor(DIM, BG);
         g.setTextDatum(middle_left);
-        g.drawString(s.prompt, 8, 15);
+        {
+            // Clip the SSID so it never crosses x = 152 into the typed text's
+            // half: drop trailing characters and mark the cut. ASCII "..."
+            // because the GFX fonts have no ellipsis glyph.
+            char ssid[48];
+            snprintf(ssid, sizeof ssid, "%s", s.prompt);
+            size_t n = strlen(ssid);
+            if (g.textWidth(ssid) > 152 - 8) {
+                while (n > 0 && g.textWidth(ssid) > 152 - 8) {
+                    --n;
+                    snprintf(ssid + n, sizeof ssid - n, "...");
+                }
+            }
+            g.drawString(ssid, 8, 15);
+        }
 
         // The grid starts at y30, so there is exactly one row for both. The
         // title said "PASSWORD", which the CONNECT button and the keyboard

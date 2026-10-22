@@ -614,3 +614,36 @@ void test_start_allowed_false_while_running_or_auto(void) {
     (void)s.observeMode(policy::BeltMode::Auto);        // Auto: stepping on starts it
     TEST_ASSERT_FALSE(s.startAllowed(true));
 }
+
+// ---- leftButton(): the main-screen left face ----------------------------
+void test_left_button_arm_wins_over_everything(void) {
+    using policy::LeftFace;
+    for (int pending = 0; pending < 2; ++pending)
+        for (int allowed = 0; allowed < 2; ++allowed)
+            TEST_ASSERT_EQUAL(LeftFace::Arm, policy::leftButton(false, pending, allowed));
+}
+void test_left_button_wait_wins_over_start(void) {
+    using policy::LeftFace;
+    TEST_ASSERT_EQUAL(LeftFace::Wait, policy::leftButton(true, true, true));
+    TEST_ASSERT_EQUAL(LeftFace::Wait, policy::leftButton(true, true, false));
+}
+void test_left_button_start_when_allowed(void) {
+    TEST_ASSERT_EQUAL(policy::LeftFace::Start, policy::leftButton(true, false, true));
+}
+void test_left_button_disarm_otherwise(void) {
+    TEST_ASSERT_EQUAL(policy::LeftFace::Disarm, policy::leftButton(true, false, false));
+}
+// The face the screen shows through a whole session, driven by the real state.
+void test_left_button_follows_a_real_start_sequence(void) {
+    using policy::LeftFace;
+    policy::BridgeState s;
+    (void)s.onBeltLink(true);
+    TEST_ASSERT_EQUAL(LeftFace::Arm, policy::leftButton(s.armed(), false, s.startAllowed(true)));
+    (void)s.setArmed(true);
+    TEST_ASSERT_EQUAL(LeftFace::Start, policy::leftButton(s.armed(), false, s.startAllowed(true)));
+    TEST_ASSERT_EQUAL(LeftFace::Wait, policy::leftButton(s.armed(), true, s.startAllowed(true)));
+    (void)s.startFromUi(20);                                // running: nothing to start
+    TEST_ASSERT_EQUAL(LeftFace::Disarm, policy::leftButton(s.armed(), false, s.startAllowed(true)));
+    (void)s.onBeltLink(false);                              // link lost: cannot start
+    TEST_ASSERT_EQUAL(LeftFace::Disarm, policy::leftButton(s.armed(), false, s.startAllowed(true)));
+}

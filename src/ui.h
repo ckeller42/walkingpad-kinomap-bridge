@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "bridge_state.h"  // policy::LeftFace only; the UI decides nothing
 #include "devmenu.h"
 #include "wizard.h"
 
@@ -19,9 +20,9 @@
  * | 28..149  | instantaneous speed, very large |
  * | 44..139  | the readout flanked by `-` (x 0..71) and `+` (x 248..319), enabled only while armed and not in Auto |
  * | 150..175 | distance (left), steps (centre) and elapsed time (right); a refusal reason replaces the "-> commanded" text beside `km/h` |
- * | 184..239 | bottom bar: left = ARM / START / DISARM, right = STOP; split at the middle, or at x 106 (STOP two thirds wide) while the belt moves or starts |
+ * | 184..239 | bottom bar: left = ARM / START / STARTING / DISARM, right = STOP; split at the middle, or at x 106 (STOP two thirds wide) while the belt moves or starts |
  *
- * The left button is one control with three faces, and each label names what
+ * The left button is one control with four faces (ARM, START, STARTING, DISARM; chosen by policy::leftButton()), and each label names what
  * tapping *does* rather than what the bridge *is*; the armed state is shown in
  * the top bar instead.
  *
@@ -94,16 +95,21 @@ public:
      *        while disarmed.
      * @param autoMode          Auto is observed or pending. Mutes `+`/`-`,
      *        turns the `ARMED` tag into `AUTO` and removes the `START` face.
-     * @param starting          A start sequence is in flight. The left button
-     *        reads `STARTING` in its inert armed colour instead of `DISARM`.
+     * @param face              The left button's face from policy::leftButton();
+     *        the label and colour are drawn from it and nothing else
+     *        (`STARTING` is the inert armed colour).
      * @param reason            Short refusal text to show for about a second,
      *        or nullptr. Drawn in orange beside the readout in place of the
      *        "-> commanded" text.
+     * @param moving            The belt is believed or observed moving. With
+     *        @p face == Wait it widens STOP to two thirds of the bar (and
+     *        narrows the left tap zone to match).
      */
     void render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
                 uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
                 bool armed, bool running, int battPct, bool charging,
-                ModeBadge badge, bool autoMode, bool starting, const char* reason);
+                ModeBadge badge, bool autoMode, policy::LeftFace face, const char* reason,
+                bool moving);
 
     /**
      * @brief Emit the current frame over serial (the console's `shot`).
@@ -227,7 +233,7 @@ private:
     unsigned touchMax_ = 0;
     unsigned long touchSamples_ = 0;
     int shotPhase_ = -1;
-    /// Bottom-bar split x: `W / 3` while the belt moves or starts (wide STOP),
+    /// Bottom-bar split x: `W / 3` while the belt moves or a start is in flight (wide STOP),
     /// else `W / 2`. Set by render(), read by poll(), so the drawn button and
     /// its tap zone cannot disagree.
     int barSplit_ = 160;

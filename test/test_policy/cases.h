@@ -65,3 +65,8 @@ void test_disarm_in_auto_does_not_stop(void);
 void test_request_mode_unknown_is_refused(void);
 void test_start_allowed_requires_armed_link_fresh_and_stopped(void);
 void test_start_allowed_false_while_running_or_auto(void);
+void test_left_button_arm_wins_over_everything(void);
+void test_left_button_wait_wins_over_start(void);
+void test_left_button_start_when_allowed(void);
+void test_left_button_disarm_otherwise(void);
+void test_left_button_follows_a_real_start_sequence(void);
