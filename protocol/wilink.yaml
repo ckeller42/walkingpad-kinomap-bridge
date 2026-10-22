@@ -184,7 +184,7 @@ enums:
   mode:
     field: status byte 4; Set mode argument
     values:
-      - {value: 0, name: auto, meaning: "Settable; never seen in a status frame", provenance: community, evidence: "design doc: Established facts"}
+      - {value: 0, name: auto, meaning: "The belt sets its own speed from the walker's position and starts on step-on", provenance: measured, evidence: "UDP capture 2026-10-22: status byte 4 = 00 after the belt's own A key ('f8 a2 00 00 00 ...'); bridge logged 'belt mode 3 -> 1 raw=0'"}
       - {value: 1, name: manual, provenance: measured, evidence: "test-log: Stage 2, state machine"}
       - {value: 2, name: standby, provenance: measured, evidence: "test-log: Stage 2, state machine"}
 
@@ -296,3 +296,15 @@ constraints:
     value: 1
     provenance: measured
     evidence: "test-log: Stage 2, honest note"
+  - id: auto_mode_in_status
+    statement: Switched to Auto by its own A key, the belt reports mode 0 in status byte 4 (from standby, state 4 mode 2, to idle, state 0 mode 0); pressing M reports mode 1 again while the belt keeps running.
+    key: auto_mode_reported_in_status
+    value: true
+    provenance: measured
+    evidence: "UDP capture 2026-10-22: 'f8 a2 04 00 02 ...' then 'f8 a2 00 00 00 ...'; later 'f8 a2 01 1d 01 ...' (running 2.9 km/h, mode 1); bridge logged 'belt mode 3 -> 1 raw=0' and 'belt mode 1 -> 2 raw=1'"
+  - id: auto_starts_on_step_on
+    statement: In Auto the belt starts with no start command - status went state 6 then state 1 at 0.7 km/h while the bridge sent only status requests - and then followed the walker up to 2.9 km/h; UI speed taps during Auto were muted by the bridge and never reached the wire.
+    key: auto_starts_on_step_on
+    value: true
+    provenance: measured
+    evidence: "UDP capture 2026-10-22: 'f8 a2 06 00 00 ...' then 'f8 a2 01 07 00 ...' with tx limited to 'f7 a2 00 00 a2 fd'; bridge emitted NotifyStarted; two + taps logged with zero SetSpeed emits"

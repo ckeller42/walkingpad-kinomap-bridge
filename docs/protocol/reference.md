@@ -75,7 +75,7 @@ Example frames carry a CRC computed by the generator from the group, function an
 
 | Value | Name | Meaning | Provenance | Evidence |
 |---|---|---|---|---|
-| 0x00 | auto | Settable; never seen in a status frame | community | design doc: Established facts |
+| 0x00 | auto | The belt sets its own speed from the walker's position and starts on step-on | measured | UDP capture 2026-10-22: status byte 4 = 00 after the belt's own A key ('f8 a2 00 00 00 ...'); bridge logged 'belt mode 3 -> 1 raw=0' |
 | 0x01 | manual |  | measured | test-log: Stage 2, state machine |
 | 0x02 | standby |  | measured | test-log: Stage 2, state machine |
 
@@ -99,6 +99,8 @@ Example frames carry a CRC computed by the generator from the group, function an
 | `restart_requires_mode_manual` | yes | After a stop the belt is in standby (mode 2) and will not start until mode is set back to manual. | measured | test-log: Stage 2, consequence 1 |
 | `stop_ramp_strictly_decreasing` | yes | The post-stop deceleration ramp is strictly decreasing (2.8, 2.3, 0.4, 0.0 km/h over about 3.6 s). | measured | test-log: Stage 2, consequence 2 |
 | `set_speed_after_state` | 1 | To hold a speed, send Set speed only once the belt reports state 1 (running), then verify it took. | measured | test-log: Stage 2, honest note |
+| `auto_mode_reported_in_status` | yes | Switched to Auto by its own A key, the belt reports mode 0 in status byte 4 (from standby, state 4 mode 2, to idle, state 0 mode 0); pressing M reports mode 1 again while the belt keeps running. | measured | UDP capture 2026-10-22: 'f8 a2 04 00 02 ...' then 'f8 a2 00 00 00 ...'; later 'f8 a2 01 1d 01 ...' (running 2.9 km/h, mode 1); bridge logged 'belt mode 3 -> 1 raw=0' and 'belt mode 1 -> 2 raw=1' |
+| `auto_starts_on_step_on` | yes | In Auto the belt starts with no start command - status went state 6 then state 1 at 0.7 km/h while the bridge sent only status requests - and then followed the walker up to 2.9 km/h; UI speed taps during Auto were muted by the bridge and never reached the wire. | measured | UDP capture 2026-10-22: 'f8 a2 06 00 00 ...' then 'f8 a2 01 07 00 ...' with tx limited to 'f7 a2 00 00 a2 fd'; bridge emitted NotifyStarted; two + taps logged with zero SetSpeed emits |
 
 ## FTMS — the Kinomap side
 
