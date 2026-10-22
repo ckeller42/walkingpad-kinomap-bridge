@@ -32,6 +32,7 @@ Nothing has been changed yet. Ranked by impact on the walker; effort S/M/L.
 14. **Scan list drops networks, no security/signal, header overlap.** (S) `devmenu.h:45` vs `:72`, `devmenu.cpp:84`: 6 kept, 5 shown; no RSSI/lock; no hidden SSID; SSID and password overlap past ~12 chars (`ui.cpp:480-492`). Fix: `kMaxNetworks == kMaxRows` or scroll, RSSI bars, clip the password from the left.
 
 ## Quick wins (S, high value)
+
 - Input lockout after a face change + drop a pending start when disarmed (#1).
 - Keyboard dead band + `HIT_Y` ≥ 190 in keyboard mode (#7).
 - Reachable `)` `.` `,` + reachability test (#6).
@@ -41,9 +42,11 @@ Nothing has been changed yet. Ranked by impact on the walker; effort S/M/L.
 - Stale docs: `devmenu.h:14`, `:97`, `docs/developer-menu.md:7` still say "tap PHONE"; `docs/setup-wizard.md:76` says "reads ARMED"; `docs/screens/main-*.png` predate steps/badge/battery/"SIM" — recapture.
 
 ## Leave alone (deliberate)
+
 Password shown in clear; STOP also disarms; DISARM does not stop (fix the label/size, not the behaviour); badge armed+parked only and Auto mutes `+`/`-`; no `0x02` from Kinomap; 3-row keyboard; amber SIM everywhere; gear/BELT refused while running (needs feedback only).
 
 ## Open questions
+
 1. Seen on hardware: CONNECT / scan leaving "offline" / "Scanning..." until the next tap (#5)?
 2. Auto start on step-on while the bridge is disarmed — measured 2026-10-22 that Auto starts on step-on; whether the bridge was armed at that moment is not recorded. If yes, #3 is the top safety item.
 3. Does the belt's own remote/panel give a STOP the walker can rely on when the bridge screen has none?
