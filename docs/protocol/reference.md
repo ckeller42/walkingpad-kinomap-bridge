@@ -46,7 +46,7 @@ Example frames carry a CRC computed by the generator from the group, function an
 |---|---|---|---|---|---|---|
 | Request status | 0xA2 | 0x00 | fixed `0x00` | `F7 A2 00 00 A2 FD` request status | measured | test-log: Stage 2, the belt does not push status |
 | Set speed | 0xA2 | 0x01 | `speed` (× 0.1 km/h) | `F7 A2 01 28 CB FD` 4.0 km/h<br>`F7 A2 01 1C BF FD` 2.8 km/h<br>`F7 A2 01 00 A3 FD` 0 (NOT a stop) | community | design doc: Established facts |
-| Set mode | 0xA2 | 0x02 | `mode`, enum `mode` | `F7 A2 02 01 A5 FD` manual | community | design doc: Established facts; modes 1 and 2 also measured |
+| Set mode | 0xA2 | 0x02 | `mode`, enum `mode` | `F7 A2 02 01 A5 FD` manual<br>`F7 A2 02 00 A4 FD` auto | measured | test-log: Stage 2 (modes 1 and 2); UDP capture 2026-10-22: from standby the bridge sent 'f7 a2 02 00 a4 fd' and the belt reported mode 0 within 1 s ('f8 a2 00 00 00 ...'); 'f7 a2 02 02 a6 fd' then returned it to standby |
 | Start belt | 0xA2 | 0x04 | fixed `0x01` | `F7 A2 04 01 A7 FD` start | measured | test-log: Stage 2, direct FE02 probe and via the bridge |
 | Stop belt (set mode standby) | 0xA2 | 0x02 | fixed `0x02` | `F7 A2 02 02 A6 FD` stop | measured | test-log: Stage 2, active FE02 probe, confirmed on a moving belt |
 

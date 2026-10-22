@@ -32,6 +32,7 @@ CRC computed by the generator; `Argument` is the raw byte.
 | Set speed | 2.8 km/h | 0x1C | `F7 A2 01 1C BF FD` | 0xBF |
 | Set speed | 0 (NOT a stop) | 0x00 | `F7 A2 01 00 A3 FD` | 0xA3 |
 | Set mode | manual | 0x01 | `F7 A2 02 01 A5 FD` | 0xA5 |
+| Set mode | auto | 0x00 | `F7 A2 02 00 A4 FD` | 0xA4 |
 | Start belt | start | 0x01 | `F7 A2 04 01 A7 FD` | 0xA7 |
 | Stop belt (set mode standby) | stop | 0x02 | `F7 A2 02 02 A6 FD` | 0xA6 |
 
