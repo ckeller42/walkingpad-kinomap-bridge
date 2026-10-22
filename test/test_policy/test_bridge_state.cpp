@@ -363,6 +363,7 @@ void test_no_outcome_exceeds_the_emit_array(void) {
     check(s.requestMode(policy::BeltMode::Auto, false));
     check(s.observeMode(policy::BeltMode::Auto));
     check(s.observeMode(policy::BeltMode::Manual));
+    check(s.onBeltObservedRunning());
 }
 
 void test_request_mode_refused_when_disarmed(void) {
@@ -466,5 +467,93 @@ void test_initial_mode_is_unknown_and_not_auto(void) {
     policy::BridgeState s;
     TEST_ASSERT_EQUAL(policy::BeltMode::Unknown, s.observedMode());
     TEST_ASSERT_FALSE(s.autoActive());
+    TEST_ASSERT_FALSE(s.autoPending());
+}
+
+static policy::BridgeState autoBelt() {  // armed, both links up, belt confirmed in Auto
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.observeMode(policy::BeltMode::Auto);
+    return s;
+}
+void test_apply_set_speed_in_auto_emits_nothing(void) {
+    auto s = autoBelt();
+    auto o = s.apply({policy::Action::SetSpeed, 40});
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+    TEST_ASSERT_FALSE(s.beltRunning());
+}
+void test_ui_speed_paths_in_auto_emit_nothing(void) {
+    auto s = autoBelt();
+    TEST_ASSERT_EQUAL_size_t(0, s.setSpeedFromUi(25).count);
+    TEST_ASSERT_EQUAL_size_t(0, s.stepSpeedFromUi(1, 20).count);
+    TEST_ASSERT_EQUAL_size_t(0, s.startFromUi(20).count);
+}
+void test_phone_target_while_auto_pending_emits_nothing(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.requestMode(policy::BeltMode::Auto, false);  // pending, not confirmed
+    auto o = s.apply({policy::Action::SetSpeed, 40});
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+}
+void test_stop_in_auto_still_stops_and_clears_pending(void) {
+    auto s = autoBelt();
+    (void)s.requestMode(policy::BeltMode::Manual, false);
+    auto o = s.stopFromUi();
+    TEST_ASSERT_EQUAL(policy::Emit::Stop, o.emits[0]);
+    TEST_ASSERT_FALSE(s.autoPending());
+    TEST_ASSERT_FALSE(s.armed());
+}
+void test_stop_clears_a_pending_auto_request(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.requestMode(policy::BeltMode::Auto, false);
+    (void)s.apply({policy::Action::Stop, 0});
+    TEST_ASSERT_FALSE(s.autoPending());
+    (void)s.requestMode(policy::BeltMode::Auto, false);
+    (void)s.stopFromUi();
+    TEST_ASSERT_FALSE(s.autoPending());
+}
+void test_phone_stop_in_auto_still_stops(void) {
+    auto s = autoBelt();
+    auto o = s.apply({policy::Action::Stop, 0});
+    TEST_ASSERT_EQUAL_size_t(1, o.count);
+    TEST_ASSERT_EQUAL(policy::Emit::Stop, o.emits[0]);
+}
+void test_observed_running_in_auto_notifies_started_once(void) {
+    auto s = autoBelt();
+    auto o1 = s.onBeltObservedRunning();
+    TEST_ASSERT_EQUAL_size_t(1, o1.count);
+    TEST_ASSERT_EQUAL(policy::Emit::NotifyStarted, o1.emits[0]);
+    TEST_ASSERT_TRUE(s.beltRunning());
+    auto o2 = s.onBeltObservedRunning();
+    TEST_ASSERT_EQUAL_size_t(0, o2.count);
+}
+void test_observed_running_outside_auto_emits_nothing(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    auto o = s.onBeltObservedRunning();
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+    TEST_ASSERT_FALSE(s.beltRunning());
+}
+void test_external_auto_while_running_mutes_and_keeps_running(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.onPhoneLink(true); (void)s.setArmed(true);
+    (void)s.apply({policy::Action::SetSpeed, 40});   // manual start in flight
+    auto o = s.observeMode(policy::BeltMode::Auto);   // walker pressed A on the belt
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+    TEST_ASSERT_TRUE(s.beltRunning());
+    TEST_ASSERT_EQUAL_size_t(0, s.apply({policy::Action::SetSpeed, 50}).count);
+}
+void test_disarm_in_auto_does_not_stop(void) {
+    auto s = autoBelt();
+    (void)s.onBeltObservedRunning();
+    auto o = s.setArmed(false);
+    for (size_t i = 0; i < o.count; ++i) TEST_ASSERT_NOT_EQUAL(policy::Emit::Stop, o.emits[i]);
+    TEST_ASSERT_TRUE(s.beltRunning());
+}
+void test_request_mode_unknown_is_refused(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.setArmed(true);
+    TEST_ASSERT_EQUAL_size_t(0, s.requestMode(policy::BeltMode::Unknown, false).count);
     TEST_ASSERT_FALSE(s.autoPending());
 }

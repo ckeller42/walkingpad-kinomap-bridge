@@ -51,6 +51,15 @@ Outcome BridgeState::onBeltObservedStopped() {
     return o;
 }
 
+Outcome BridgeState::onBeltObservedRunning() {
+    Outcome o = empty();
+    if (autoActive() && !running_) {
+        running_ = true;
+        o.emits[o.count++] = Emit::NotifyStarted;
+    }
+    return o;
+}
+
 Outcome BridgeState::apply(const Decision& d) {
     Outcome o = empty(d.tenthKmh);
     switch (d.action) {
@@ -60,10 +69,12 @@ Outcome BridgeState::apply(const Decision& d) {
         // Stopping is always safe, armed or not.
         o.emits[o.count++] = Emit::Stop;
         running_ = false;
+        pendingMode_ = BeltMode::Unknown;
         break;
     case Action::SetSpeed:
         // Disarmed or either link down: accepted and ignored.
         if (!armed_ || !beltUp_ || !phoneUp_) break;
+        if (commandsMuted()) break;  // the belt owns its speed in Auto
         if (running_) {
             o.emits[o.count++] = Emit::SetSpeed;
         } else {
@@ -81,7 +92,7 @@ Outcome BridgeState::apply(const Decision& d) {
 
 Outcome BridgeState::startFromUi(uint8_t tenthKmh) {
     Outcome o = empty(tenthKmh);
-    if (!armed_ || !beltUp_ || running_) return o;
+    if (!armed_ || !beltUp_ || running_ || commandsMuted()) return o;
     o.emits[o.count++] = Emit::StartSequence;
     o.emits[o.count++] = Emit::NotifyStarted;
     o.emits[o.count++] = Emit::ResetPolicy;
@@ -103,7 +114,7 @@ Outcome BridgeState::setSpeedFromUi(uint8_t tenthKmh) {
     if (tenthKmh < kSpeedMinTenths) tenthKmh = kSpeedMinTenths;
     if (tenthKmh > kSpeedMaxTenths) tenthKmh = kSpeedMaxTenths;
     Outcome o = empty(tenthKmh);
-    if (!armed_ || !beltUp_) return o;
+    if (!armed_ || !beltUp_ || commandsMuted()) return o;
     if (running_) {
         o.emits[o.count++] = Emit::SetSpeed;
     } else {
@@ -116,6 +127,7 @@ Outcome BridgeState::setSpeedFromUi(uint8_t tenthKmh) {
 }
 
 Outcome BridgeState::stepSpeedFromUi(int dir, uint8_t baseTenths) {
+    if (commandsMuted()) return empty();
     if (!running_) {
         if (dir > 0) return setSpeedFromUi(kSpeedMinTenths);
         return empty();
@@ -129,11 +141,13 @@ Outcome BridgeState::stopFromUi() {
     o.emits[o.count++] = Emit::ResetPolicy;
     running_ = false;
     armed_ = false;
+    pendingMode_ = BeltMode::Unknown;
     return o;
 }
 
 Outcome BridgeState::requestMode(BeltMode m, bool observedRunning) {
     Outcome o = empty();
+    if (m == BeltMode::Unknown) return o;  // a sentinel, never written
     if (!armed_ || !beltUp_ || observedRunning) return o;
     pendingMode_ = m;
     pendingFrom_ = observedMode_;

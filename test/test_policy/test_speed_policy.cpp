@@ -256,5 +256,16 @@ int main(int, char**) {
     RUN_TEST(test_request_manual_from_auto_at_rest_emits_set_mode_manual);
     RUN_TEST(test_belt_link_loss_clears_pending_and_reconnect_resends_nothing);
     RUN_TEST(test_initial_mode_is_unknown_and_not_auto);
+    RUN_TEST(test_apply_set_speed_in_auto_emits_nothing);
+    RUN_TEST(test_ui_speed_paths_in_auto_emit_nothing);
+    RUN_TEST(test_phone_target_while_auto_pending_emits_nothing);
+    RUN_TEST(test_stop_in_auto_still_stops_and_clears_pending);
+    RUN_TEST(test_stop_clears_a_pending_auto_request);
+    RUN_TEST(test_phone_stop_in_auto_still_stops);
+    RUN_TEST(test_observed_running_in_auto_notifies_started_once);
+    RUN_TEST(test_observed_running_outside_auto_emits_nothing);
+    RUN_TEST(test_external_auto_while_running_mutes_and_keeps_running);
+    RUN_TEST(test_disarm_in_auto_does_not_stop);
+    RUN_TEST(test_request_mode_unknown_is_refused);
     return UNITY_END();
 }

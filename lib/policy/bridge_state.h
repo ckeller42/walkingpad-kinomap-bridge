@@ -229,6 +229,22 @@ public:
     Outcome onBeltObservedStopped();
 
     /**
+     * @brief Record that a poll shows the belt moving on its own in Auto.
+     *
+     * Call when a poll shows the belt moving (state 1 or speed above zero). In
+     * Auto the walker, not the bridge, starts the belt, so no start sequence
+     * ever runs and Kinomap would never begin its session; this is how the
+     * bridge notices and tells it.
+     *
+     * @return Emit::NotifyStarted, and @ref beltRunning() becomes true, only
+     *         while @ref autoActive() and the belt is not already believed
+     *         running. Nothing otherwise, so it is safe to call on every poll.
+     * @note Never emits a belt command; it only informs Kinomap. Outside Auto a
+     *       moving belt the bridge did not start is not announced.
+     */
+    Outcome onBeltObservedRunning();
+
+    /**
      * @brief Apply a SpeedPolicy decision, subject to the arming gate.
      *
      * @param d The decision from SpeedPolicy::onTarget().
@@ -243,6 +259,9 @@ public:
      *       Emit::NotifyStarted into a Kinomap session that already started.
      *       That is accepted deliberately — a latch to suppress it could swallow
      *       a genuine restart, and a redundant notify costs nothing.
+     * @note While Auto is observed or pending, Action::SetSpeed emits nothing:
+     *       the belt owns its speed in Auto and rejects speed commands.
+     *       Action::Stop is unaffected.
      */
     Outcome apply(const Decision& d);
 
@@ -258,6 +277,7 @@ public:
      *         the first Kinomap target afterwards is not deadbanded. Emits
      *         nothing unless the bridge is armed, the belt link is up, and the
      *         belt is not already running.
+     * @note Emits nothing while Auto is observed or pending.
      */
     Outcome startFromUi(uint8_t tenthKmh);
 
@@ -276,6 +296,7 @@ public:
      * @note Requires no phone link, unlike apply(). Somebody standing at the
      *       device outranks the app, and the belt has to be drivable with no
      *       phone connected at all.
+     * @note Emits nothing while Auto is observed or pending.
      */
     Outcome setSpeedFromUi(uint8_t tenthKmh);
 
@@ -290,6 +311,7 @@ public:
      *         starts the belt at @ref kSpeedMinTenths and down emits nothing at
      *         all — a belt that is not moving has no speed to reduce, and `-`
      *         must never become a way to issue a stop.
+     * @note Emits nothing while Auto is observed or pending.
      */
     Outcome stepSpeedFromUi(int dir, uint8_t baseTenths);
 
@@ -300,20 +322,21 @@ public:
      *         armed or not, linked or not, running or not.
      * @note Also disarms. Otherwise the app's next target would override the
      *       user's physical stop, which is the one thing a stop control must
-     *       never permit.
+     *       never permit. Also drops any pending mode request.
      */
     Outcome stopFromUi();
 
     /**
      * @brief Ask the belt to change mode.
      *
-     * @param m The wanted mode: Auto, Manual or Standby.
+     * @param m The wanted mode: Auto, Manual or Standby. BeltMode::Unknown is
+     *        refused: it is a sentinel, not a mode that can be written.
      * @param observedRunning Whether the belt is *observed* moving, from its own
      *        status rather than @ref beltRunning(). A mode change under a
      *        moving belt is not ours to make.
      * @return Emit::SetMode with Outcome::mode = @p m, and the request becomes
      *         pending until observeMode() confirms or rejects it. Emits nothing
-     *         unless the bridge is armed, the belt link is up, and the belt is
+     *         for BeltMode::Unknown, and nothing unless the bridge is armed, the belt link is up, and the belt is
      *         not observed running.
      */
     Outcome requestMode(BeltMode m, bool observedRunning);
@@ -350,7 +373,7 @@ public:
     /**
      * @brief Whether an Auto request is waiting for confirmation.
      * @return True from the Emit::SetMode for Auto until the belt confirms,
-     *         rejects or times it out.
+     *         rejects or times it out, or a stop drops it.
      */
     bool autoPending() const { return pendingMode_ == BeltMode::Auto; }
 
@@ -363,6 +386,10 @@ private:
     BeltMode pendingMode_ = BeltMode::Unknown;  ///< Unknown when nothing is pending.
     BeltMode pendingFrom_ = BeltMode::Unknown;  ///< Mode observed when the request was made.
     uint8_t pendingFrames_ = 0;                 ///< Unchanged frames seen since the request.
+
+    /// True while the belt owns its speed: Auto observed, or requested and not
+    /// yet confirmed. Speed-producing entry points emit nothing then.
+    bool commandsMuted() const { return autoActive() || autoPending(); }
 };
 
 }  // namespace policy
