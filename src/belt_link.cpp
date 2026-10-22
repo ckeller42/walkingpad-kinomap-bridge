@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 
+#include "logsink.h"
 #include "wilink.h"
 
 namespace {
@@ -16,11 +17,44 @@ constexpr const char* kAdvName = "RE";  // fallback match if FE00 leaves the adv
 constexpr uint8_t kCmdByte = 0xA2;  // the only command group we ever emit
 }  // namespace
 
-// Callback glue, kept out of the header so NimBLE types stay private.
+/**
+ * @brief Callback glue for the scan and the client connection.
+ *
+ * Kept out of belt_link.h so that NimBLE's types stay out of every translation
+ * unit that only wants to talk to a belt. One object serves both callback
+ * interfaces, and it is registered with NimBLE's delete-callbacks flag off so
+ * that NimBLE never takes ownership of it: it has to outlive any single
+ * connection, because after a drop the same object is what finds the belt
+ * again.
+ *
+ * Everything here runs on the NimBLE host task, so it only touches the owner's
+ * mutex-guarded and atomic members.
+ */
 struct BeltLink::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
+    /**
+     * @brief Bind the glue to the link it reports into.
+     * @param o The owning BeltLink, stored by reference; it owns this object
+     *          and outlives it.
+     */
     explicit Impl(BeltLink& o) : owner(o) {}
+
+    /// The link whose state these callbacks publish into.
     BeltLink& owner;
 
+    /**
+     * @brief Latch a matching advertisement for the worker to connect to.
+     *
+     * Matches service `FE00`, or failing that the advertised name `RE`, and
+     * logs when only the name matched - that is weaker evidence of a belt, and
+     * worth seeing in a capture rather than inferring later. Records the
+     * address and address type, remembers the address for foundAddress(), and
+     * moves the phase to Phase::Found; the worker does the connecting.
+     *
+     * Only the newest match survives: with two belts in range the second
+     * overwrites the first, and nothing here chooses between them.
+     *
+     * @param d The advertisement NimBLE just received.
+     */
     void onResult(const NimBLEAdvertisedDevice* d) override {
         const bool bySvc = d->isAdvertisingService(kSvc);
         const bool byName = d->getName() == kAdvName;
@@ -32,9 +66,24 @@ struct BeltLink::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
         owner.found_ = true;
         owner.foundAddr_ = d->getAddress().toString();
         owner.foundType_ = d->getAddressType();
+        owner.lastFoundAddr_ = owner.foundAddr_;
+        owner.phase_.store(Phase::Found);
     }
+    /**
+     * @brief Tear the link down on any disconnect, whatever the reason.
+     *
+     * Both parameters are ignored: the client is the only one there is, and no
+     * disconnect reason would make it right to keep serving readings from a
+     * belt that is gone. Clearing the link is what sends the worker back to
+     * scanning, so this is also the whole of the reconnect trigger.
+     */
     void onDisconnect(NimBLEClient*, int) override { owner.onDown(); }
 };
+
+std::string BeltLink::foundAddress() const {
+    std::lock_guard<std::mutex> g(foundMu_);
+    return lastFoundAddr_;
+}
 
 bool BeltLink::begin() {
     if (begun_) return true;
@@ -75,6 +124,7 @@ void BeltLink::worker() {
         }
         NimBLEScan* scan = NimBLEDevice::getScan();
         if (!found) {
+            phase_.store(Phase::Scanning);
             if (!scan->isScanning()) {
                 scan->clearResults();
                 scan->start(0, false, true);  // until stopped
@@ -94,6 +144,7 @@ bool BeltLink::connectOnce() {
         addr = NimBLEAddress(foundAddr_, foundType_);
         found_ = false;
     }
+    phase_.store(Phase::Connecting);
     if (!client_->connect(addr)) return false;
 
     NimBLERemoteService* svc = client_->getService(kSvc);
@@ -114,6 +165,7 @@ bool BeltLink::connectOnce() {
         cmd_ = cmd;
     }
     linked_.store(true);
+    phase_.store(Phase::Linked);
     if (!client_->isConnected()) {  // dropped while we were publishing
         onDown();
         return false;
@@ -122,6 +174,9 @@ bool BeltLink::connectOnce() {
 }
 
 void BeltLink::onDown() {
+    // A half-received frame cannot be completed by the next connection, and
+    // joining it to one would fabricate a reading.
+    reasm_.reset();
     {
         std::lock_guard<std::mutex> g(gattMu_);
         cmd_ = nullptr;  // before linked_: nobody may see "up" with no handle
@@ -132,8 +187,17 @@ void BeltLink::onDown() {
 }
 
 void BeltLink::onStatus(const uint8_t* data, size_t len) {
+    logsink::hex("rx", data, len);
     wilink::Status st{};
-    if (!wilink::parseStatus(data, len, st)) return;
+    // The belt can split a status frame across two notifications, so each one
+    // goes through the reassembler rather than straight to the parser. Both
+    // halves of a split would otherwise be rejected and the reading lost.
+    const auto r = reasm_.feed(data, len, st);
+    if (r == wilink::StatusReassembler::Result::Buffered) {
+        logsink::line("rx fragment buffered");
+        return;
+    }
+    if (r != wilink::StatusReassembler::Result::Parsed) return;
     std::lock_guard<std::mutex> g(statusMu_);
     status_ = st;
     haveStatus_ = true;
@@ -145,14 +209,24 @@ void BeltLink::onStatus(const uint8_t* data, size_t len) {
 bool BeltLink::send(const wilink::Frame& f) {
     if (f.len < 2 || f.len > sizeof(f.bytes) || f.bytes[0] != 0xF7 || f.bytes[1] != kCmdByte) return false;
     std::lock_guard<std::mutex> g(gattMu_);
-    if (!cmd_) return false;
-    return cmd_->writeValue(f.bytes, f.len, false);  // without response
+    if (!cmd_) {
+        logsink::hex("tx-nolink", f.bytes, f.len);
+        return false;
+    }
+    const bool ok = cmd_->writeValue(f.bytes, f.len, false);  // without response
+    logsink::hex(ok ? "tx" : "tx-fail", f.bytes, f.len);
+    return ok;
 }
 
 void BeltLink::setSpeed(uint8_t tenthKmh) { send(wilink::setSpeed(tenthKmh)); }
 void BeltLink::setMode(wilink::Mode mode) { send(wilink::setMode(mode)); }
 void BeltLink::start() { send(wilink::startBelt()); }
 void BeltLink::stop() { send(wilink::setMode(wilink::Mode::Standby)); }
+
+uint32_t BeltLink::statusAgeMs() const {
+    std::lock_guard<std::mutex> g(statusMu_);
+    return haveStatus_ ? millis() - statusAtMs_ : UINT32_MAX;
+}
 
 bool BeltLink::requestStatus() {
     return send(wilink::requestStatus());  // the reply arrives later on FE01

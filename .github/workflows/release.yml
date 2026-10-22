@@ -1,0 +1,109 @@
+name: release
+# Builds a tagged firmware and publishes it with the manifest the device reads.
+#
+# The manifest's sha256 is what makes a bad download unusable: ota.cpp hashes
+# the image while streaming it and refuses to commit anything that does not
+# match. It is an integrity check, not an authenticity one - see src/ota.h.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to stamp (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: {python-version: "3.11"}
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+
+      - name: version
+        id: v
+        run: |
+          V="${{ github.event.inputs.version }}"
+          [ -z "$V" ] && V="${GITHUB_REF_NAME}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "stamping $V"
+
+      # The host tests gate the release: shipping firmware that fails them
+      # would be worse than not releasing.
+      - run: pio test -e native
+
+      - name: build
+        env:
+          FW_VERSION: ${{ steps.v.outputs.version }}
+        run: pio run -e cores3
+
+      - name: manifest
+        id: m
+        env:
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          BIN=.pio/build/cores3/firmware.bin
+          SHA=$(sha256sum "$BIN" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "$BIN")
+          BASE="${{ github.server_url }}/${{ github.repository }}/releases/download/$V"
+          mkdir -p dist
+          cp "$BIN" dist/firmware.bin
+          cat > dist/manifest.json <<EOF
+          {
+            "version": "$V",
+            "url": "$BASE/firmware.bin",
+            "sha256": "$SHA",
+            "size": $SIZE
+          }
+          EOF
+          cat dist/manifest.json
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # Catches a manifest whose sha does not describe the binary beside it,
+      # which would strand every device that tried to update.
+      - name: verify the manifest describes the binary
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, sys
+          m = json.loads(pathlib.Path('dist/manifest.json').read_text())
+          data = pathlib.Path('dist/firmware.bin').read_bytes()
+          got = hashlib.sha256(data).hexdigest()
+          assert got == m['sha256'], f"sha mismatch: {got} != {m['sha256']}"
+          assert len(data) == m['size'], f"size mismatch: {len(data)} != {m['size']}"
+          assert m['version'], "empty version"
+          print(f"manifest ok: {m['version']} {m['size']} bytes")
+          PY
+
+      - uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          tag_name: ${{ steps.v.outputs.version }}
+          files: |
+            dist/firmware.bin
+            dist/manifest.json
+          body: |
+            Firmware `${{ steps.v.outputs.version }}` for the M5Stack CoreS3 bridge.
+
+            Point a device at the manifest and update over the air:
+
+            ```text
+            dev on
+            ota url ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.v.outputs.version }}/manifest.json
+            ota check
+            ota apply
+            ```
+
+            `sha256(firmware.bin)` = `${{ steps.m.outputs.sha }}`
+
+            The device verifies this hash while streaming and refuses to install
+            anything that does not match. Note that a **private** repository's
+            release assets need authentication, which the device does not have —
+            serve the manifest and binary from somewhere the device can reach.

@@ -10,4 +10,7 @@ void test_gate_spacing_survives_millis_wraparound(void);
 void test_gate_stop_always_writes_even_when_last_poll_showed_idle(void);
 void test_gate_forwards_tick_even_inside_the_gap(void);
 void test_gate_status_request_shares_the_gap_with_commands(void);
-void test_gate_status_request_outranks_queued_command_but_not_stop(void);
+void test_gate_queued_command_outranks_status_request(void);
+void test_gate_steady_state_polling_does_not_starve_commands(void);
+void test_gate_constant_commands_cannot_starve_status_forever(void);
+void test_gate_stop_outranks_status_request(void);

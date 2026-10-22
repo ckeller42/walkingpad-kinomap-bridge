@@ -1,0 +1,316 @@
+# Single source of truth for the WiLink (treadmill-side) protocol.
+# docs/protocol/reference.md and docs/protocol/frame-layouts.md are generated
+# from this file by tools/gen_protocol_reference.py and
+# tools/gen_frame_layouts.py. Do not restate these facts by hand in
+# docs/protocol/.
+#
+# Provenance (on every fact; a fact without its own inherits its parent's):
+#   measured    observed on the real belt (docs/test-log.md is the record)
+#   community   from the reverse-engineering projects (ph4-walkingpad,
+#               QWalkingPad, R1-Walkingpad-Controller) or the design doc
+#   vendor-app  from the KS Fit / Kinomap decompiles
+# `evidence` says where the fact is recorded. Where this file and
+# docs/test-log.md differ, the test log wins.
+
+schema_version: 1
+protocol: wilink
+title: WiLink (WalkingPad R1 Pro, treadmill side)
+role: The bridge is the BLE central; the belt is the peripheral.
+summary: >-
+  KingSmith's legacy vendor protocol over service FE00. Commands are written
+  to FE02 without response; status is read from FE01. The belt never pushes
+  status, so every reading must be requested.
+
+transport:
+  service:
+    uuid: FE00
+    full_uuid: 0000fe00-0000-1000-8000-00805f9b34fb
+    provenance: measured
+    evidence: "test-log: Stage 2, GATT table"
+  characteristics:
+    - uuid: FE01
+      name: status
+      properties: [notify, read]
+      provenance: measured
+      evidence: "test-log: Stage 2, GATT table"
+      notes: >-
+        Carries the 20-byte status frame. Subscribing for 10 s without
+        sending a request yielded zero notifications.
+    - uuid: FE02
+      name: commands
+      properties: [write-without-response]
+      provenance: measured
+      evidence: "test-log: Stage 2, GATT table"
+      notes: >-
+        No acknowledgement and no flow control. The only way to know a
+        command landed is to poll FE01 and watch the state change.
+  other_services:
+    - uuid: 180A
+      name: Device Information
+      provenance: measured
+      evidence: "test-log: Stage 2, Device Information strings"
+      notes: >-
+        Mis-wired in the belt firmware. Serial Number (2A25) returns the text
+        "Serial Number", Software Revision (2A28) returns "Hardware
+        Revision", Manufacturer Name (2A29) returns "Software Revision".
+        Only Firmware Revision (2A26 = M26_V187.1.2) and Model Number
+        (2A24 = WLT8266M, the Bluetooth module) carry real values. Do not use
+        any of them to identify the machine.
+    - uuid: 00010203-0405-0607-0809-0a0b0c0d1912
+      name: OTA
+      provenance: measured
+      evidence: "test-log: Stage 2, GATT table"
+      notes: >-
+        Characteristic 00010203-0405-0607-0809-0a0b0c0d2b12 (read,
+        write-without-response). Not used by the bridge. See the OTA
+        prohibition at the top of the reference.
+
+frame_format:
+  command:
+    length: 6
+    provenance: community
+    evidence: "design doc: Established facts; every command in the test log conforms"
+    fields:
+      - {offset: 0, name: header, const: 0xF7}
+      - {offset: 1, name: group, text: "`0xA2`", note: "0xA2 for every known command"}
+      - {offset: 2, name: function, text: "command selector"}
+      - {offset: 3, name: argument, note: "one byte; meaning depends on function"}
+      - {offset: 4, name: crc, text: "computed"}
+      - {offset: 5, name: trailer, const: 0xFD}
+  crc:
+    rule: >-
+      Low byte of the sum of every byte between the header byte and the CRC
+      byte: group, function and argument for a command; bytes 1 to 17 for a
+      status frame.
+    first_offset: 1
+    provenance: community
+    evidence: "recomputed by the generators against every frame in this file"
+
+prohibited_groups:
+  - group: 0xE8
+    name: OTA / firmware update
+    severity: can brick the belt
+    rule: >-
+      Never send any frame whose group byte is 0xE8, under any circumstance,
+      including probing, fuzzing and "just reading". The bridge firmware must
+      not be able to emit one. Groups other than 0xA2 are unexplored; do not
+      probe them on a belt you want to keep.
+    provenance: community
+    evidence: "project owner's instruction; no capture exists and none should be taken"
+
+# Command catalogue. `examples` are worked frames; the generators compute the
+# CRC for each, so a hand-typed CRC can never drift.
+commands:
+  - id: request_status
+    name: Request status
+    group: 0xA2
+    function: 0x00
+    argument: {name: reserved, const: 0x00}
+    summary: Ask the belt for one status frame; the reply arrives on FE01.
+    provenance: measured
+    evidence: "test-log: Stage 2, the belt does not push status"
+    notes: Silent. Needed for every reading; the bridge polls at 1 Hz.
+    examples:
+      - {label: request status, argument: 0x00}
+  - id: set_speed
+    name: Set speed
+    group: 0xA2
+    function: 0x01
+    argument: {name: speed, unit: km/h, scale: 0.1}
+    summary: Set the target belt speed.
+    provenance: community
+    evidence: "design doc: Established facts"
+    notes: >-
+      Discarded during the countdown (state 7); the belt then uses its own
+      preset. A speed of 0 is not a stop.
+    examples:
+      - {label: 4.0 km/h, argument: 40}
+      - {label: 2.8 km/h, argument: 28}
+      - {label: 0 (NOT a stop), argument: 0}
+  - id: set_mode
+    name: Set mode
+    group: 0xA2
+    function: 0x02
+    argument: {name: mode, enum: mode}
+    summary: Select the belt mode.
+    provenance: community
+    evidence: "design doc: Established facts; modes 1 and 2 also measured"
+    notes: Mode 0 (auto) is produced by the bridge only on an explicit user request, and the bridge treats Auto as active only once a status frame reports mode 0.
+    examples:
+      - {label: manual, argument: 1}
+  - id: start_belt
+    name: Start belt
+    group: 0xA2
+    function: 0x04
+    argument: {name: start, const: 0x01}
+    summary: Start the belt (countdown, then run at the belt's preset speed).
+    provenance: measured
+    evidence: "test-log: Stage 2, direct FE02 probe and via the bridge"
+    notes: >-
+      Sent after mode manual. The variant with argument 0
+      (F7 A2 04 00 A6 FD) is not a stop; see the constraints.
+      Confirmed on an R1 Pro from standby and from idle, at mode-to-start gaps
+      of 1.0, 1.5, 2.0 and 3.0 s - every gap started the belt, so the pacing
+      interval is not load-bearing here. The belt ramps to its own preset speed
+      (~1.1 km/h) unless a speed is set.
+    examples:
+      - {label: start, argument: 1}
+  - id: stop_belt
+    name: Stop belt (set mode standby)
+    group: 0xA2
+    function: 0x02
+    argument: {name: mode, enum: mode, const: 0x02}
+    summary: The only stop. Sets mode standby; the belt decelerates to 0 and parks in state 4.
+    provenance: measured
+    evidence: "test-log: Stage 2, active FE02 probe, confirmed on a moving belt"
+    notes: >-
+      Same wire format as Set mode with mode 2. Leaves the belt in standby, so
+      it will not start again until mode is set back to manual.
+    examples:
+      - {label: stop, argument: 2}
+
+enums:
+  state:
+    field: status byte 2
+    values:
+      - {value: 0, name: idle, provenance: measured, evidence: "test-log: Stage 2, state machine"}
+      - {value: 3, name: waking, meaning: "Seen briefly on the way out of standby; also the parked state after a STOP, held at speed 0 for 7+ s", provenance: measured, evidence: "test-log: Stage 2, start probe; UDP capture 2026-10-22: 'f8 a2 03 00 02 ...' repeated from 4.5 s after the stop until the next start"}
+      - {value: 8, name: spin_up, meaning: "Seen between pre-countdown and starting", provenance: measured, evidence: "test-log: Stage 3, decoded from a captured UDP log"}
+      - {value: 9, name: pre_countdown, meaning: "Seen between start and countdown", provenance: measured, evidence: "test-log: Stage 2, start probe"}
+      - {value: 7, name: countdown, meaning: "Countdown immediately after start", provenance: measured, evidence: "test-log: Stage 2, state machine"}
+      - {value: 6, name: starting, meaning: "Starting / transitioning", provenance: measured, evidence: "test-log: Stage 2, state machine"}
+      - {value: 1, name: running, provenance: measured, evidence: "test-log: Stage 2, state machine"}
+      - {value: 4, name: standby, meaning: "Stopped by the standby command", provenance: measured, evidence: "test-log: Stage 2, state machine"}
+  mode:
+    field: status byte 4; Set mode argument
+    values:
+      - {value: 0, name: auto, meaning: "The belt sets its own speed from the walker's position and starts on step-on", provenance: measured, evidence: "UDP capture 2026-10-22: status byte 4 = 00 after the belt's own A key ('f8 a2 00 00 00 ...'); bridge logged 'belt mode 3 -> 1 raw=0'"}
+      - {value: 1, name: manual, provenance: measured, evidence: "test-log: Stage 2, state machine"}
+      - {value: 2, name: standby, provenance: measured, evidence: "test-log: Stage 2, state machine"}
+
+status_frame:
+  length: 20
+  provenance: measured
+  evidence: "test-log: Stage 2, status frame offsets validated against real data"
+  fields:
+    - {offset: 0, size: 1, name: header, const: 0xF8}
+    - {offset: 1, size: 1, name: group, const: 0xA2}
+    - {offset: 2, size: 1, name: state, type: u8, enum: state}
+    - {offset: 3, size: 1, name: speed, type: u8, unit: km/h, scale: 0.1}
+    - {offset: 4, size: 1, name: mode, type: u8, enum: mode}
+    - {offset: 5, size: 3, name: elapsed, type: u24be, unit: s}
+    - offset: 8
+      size: 3
+      name: distance
+      type: u24be
+      unit: m
+      scale: 10
+      provenance: community
+      evidence: "test-log: still outstanding; validated only at near-zero values"
+      note: "Unit (10 m per count) is an assumption until a real walk is captured."
+    - {offset: 11, size: 3, name: steps, type: u24be, unit: steps, note: "Validated only at near-zero values."}
+    - {offset: 14, size: 1, name: preset_speed, type: u8, unit: km/h, scale: 0.1, note: "The belt's own preset/target speed. The bridge does not use it."}
+    - {offset: 15, size: 3, name: unknown, type: raw, note: "Zero in the captured frame; meaning not established."}
+    - {offset: 18, size: 1, name: crc, type: u8}
+    - {offset: 19, size: 1, name: trailer, const: 0xFD}
+  examples:
+    - label: idle belt, captured 2026-10-21
+      hex: "f8 a2 00 00 01 00 00 0b 00 00 00 00 00 02 0a 00 00 00 ba fd"
+      provenance: measured
+      evidence: "test-log: Stage 2, status frame offsets"
+      note: Mode 1, elapsed 11 s, distance 0, steps 2, preset 0x0a (1.0 km/h).
+
+constraints:
+  - id: fragmented_status_notifications
+    statement: A status frame can arrive split across two FE01 notifications, so a handler that parses each notification alone silently drops that reading.
+    key: status_may_fragment
+    value: true
+    provenance: measured
+    evidence: "test-log: Stage 3, captured as 'f8 a2 00' then a 17-byte remainder ending fd"
+  - id: unattended_auto_stop
+    statement: With nobody walking on it the belt stops by itself a short time after starting, returning to state 0 with speed 0.
+    key: unattended_auto_stop_s
+    value: 15
+    unit: s
+    provenance: measured
+    evidence: "test-log: Stage 2, observed on every unattended start; the window varied and shortened on repeated starts"
+  - id: speed_display_is_setpoint
+    statement: The belt's console shows the commanded speed even while the belt is not moving, so the display alone does not prove motion.
+    key: display_shows_setpoint
+    value: true
+    provenance: measured
+    evidence: "test-log: Stage 2, camera read 2.0 and 3.5 while status reported state 0 speed 0"
+  - id: unsolicited_notifications
+    statement: The belt sends no unsolicited notifications on FE01; every status reading must be requested.
+    key: unsolicited_notifications
+    value: false
+    provenance: measured
+    evidence: "test-log: Stage 2, a 10 s subscription yielded zero notifications"
+  - id: min_command_interval
+    statement: Commands closer together than this are silently ignored.
+    key: min_command_interval_ms
+    value: 700
+    unit: ms
+    provenance: community
+    evidence: "design doc: Established facts; the test log cites it (~0.7 s) but records no measurement of it"
+  - id: set_speed_in_countdown
+    statement: A Set speed sent during the countdown (state 7) is discarded; the belt uses its own preset and reached 4.0 km/h.
+    key: set_speed_honoured_in_countdown
+    value: false
+    provenance: measured
+    evidence: "test-log: Stage 2, honest note"
+  - id: belt_preset_after_start
+    statement: Left alone after a start, the belt ramps to its own preset speed.
+    key: belt_preset_after_start_kmh
+    value: 4.0
+    unit: km/h
+    provenance: measured
+    evidence: "test-log: Stage 2, honest note"
+  - id: set_speed_zero_is_not_stop
+    statement: Set speed 0 does not stop the belt; it carried on ramping to 4.0 km/h.
+    key: set_speed_zero_stops_belt
+    value: false
+    provenance: measured
+    evidence: "test-log: Stage 2, set-speed-0 candidate"
+  - id: start_zero_is_not_stop
+    statement: Start with argument 0 (F7 A2 04 00 A6 FD) does not stop the belt.
+    key: start_argument_zero_stops_belt
+    value: false
+    provenance: measured
+    evidence: "test-log: Stage 2, start-with-0 candidate"
+  - id: restart_needs_manual
+    statement: After a stop the belt is in standby (mode 2) and will not start until mode is set back to manual.
+    key: restart_requires_mode_manual
+    value: true
+    provenance: measured
+    evidence: "test-log: Stage 2, consequence 1"
+  - id: ramp_down_monotonic
+    statement: The post-stop deceleration ramp is strictly decreasing (2.8, 2.3, 0.4, 0.0 km/h over about 3.6 s).
+    key: stop_ramp_strictly_decreasing
+    value: true
+    provenance: measured
+    evidence: "test-log: Stage 2, consequence 2"
+  - id: set_speed_after_running
+    statement: To hold a speed, send Set speed only once the belt reports state 1 (running), then verify it took.
+    key: set_speed_after_state
+    value: 1
+    provenance: measured
+    evidence: "test-log: Stage 2, honest note"
+  - id: auto_mode_in_status
+    statement: Switched to Auto by its own A key, the belt reports mode 0 in status byte 4 (from standby, state 4 mode 2, to idle, state 0 mode 0); pressing M reports mode 1 again while the belt keeps running.
+    key: auto_mode_reported_in_status
+    value: true
+    provenance: measured
+    evidence: "UDP capture 2026-10-22: 'f8 a2 04 00 02 ...' then 'f8 a2 00 00 00 ...'; later 'f8 a2 01 1d 01 ...' (running 2.9 km/h, mode 1); bridge logged 'belt mode 3 -> 1 raw=0' and 'belt mode 1 -> 2 raw=1'"
+  - id: parked_state_after_stop
+    statement: After a STOP (mode 2) from 4.0 km/h the belt decelerated in state 1, then reported state 3 at speed 0 with mode 2 and held it for more than 7 s; a stationary check must accept state 3, not only 0 and 4.
+    key: parked_state_after_stop
+    value: 3
+    provenance: measured
+    evidence: "UDP capture 2026-10-22: 'f8 a2 01 28 02 ...' 0.5 s after the stop, then 'f8 a2 03 00 02 ...' at 4.5, 6.6, 8.6 and 10.6 s; four badge taps in that window were refused by the bridge"
+  - id: auto_starts_on_step_on
+    statement: In Auto the belt starts with no start command - status went state 6 then state 1 at 0.7 km/h while the bridge sent only status requests - and then followed the walker up to 2.9 km/h; UI speed taps during Auto were muted by the bridge and never reached the wire.
+    key: auto_starts_on_step_on
+    value: true
+    provenance: measured
+    evidence: "UDP capture 2026-10-22: 'f8 a2 06 00 00 ...' then 'f8 a2 01 07 00 ...' with tx limited to 'f7 a2 00 00 a2 fd'; bridge emitted NotifyStarted; two + taps logged with zero SetSpeed emits"

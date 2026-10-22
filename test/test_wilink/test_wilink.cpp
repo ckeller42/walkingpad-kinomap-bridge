@@ -1,4 +1,5 @@
 #include <unity.h>
+#include <initializer_list>
 #include "wilink.h"
 
 void setUp(void) {}
@@ -19,6 +20,30 @@ void test_crc_matches_documented_status_request(void) {
 void test_crc_truncates_to_low_byte(void) {
     const uint8_t body[] = {0xFF, 0xFF, 0x03};
     TEST_ASSERT_EQUAL_HEX8(0x01, wilink::crc(body, 3));
+}
+
+// Measured 2026-10-22: after a STOP the belt sat in state 3 ("waking") at
+// speed 0 for 7+ s, so a parked check that only accepts 0 and 4 refused every
+// badge tap. Parked = speed 0 in idle (0), waking (3) or standby (4).
+void test_parked_accepts_idle_waking_and_standby_at_speed_zero(void) {
+    wilink::Status st{};
+    st.tenthKmh = 0;
+    for (uint8_t s : {uint8_t{0}, uint8_t{3}, uint8_t{4}}) {
+        st.beltState = s;
+        TEST_ASSERT_TRUE(wilink::parked(st));
+    }
+}
+
+void test_parked_rejects_motion_and_start_states(void) {
+    wilink::Status st{};
+    st.tenthKmh = 0;
+    for (uint8_t s : {uint8_t{1}, uint8_t{6}, uint8_t{7}, uint8_t{8}, uint8_t{9}}) {
+        st.beltState = s;
+        TEST_ASSERT_FALSE(wilink::parked(st));
+    }
+    st.beltState = 4;  // standby mode requested but still decelerating
+    st.tenthKmh = 28;
+    TEST_ASSERT_FALSE(wilink::parked(st));
 }
 
 void test_request_status_matches_documented_frame(void) {
@@ -81,6 +106,113 @@ void test_parse_status_leaves_output_untouched_on_reject(void) {
     TEST_ASSERT_EQUAL_UINT8(99, s.tenthKmh);
 }
 
+
+// ---------------------------------------------------------------------------
+// StatusReassembler. The belt can split a status frame across two FE01
+// notifications; parsing each alone drops both halves silently.
+// ---------------------------------------------------------------------------
+
+// The exact split captured on hardware: 3 bytes, then a 17-byte remainder.
+static const uint8_t kHeadFragment[] = {0xf8, 0xa2, 0x00};
+static const uint8_t kTailFragment[] = {0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+                                        0x00, 0xa4, 0xfd};
+
+void test_reassembler_passes_a_whole_frame_straight_through(void) {
+    wilink::StatusReassembler r;
+    wilink::Status st{};
+    uint8_t whole[20] = {0xf8, 0xa2, 0x01, 0x19, 0x01};
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Parsed,
+                      r.feed(whole, sizeof whole, st));
+    TEST_ASSERT_EQUAL(1, st.beltState);
+    TEST_ASSERT_EQUAL(25, st.tenthKmh);
+    // A frame that never needed joining is not counted as a reassembly.
+    TEST_ASSERT_EQUAL(0, r.reassembled());
+}
+
+void test_reassembler_joins_the_split_seen_on_hardware(void) {
+    wilink::StatusReassembler r;
+    wilink::Status st{};
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Buffered,
+                      r.feed(kHeadFragment, sizeof kHeadFragment, st));
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Parsed,
+                      r.feed(kTailFragment, sizeof kTailFragment, st));
+    TEST_ASSERT_EQUAL(0, st.beltState);
+    TEST_ASSERT_EQUAL(0, st.tenthKmh);
+    TEST_ASSERT_EQUAL(1, st.mode);
+    TEST_ASSERT_EQUAL(1, r.reassembled());
+    TEST_ASSERT_EQUAL(0, r.discarded());
+}
+
+// A fragment whose tail never arrives must not wedge the decoder shut: the
+// next whole frame has to come through, and the loss be counted.
+void test_reassembler_recovers_when_a_tail_never_arrives(void) {
+    wilink::StatusReassembler r;
+    wilink::Status st{};
+    r.feed(kHeadFragment, sizeof kHeadFragment, st);
+    uint8_t whole[20] = {0xf8, 0xa2, 0x04, 0x00, 0x02};
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Parsed,
+                      r.feed(whole, sizeof whole, st));
+    TEST_ASSERT_EQUAL(4, st.beltState);
+    TEST_ASSERT_EQUAL(1, r.discarded());
+}
+
+// A continuation arriving with nothing pending is stray data, not the tail of
+// a frame, and must not be joined to the next header.
+void test_reassembler_ignores_a_stray_continuation(void) {
+    wilink::StatusReassembler r;
+    wilink::Status st{};
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Ignored,
+                      r.feed(kTailFragment, sizeof kTailFragment, st));
+    TEST_ASSERT_EQUAL(0, r.reassembled());
+}
+
+void test_reassembler_handles_three_way_splits(void) {
+    wilink::StatusReassembler r;
+    wilink::Status st{};
+    const uint8_t a[] = {0xf8, 0xa2};
+    const uint8_t b[] = {0x01, 0x14, 0x01, 0x00};
+    const uint8_t c[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Buffered, r.feed(a, sizeof a, st));
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Buffered, r.feed(b, sizeof b, st));
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Parsed, r.feed(c, sizeof c, st));
+    TEST_ASSERT_EQUAL(1, st.beltState);
+    TEST_ASSERT_EQUAL(20, st.tenthKmh);
+}
+
+// Runaway continuations must be abandoned rather than overflowing the buffer.
+void test_reassembler_abandons_an_oversized_run(void) {
+    wilink::StatusReassembler r;
+    wilink::Status st{};
+    r.feed(kHeadFragment, sizeof kHeadFragment, st);
+    uint8_t junk[40] = {0x11};
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Ignored,
+                      r.feed(junk, sizeof junk, st));
+    TEST_ASSERT_EQUAL(1, r.discarded());
+    // and it is usable again afterwards
+    uint8_t whole[20] = {0xf8, 0xa2, 0x07, 0x00, 0x01};
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Parsed,
+                      r.feed(whole, sizeof whole, st));
+    TEST_ASSERT_EQUAL(7, st.beltState);
+}
+
+void test_reassembler_tolerates_empty_and_null(void) {
+    wilink::StatusReassembler r;
+    wilink::Status st{};
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Ignored, r.feed(nullptr, 0, st));
+    const uint8_t none[1] = {0};
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Ignored, r.feed(none, 0, st));
+}
+
+void test_reassembler_reset_forgets_a_pending_fragment(void) {
+    wilink::StatusReassembler r;
+    wilink::Status st{};
+    r.feed(kHeadFragment, sizeof kHeadFragment, st);
+    r.reset();
+    TEST_ASSERT_EQUAL(wilink::StatusReassembler::Result::Ignored,
+                      r.feed(kTailFragment, sizeof kTailFragment, st));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_crc_matches_documented_start_frame);
@@ -94,5 +226,15 @@ int main(int, char**) {
     RUN_TEST(test_parse_status_rejects_wrong_header);
     RUN_TEST(test_parse_status_rejects_short_buffer);
     RUN_TEST(test_parse_status_leaves_output_untouched_on_reject);
+    RUN_TEST(test_reassembler_passes_a_whole_frame_straight_through);
+    RUN_TEST(test_reassembler_joins_the_split_seen_on_hardware);
+    RUN_TEST(test_reassembler_recovers_when_a_tail_never_arrives);
+    RUN_TEST(test_reassembler_ignores_a_stray_continuation);
+    RUN_TEST(test_reassembler_handles_three_way_splits);
+    RUN_TEST(test_reassembler_abandons_an_oversized_run);
+    RUN_TEST(test_reassembler_tolerates_empty_and_null);
+    RUN_TEST(test_reassembler_reset_forgets_a_pending_fragment);
+    RUN_TEST(test_parked_accepts_idle_waking_and_standby_at_speed_zero);
+    RUN_TEST(test_parked_rejects_motion_and_start_states);
     return UNITY_END();
 }

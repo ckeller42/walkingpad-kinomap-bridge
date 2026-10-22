@@ -812,11 +812,29 @@ This task writes no production code. It is the gate that retires most of the pro
 
 - [ ] **Step 1: Pair Kinomap with the bridge**
 
-On the Fairphone (`adb -s 100.126.233.97:46363`), in Kinomap: machine type TREADMILL → **I can't find my brand** → LAUNCH SEARCH → select the bridge by name.
+On the Fairphone (`adb -s 100.126.233.97:46363`), in Kinomap: `Add my equipment` → `Add new equipment` → machine type TREADMILL → NEXT → **I CAN'T FIND MY BRAND** → LAUNCH SEARCH → select the entry tagged **`(FTMS)`** → ADD.
 
-- [ ] **Step 2: Walk the eleven stage-1 criteria from the spec**
+> **Observed 2026-10-21:** Kinomap lists the bridge twice — once tagged `(FTMS)` and once plain. Take the `(FTMS)` entry; it is the one it has recognised as a Fitness Machine. After ADD it is saved as "Generic treadmill" and appears in `My equipments`.
+
+- [ ] **Step 2: Start a workout in ORIGINAL SPEED mode**
+
+Open a video → **ORIGINAL SPEED** ("depending on the pace of the contributor") → START.
+
+> **This choice matters.** ORIGINAL SPEED is the mode where Kinomap drives the treadmill to match the video. **VARIABLE SPEED** makes the video follow the user instead and commands nothing, so it cannot exercise any of the criteria below.
+
+- [ ] **Step 3: Start the belt — Kinomap will not do it for you**
+
+**Corrects the spec.** Kinomap's workout screen shows *"Begin running to start the training…"* and sends **no speed target at all** until the treadmill reports movement. Its session is started **by the belt**, not by the app — which is exactly what `ag8` implies, sending `07` only after our `2ADA 0x04`.
+
+So the sequence is: **ARM** the bridge, then **START** from the bridge (or, on the real belt, the handheld remote). Only then does Kinomap begin the session and start commanding speed.
+
+The spec's goal 4 — "Kinomap can start the belt" — therefore holds only *after* a session is running. The first start is always the user's.
+
+- [ ] **Step 4: Walk the eleven stage-1 criteria from the spec**
 
 Verify each in order. Criteria 2, 3 and 8 are the load-bearing ones — Request Control completing without retries, Kinomap actually sending `02 lo hi`, and Kinomap answering our `2ADA` `0x04` with `{07}`.
+
+Serial diagnostics are required for most of these: the CoreS3 emits nothing unless built with `-DARDUINO_USB_CDC_ON_BOOT=1`, because `Serial` otherwise maps to UART0 and the board has no UART bridge.
 
 - [ ] **Step 3: Confirm the deadband with numbers, not impressions**
 

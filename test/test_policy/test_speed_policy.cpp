@@ -170,8 +170,25 @@ void test_target_below_minimum_is_a_stop(void) {
     TEST_ASSERT_EQUAL(policy::Action::None, q.onTarget(100, 5000).action);  // no second Stop
 }
 
+void test_adopt_makes_nearby_app_target_a_deadband_noop(void) {
+    policy::SpeedPolicy p;
+    (void)p.onTarget(200, 0);                 // reference 2.0
+    p.adopt(35, 100);                         // user set 3.5
+    TEST_ASSERT_EQUAL(policy::Action::None, p.onTarget(340, 5000).action);       // 0.1 away: deadband
+    TEST_ASSERT_EQUAL(policy::Action::SetSpeed, p.onTarget(200, 6000).action);   // Kinomap still wins
+}
+
+void test_adopt_clears_a_pending_stop_state(void) {
+    policy::SpeedPolicy p;
+    (void)p.onTarget(100, 0);                 // stop
+    p.adopt(5, 100);                          // user starts at 0.5 by hand
+    TEST_ASSERT_EQUAL(policy::Action::Stop, p.onTarget(100, 5000).action);       // stop must emit again
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
+    RUN_TEST(test_adopt_makes_nearby_app_target_a_deadband_noop);
+    RUN_TEST(test_adopt_clears_a_pending_stop_state);
     RUN_TEST(test_sentinel_is_a_stop);
     RUN_TEST(test_sentinel_while_already_stopped_emits_nothing);
     RUN_TEST(test_target_above_max_is_clamped_to_six);
@@ -192,6 +209,13 @@ int main(int, char**) {
     RUN_TEST(test_deceleration_ramp_after_stop_is_not_adopted);
     RUN_TEST(test_target_below_minimum_is_a_stop);
     RUN_TEST(test_disarmed_target_emits_nothing);
+    RUN_TEST(test_step_tenths_moves_in_half_kmh_steps_and_clamps);
+    RUN_TEST(test_manual_speed_while_disarmed_emits_nothing);
+    RUN_TEST(test_manual_speed_while_running_sets_speed_and_syncs_policy);
+    RUN_TEST(test_manual_plus_on_stopped_belt_starts_at_minimum);
+    RUN_TEST(test_manual_minus_on_stopped_belt_does_nothing);
+    RUN_TEST(test_manual_absolute_speed_is_clamped_and_needs_belt_link);
+    RUN_TEST(test_manual_step_at_limits_never_stops_the_belt);
     RUN_TEST(test_arming_alone_does_not_start_the_belt);
     RUN_TEST(test_armed_target_on_stopped_belt_runs_start_sequence_then_notifies);
     RUN_TEST(test_armed_target_on_running_belt_is_a_plain_set_speed);
@@ -216,5 +240,36 @@ int main(int, char**) {
     RUN_TEST(test_observed_stopped_clears_running_and_resets_policy);
     RUN_TEST(test_observed_stopped_when_not_running_emits_nothing);
     RUN_TEST(test_target_after_observed_stop_starts_the_belt_again);
+    RUN_TEST(test_ui_start_while_disarmed_emits_nothing);
+    RUN_TEST(test_ui_start_armed_runs_start_sequence_and_notifies);
+    RUN_TEST(test_ui_start_with_belt_down_or_already_running_emits_nothing);
+    RUN_TEST(test_no_outcome_exceeds_the_emit_array);
+    RUN_TEST(test_request_mode_refused_when_disarmed);
+    RUN_TEST(test_request_mode_refused_when_belt_down);
+    RUN_TEST(test_request_mode_refused_while_observed_running);
+    RUN_TEST(test_request_mode_refused_while_start_in_flight);
+    RUN_TEST(test_phone_loss_clears_a_pending_request);
+    RUN_TEST(test_request_mode_emits_set_mode_and_is_pending_not_active);
+    RUN_TEST(test_observe_mode_confirms_pending_request);
+    RUN_TEST(test_observe_mode_third_mode_while_pending_is_a_rejection);
+    RUN_TEST(test_observe_mode_unchanged_frames_time_out_after_confirm_frames);
+    RUN_TEST(test_external_auto_while_disarmed_is_observed_hands_off);
+    RUN_TEST(test_leaving_auto_emits_reset_policy);
+    RUN_TEST(test_leaving_auto_to_standby_emits_reset_policy);
+    RUN_TEST(test_start_after_stop_is_plain_start_sequence_auto_not_remembered);
+    RUN_TEST(test_request_manual_from_auto_at_rest_emits_set_mode_manual);
+    RUN_TEST(test_belt_link_loss_clears_pending_and_reconnect_resends_nothing);
+    RUN_TEST(test_initial_mode_is_unknown_and_not_auto);
+    RUN_TEST(test_apply_set_speed_in_auto_emits_nothing);
+    RUN_TEST(test_ui_speed_paths_in_auto_emit_nothing);
+    RUN_TEST(test_phone_target_while_auto_pending_emits_nothing);
+    RUN_TEST(test_stop_in_auto_still_stops_and_clears_pending);
+    RUN_TEST(test_stop_clears_a_pending_auto_request);
+    RUN_TEST(test_phone_stop_in_auto_still_stops);
+    RUN_TEST(test_observed_running_in_auto_notifies_started_once);
+    RUN_TEST(test_observed_running_outside_auto_emits_nothing);
+    RUN_TEST(test_external_auto_while_running_mutes_and_keeps_running);
+    RUN_TEST(test_disarm_in_auto_does_not_stop);
+    RUN_TEST(test_request_mode_unknown_is_refused);
     return UNITY_END();
 }

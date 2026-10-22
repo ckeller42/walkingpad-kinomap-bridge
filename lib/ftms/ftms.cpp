@@ -24,10 +24,11 @@ Buf statusStarted() {
 }
 
 CpRequest parseControlPoint(const uint8_t* buf, size_t len) {
-    CpRequest r{CpOp::Unknown, 0, 0, false, 0};
+    CpRequest r{CpOp::Unknown, 0, 0, false, 0, false};
     if (buf == nullptr || len == 0) {
         return r;
     }
+    r.hasOp = true;
     r.rawOp = buf[0];
     switch (buf[0]) {
         case static_cast<uint8_t>(CpOp::RequestControl):
@@ -41,6 +42,11 @@ CpRequest parseControlPoint(const uint8_t* buf, size_t len) {
             }
             r.op = CpOp::SetTargetSpeed;
             r.centiKmh = static_cast<uint16_t>(buf[1] | (buf[2] << 8));
+            r.valid = true;
+            break;
+        case static_cast<uint8_t>(CpOp::SetTargetInclination):
+            // Named so it is logged as itself; deliberately not acted on.
+            r.op = CpOp::SetTargetInclination;
             r.valid = true;
             break;
         case static_cast<uint8_t>(CpOp::StartResume):
@@ -63,6 +69,11 @@ CpRequest parseControlPoint(const uint8_t* buf, size_t len) {
 
 Buf controlPointSuccess(uint8_t rawOp) {
     return Buf{{0x80, rawOp, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00}, 3};
+}
+
+Buf controlPointAck(const CpRequest& req) {
+    if (!req.hasOp) return Buf{{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 0};
+    return controlPointSuccess(req.rawOp);
 }
 
 }  // namespace ftms

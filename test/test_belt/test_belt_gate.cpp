@@ -28,10 +28,18 @@ public:
     bool writesStatus = false;  // behave like BeltLink: a request is an FE02 write
     int ticks = 0;
     void tick(uint32_t) override { ++ticks; }
+    bool haveReply = false;
+    uint32_t replyAt = 0;
     bool requestStatus() override {
         if (!writesStatus) return false;
         ev.push_back({'R', now, 0});
+        haveReply = true;  // the reply arrives immediately in this model
+        replyAt = now;
         return true;
+    }
+    uint32_t statusAgeMs() const override {
+        if (!writesStatus) return 0;
+        return haveReply ? now - replyAt : UINT32_MAX;
     }
     int count(char k) const {
         int n = 0;
@@ -203,19 +211,75 @@ void test_gate_status_request_shares_the_gap_with_commands(void) {
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(kGap, f.ev[1].t - f.ev[0].t);
 }
 
-void test_gate_status_request_outranks_queued_command_but_not_stop(void) {
+void test_gate_queued_command_outranks_status_request(void) {
     FakeBelt f;
     f.writesStatus = true;
     belt::BeltGate g(f, kGap);
     tickAt(g, f, 0);
+    f.haveReply = true; f.replyAt = 0;   // fresh enough to merely be "owed"
     g.setSpeed(30);
-    pollOnce(g);
-    tickAt(g, f, 20);
-    TEST_ASSERT_EQUAL('R', f.ev[0].kind);   // poll first, speed waits a gap
-    g.stop();
-    for (uint32_t t = 40; t <= 1200; t += 20) tickAt(g, f, t);
+    tickAt(g, f, 2000);
+    f.now = 2000;
+    pollOnce(g);                         // age 2000: refresh owed, not urgent
+    tickAt(g, f, 2020);
+    TEST_ASSERT_EQUAL('V', f.ev[0].kind);          // command first
+    for (uint32_t t = 2040; t <= 3200; t += 20) tickAt(g, f, t);
     TEST_ASSERT_EQUAL_size_t(2, f.ev.size());
-    TEST_ASSERT_EQUAL('P', f.ev[1].kind);   // stop; the speed was discarded
+    TEST_ASSERT_EQUAL('R', f.ev[1].kind);          // request next gap
+}
+
+// Steady state, as main.cpp drives it: tick every 20 ms, poll every 1000 ms,
+// and a fake whose status request really is an FE02 write (SimBelt's is not).
+// The single-poll tests could not see a request that starves every command.
+static void runSteady(belt::BeltGate& g, FakeBelt& f, bool commandEverySecond,
+                      uint32_t speedAtMs) {
+    uint8_t v = 30;
+    for (uint32_t t = 0; t <= 12000; t += 20) {
+        tickAt(g, f, t);
+        if (t % 1000 == 0) pollOnce(g);
+        if (commandEverySecond ? (t % 1000 == 500) : (t == speedAtMs)) g.setSpeed(v += 1);
+    }
+}
+
+static void assertSpaced(const FakeBelt& f) {
+    for (size_t i = 1; i < f.ev.size(); ++i)
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT32(kGap, f.ev[i].t - f.ev[i - 1].t);
+}
+
+void test_gate_steady_state_polling_does_not_starve_commands(void) {
+    FakeBelt f;
+    f.writesStatus = true;
+    belt::BeltGate g(f, kGap);
+    runSteady(g, f, false, 4500);
+    TEST_ASSERT_EQUAL_INT(1, f.count('V'));           // the speed reached the belt
+    for (auto& e : f.ev)
+        if (e.kind == 'V') {
+            TEST_ASSERT_GREATER_OR_EQUAL_UINT32(4500, e.t);
+            TEST_ASSERT_LESS_THAN_UINT32(4500 + 1100, e.t);
+        }
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(4, f.count('R'));  // and status kept flowing
+    assertSpaced(f);
+}
+
+void test_gate_constant_commands_cannot_starve_status_forever(void) {
+    FakeBelt f;
+    f.writesStatus = true;
+    belt::BeltGate g(f, kGap);
+    runSteady(g, f, true, 0);
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(3, f.count('V'));
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(2, f.count('R'));
+    assertSpaced(f);
+}
+
+void test_gate_stop_outranks_status_request(void) {
+    FakeBelt f;
+    f.writesStatus = true;
+    belt::BeltGate g(f, kGap);
+    tickAt(g, f, 0);
+    pollOnce(g);                  // no reply yet: urgent
+    g.stop();
+    tickAt(g, f, 20);
+    TEST_ASSERT_EQUAL('P', f.ev[0].kind);
 }
 
 void test_gate_stop_always_writes_even_when_last_poll_showed_idle(void) {

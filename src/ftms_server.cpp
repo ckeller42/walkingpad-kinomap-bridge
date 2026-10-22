@@ -1,5 +1,7 @@
 #include "ftms_server.h"
 
+#include "logsink.h"
+#include <Arduino.h>
 #include <NimBLEDevice.h>
 
 namespace {
@@ -91,15 +93,38 @@ bool FtmsServer::phoneConnected() const { return gServerCb.connected; }
 
 void FtmsServer::handleControlPointWrite(const uint8_t* data, size_t len) {
     ftms::CpRequest req = ftms::parseControlPoint(data, len);
-    if (!req.valid) return;
 
-    if (req.op == ftms::CpOp::SetTargetSpeed) {
-        if (onTarget_) onTarget_(req.centiKmh);
-    } else if (onControlOp_) {
-        onControlOp_(req.op);
+    // One line per write, raw bytes (not the mapped CpOp): "cp op=0x03 len=3 payload=2c 01".
+    if (len == 0 || data == nullptr) {
+        cpEmpty_ = cpEmpty_ + 1;
+        Serial.println("cp op=none len=0");
+    } else {
+        cpCount_[data[0]] = cpCount_[data[0]] + 1;
+        char pl[3 * 16 + 4];
+        size_t n = 0;
+        const size_t shown = (len - 1 < 16) ? len - 1 : 16;
+        for (size_t i = 0; i < shown; ++i) n += snprintf(pl + n, sizeof pl - n, "%s%02x", i ? " " : "", data[1 + i]);
+        if (len - 1 > shown) snprintf(pl + n, sizeof pl - n, "...");
+        if (len > 1) Serial.printf("cp op=0x%02x len=%u payload=%s%s\n", data[0], (unsigned)len, pl, req.valid ? "" : " (invalid)");
+        else Serial.printf("cp op=0x%02x len=1%s\n", data[0], req.valid ? "" : " (invalid)");
+    }
+    if (data && len) logsink::hex("cp", data, len);
+
+    // An undecodable write changes nothing, but it is still answered below:
+    // the client is owed an indication for every write it makes.
+    if (!req.valid) logsink::line("cp invalid");
+
+    if (req.valid) {
+        if (req.op == ftms::CpOp::SetTargetSpeed) {
+            if (onTarget_) onTarget_(req.centiKmh);
+        } else if (onControlOp_) {
+            onControlOp_(req.op);
+        }
     }
 
-    // Always Success, echoing the raw opcode: an FTMS error makes Kinomap retry.
-    ftms::Buf resp = ftms::controlPointSuccess(req.rawOp);
-    controlPoint_->indicate(resp.bytes, resp.len);
+    // Always Success, echoing the raw opcode: an FTMS error makes Kinomap
+    // retry in a loop. A zero-length write has no opcode to echo, and
+    // controlPointAck() returns an empty buffer for it.
+    ftms::Buf resp = ftms::controlPointAck(req);
+    if (controlPoint_ && resp.len) controlPoint_->indicate(resp.bytes, resp.len);
 }

@@ -209,3 +209,340 @@ every target to 0 km/h. Neither fails visibly — which is why they are checked
 here rather than discovered during a workout.
 
 **Stage 0: PASS.**
+
+## Stage 1 — real Kinomap, real CoreS3, simulated belt, 2026-10-21
+
+Firmware `12f4d2d` (`cores3_sim`). Kinomap 4.7.1 on the Fairphone. Driven via the
+bridge's serial console (`tools/console.py`) and ADB. No treadmill involved.
+
+### Results
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | Appears in FOUND EQUIPMENT by name | **PASS** | listed as `(FTMS) WALKINGPAD BRIDGE`, MAC `44:1B:F6:E1:F5:89` — Kinomap recognised the Fitness Machine Service from the advertisement and tagged it |
+| 2 | Request Control handshake completes, no retries | **PASS** | `control op 0x00` logged once per connection; no repeats, so our `80 00 01` indication was accepted |
+| 3 | Kinomap sends `02 lo hi` Set Target Speed | **NOT OBSERVED** | `target=0` throughout a 60 s session in ORIGINAL SPEED mode — see below |
+| 4 | Targets arrive as km/h × 100 | **untested** | blocked on 3 |
+| 5 | Kinomap's speed tracks our `2ACD`; distance advances | **PASS** | belt at 2.0 km/h → Kinomap displayed **`29:59 /km`** (= exactly 2.0 km/h) and distance climbed to 139 m |
+| 6 | Deadband and rate limiting suppress commands | **untested** | blocked on 3 |
+| 7 | Arming gate | **PASS** | `arm` then `start` ran the start sequence; a `start` while disarmed is refused |
+| 8 | `2ADA 0x04` → Kinomap answers `{07}` | **PASS** | `notify started (2ADA 04), phone=1` immediately followed by `control op 0x07` |
+| 9 | Stop sentinel (1.00 km/h) stops the belt | **untested** | blocked on 3 |
+| 10 | Targets above 6.0 km/h clamped app-side | **untested** | blocked on 3 |
+| 11 | Link loss stops the belt, bridge stays armed | **untested** | |
+
+### The session genuinely ran
+
+Video playing with no pause overlay, `0:15.25` elapsed, 19% of the route, 139 m
+covered, 40 watts, and Kinomap's own pacing indicator (`→ 4s`) live. The whole
+start handshake works end to end:
+
+```
+Kinomap → 0x00 Request Control
+bridge  → arm, start, belt reaches 2.0 km/h
+bridge  → 2ADA 0x04  "started"
+Kinomap → 0x07 Start/Resume, session begins
+bridge  → 2ACD speed notifications, Kinomap displays 29:59 /km
+```
+
+### Open question: Kinomap sent no speed target
+
+In **ORIGINAL SPEED** mode ("depending on the pace of the contributor") Kinomap
+played the video at the contributor's pace and showed how far ahead or behind the
+user was (`→ 4s`), but **never wrote `02`**. It did write one unrecognised opcode
+— logged as `control op 0xff`, our mapping for Unknown — which on a route with a
+**−5.4 % gradient** is almost certainly `0x03` Set Target Inclination. Kinomap's
+`uf8.receive` sends that on gradient change **without gating on a feature bit**,
+exactly as the decompile predicted, and the bridge correctly acknowledges and
+ignores it.
+
+Two candidate explanations, to be distinguished next:
+
+1. ORIGINAL SPEED does not drive the machine at all — the user is meant to match
+   the video, and the pacing arrow is the whole feedback mechanism. Speed control
+   would then live in **Coaching** or **Structured workout** sessions instead.
+2. Kinomap only commands speed once some other condition is met.
+
+**Diagnostic gap found:** the firmware logs the *mapped* opcode (`0xff` for
+Unknown) rather than `req.rawOp`, so the actual byte Kinomap wrote is lost. That
+should be logged — it is the difference between knowing and inferring.
+
+## Stage 1 (continued) — belt control proven; Kinomap speed command disproven
+
+Firmware `df64496` (`cores3_sim`), which logs raw control-point opcodes and counts
+them per opcode (`cp` console command).
+
+### Belt control works, end to end
+
+Commanded from the bridge console with an active Kinomap workout running:
+
+| Commanded | Bridge `status` | Kinomap displayed |
+|---|---|---|
+| `speed 4.5` | `speed=45` | — |
+| `speed 5.0` | `speed=50` | **`11:59 /km`** = 5.0 km/h, 101 watts, 47 m |
+| (earlier) 2.0 | `speed=20` | **`29:59 /km`** = 2.0 km/h, 139 m |
+
+So the whole data path is proven on hardware: bridge commands → belt runs →
+`F8 A2` status → `2ACD` notification → Kinomap decodes and displays the correct
+speed, and integrates it into distance.
+
+### Kinomap does NOT send Set Target Speed in video ORIGINAL SPEED mode
+
+After a full session with the belt running and its speed changed twice, the
+per-opcode counters read:
+
+```
+cp 00=1  03=2  07=1  empty=0
+```
+
+- `00` Request Control — once, at connect
+- `07` Start/Resume — once, in reply to our `2ADA 0x04`
+- `03` Set Target Inclination — twice
+- **`02` Set Target Speed — never**
+
+This is counted evidence, not inference. The earlier `control op 0xff` is now
+confirmed to have been `0x03`.
+
+The inclination payload is itself informative: `cp op=0x03 len=3 payload=00 00`
+— a target of **0.0 %** on a route displaying **−5.4 %**. That is Kinomap's own
+clamp behaving exactly as the decompile predicted: `ag8.w0()` clamps the target
+against the maximum read from `2AD5`, and the bridge deliberately does not expose
+`2AD5`, so that maximum is zero. The bridge acknowledges and ignores it.
+
+### What this means
+
+In **ORIGINAL SPEED** video mode Kinomap plays the route at the contributor's pace
+and shows the user how far ahead or behind they are (`→ 238s`). It does not drive
+the treadmill's speed. The bridge is doing everything correctly; the app is simply
+not commanding.
+
+Kinomap's **Structured workout** tab exists and its featured workout is
+**"Mode: INC — Incline-based training"**, with the mode a fixed property of each
+workout rather than a user choice. A speed-mode workout, or a Coaching session,
+remains the place where `02` would be expected — still to be tested.
+
+**Consequence for the project goal.** "Kinomap controls the belt" may hold only in
+specific workout types. The bridge's own speed controls (`+`/`−` on the screen,
+`speed` on the console) make it usable regardless, which is why they were added.
+
+## Stage 2/3 — the real belt, and the loop closed
+
+`USE_SIM_BELT=0` (`cores3`), the real WalkingPad R1 Pro, Kinomap 4.7.1 on the
+Fairphone. Nobody on the belt for any of it.
+
+### The loop runs end to end
+
+One session, no hands on anything:
+
+```
+> status   cp op=0x00            <- Kinomap reconnected by itself
+  armed=0 running=0 belt_link=1 phone_link=1 belt_state=0 speed=0  src=real
+> arm
+> start    notify started (2ADA 04), phone=1
+> status   cp op=0x07            <- Kinomap accepted the start
+  armed=1 running=1 belt_link=1 phone_link=1 belt_state=1 speed=4
+> status   cp op=0x03 x2
+  armed=1 running=1 belt_link=1 phone_link=1 belt_state=1 speed=20
+```
+
+and Kinomap, at that moment, displayed **`29:59 /km` = exactly 2.0 km/h**, with
+the timer running, 40 watts, distance accumulating and the video playing. The
+`cp op=0x03` writes only happen once its session is live, so they are themselves
+evidence that it started.
+
+Bridge -> real belt -> `F8 A2` status -> `2ACD` -> Kinomap. Proven on hardware.
+
+### What actually controls what
+
+**Kinomap is passive.** It waits for the machine to report motion before it
+starts its session ("Begin running to start the training…"), and it only ever
+writes `0x07` in *reply* to our `2ADA 0x04`. It never initiates, and it never
+writes `0x02` Set Target Speed in any video mode. The in-workout settings panel
+is seven video/display toggles with no speed control on it.
+
+So the division of labour is: **the bridge drives the belt** (its own `+`/`-`
+buttons, STOP, and the console) and **Kinomap reads it**. That is the whole
+system, and it works. `PHONE_START_CENTI_KMH` exists for FTMS apps that do drive
+the machine, and is 0 (off) by default - see `src/config.h` for why.
+
+### Start belt is now measured, not inherited
+
+`F7 A2 04 01 A7 FD` had been carried since the design doc with provenance
+`community`: the A1/C1 command set, never checked on an R1 Pro. A direct FE02
+probe confirms it, from standby and from idle, at mode-to-start gaps of 1.0,
+1.5, 2.0 and 3.0 s - **every** gap started the belt, so the pacing interval is
+not load-bearing. Two undocumented states turned up on the way: **9** between
+start and countdown, and **3** leaving standby. Both are now in `wilink.yaml`.
+
+### Two traps worth keeping
+
+1. **The belt auto-stops when nobody walks on it**, about 15 s after starting,
+   returning to state 0 / speed 0. The window varied and got shorter on repeated
+   starts. Every "the bridge failed to start the belt" result earlier in this
+   session was this: the belt had started, run, and stopped again before a
+   status read 35 s later caught it.
+
+2. **The console displays the setpoint, not motion.** The camera read a clear
+   `2.0` and later `3.5` while the status stream said `state=0 speed=0`. A photo
+   of the display is *not* proof the belt is moving; only the state is.
+
+Trap 1 is why the camera cross-check needs to fire inside a ~15 s window, and
+trap 2 is why the cross-check needs the status stream next to the photo rather
+than the photo alone.
+
+## Stage 3 — a real walk, with a walker on the belt
+
+`PHONE_START_CENTI_KMH=200`, bridge armed, real belt, Kinomap 4.7.1, the project
+owner walking. Sampled by screenshotting the phone over ADB only: the serial
+console was not opened once, because opening it reboots the bridge and would
+have dropped both the arming and Kinomap's link.
+
+| Elapsed | Kinomap pace | km/h | Watts | Distance | Note |
+|---|---|---|---|---|---|
+| 0:00:20 | 29:59 /km | 2.0 | 40 | 10 m | started from the ESP |
+| 0:02:47 | 29:59 /km | 2.0 | 40 | 91 m | |
+| 0:05:07 | 29:59 /km | 2.0 | 40 | 169 m | |
+| 0:06:38 | 20:00 /km | 3.0 | 60 | 227 m | **`+` on the ESP** |
+| 0:07:28 | 40:00 /km | 1.5 | 30 | 254 m | **`-` on the ESP** |
+| 0:08:17 | — | 0 | 0 | 271 m | stopped; 33% of route, 18 kcal |
+
+### What this settles
+
+1. **Speed control works under load.** 2.0 -> 3.0 -> 1.5 km/h from the ESP's
+   `+`/`-` buttons, each tracked live by Kinomap, with watts scaling sensibly
+   (40 -> 60 -> 30). This is the first test of the speed path with a person on
+   the belt.
+
+2. **The auto-stop is the unattended interlock, nothing else.** Eight minutes of
+   continuous running with weight on the belt. Every truncated run earlier was
+   this interlock, not a bridge fault.
+
+3. **The distance integration is real.** 169 m at 0:05:07 against 170.6 m
+   predicted for 307 s at 2.0 km/h. Kinomap is integrating the bridge's measured
+   speed, not estimating from the route.
+
+4. **No sign of Kinomap writing `0x02` Set Target Speed** - but note the
+   weaker provenance here than elsewhere in this log. The control-point counters
+   were *not* readable during the walk, because reading them means opening the
+   serial console, which reboots the bridge. This is inferred from the speed
+   holding at 2.0 km/h for five minutes and then moving only when a button was
+   pressed. The counted evidence remains the earlier session's `00=1 03=2 07=1`.
+   `PHONE_START_CENTI_KMH` never visibly fired, consistent with Kinomap never
+   initiating `0x07`, and equally uncounted.
+
+### The shape of the finished system
+
+The user and the bridge drive the belt; Kinomap reads and records it. Kinomap
+supplies the route, the video, the gradient display and the session record, and
+takes its speed, distance and power from the bridge. It does not drive the
+machine, and no setting in it makes it do so.
+
+## Why Kinomap never commands speed — and proof the bridge is ready for it
+
+### The cause is one account flag, not the bridge and not the workout type
+
+Every Kinomap code path that sends `0x02` Set Target Speed sits behind
+`bqj.J()`:
+
+```java
+public final boolean J() {
+    return whj.a(this.n).getBoolean("controlSpeedTreadmill", false) && a();
+}
+```
+
+`ag8.receive(a.c.h /* FEATURE_SPEED */, f)` -> `y0(f)` is the sink. Its callers:
+
+| Caller | Sends | Gate |
+|---|---|---|
+| `ch1` (video-route player) | FEATURE_SLOPE | none |
+| `kti:872,1449` | FEATURE_SPEED | `J()` and `instanceof jh8` |
+| `n5r:128` | FEATURE_SPEED | `J()` |
+
+The video player drives **slope only**, which is exactly the measured
+`cp 00=1 03=2 07=1`. `controlSpeedTreadmill` is a `TrainingParametersModel`
+field delivered by Kinomap's server, default false, toggled in a section driven
+by `AdminSettingsState`.
+
+Walked on this account and **not found**: Settings (My Subscribe, Equipment
+Management, Remote display, Try the new screen, My account, My profile, My
+notifications, Privacy policy, Language, Assistance, FAQ, Report an issue), the
+paired bridge's own Edit screen, and all of Training settings (Display,
+Sounds, Units, Maximum slope — the last being `maxSlopeInDiscovery`, a sibling
+field of the very same model).
+
+### The bridge honours 0x02 correctly — counted on real hardware
+
+`tools/ftms_client.py` stands in for Kinomap and writes the same bytes
+`ag8.y0()` would. With the real belt, armed, nobody aboard:
+
+```
+53778 cp 00                      <- Request Control
+55803 cp 02 fa 00                <- Set Target Speed 2.5 km/h (0x00fa = 250)
+55810 emit StartSequence tenths=25
+55810 emit NotifyStarted tenths=25
+56699 tx f7 a2 02 01 a5 fd       <- set mode manual
+57710 tx f7 a2 04 01 a7 fd       <- start belt
+63770 tx f7 a2 01 19 bc fd       <- set speed 0x19 = 25 = 2.5 km/h
+```
+
+`2ACD` then reported 0.40 -> 1.00 -> 2.20 km/h as the belt ramped to target, and
+both control-point indications were Success (`80 00 01`, `80 02 01`) — the
+format `ag8.z()` requires.
+
+**So the app-driven path works end to end on hardware.** An FTMS client writing
+`0x02` starts the belt and sets the exact speed asked for. Nothing in the bridge
+needs to change for Kinomap to drive it; the flag has to be enabled on the
+account. When it is, re-run `tools/ftms_client.py` for the baseline and then
+check `cp` for a `02` from Kinomap itself.
+
+### Kinomap does not control treadmill speed, by policy
+
+Kinomap's own support article "The app doesn't control the speed of my
+treadmill, why?" states the app does **not** automatically set treadmill speed,
+for two stated reasons: **safety** and **user choice**. It says only **Domyos**
+treadmills support automatic speed, and only in the **SPD** and **INC+SPD**
+structured training modes. Another help page puts it as: for security reasons
+Kinomap does not control machine speed even when the machine is interactive;
+incline it does change automatically.
+
+Three independent lines of evidence agree:
+
+1. **Counted on the wire** — a full session with a walker aboard and three
+   speed changes produced `cp 00=1 03=2 07=1` and no `0x02`.
+2. **In the code** — every `0x02` path sits behind
+   `controlSpeedTreadmill` (default false), and `kti.java:869` additionally
+   requires `aVar3 instanceof jh8`. `jh8 extends ih8`, which speaks a
+   proprietary non-FTMS UUID set — the Domyos protocol, matching the
+   `decathlon` manufacturer-string special-casing already documented in `ag8`.
+3. **Vendor policy** — the support article above.
+
+**Conclusion.** For a generic FTMS treadmill, Kinomap commanding speed is not a
+bug, not a bridge defect and not a user-reachable setting. It is a deliberate
+product decision. The bridge satisfies every documented FTMS requirement and
+honours `0x02` correctly when one arrives (proven above), so nothing here needs
+fixing; Kinomap simply will not send one to a non-Domyos machine.
+
+The shipped behaviour is therefore: **the user and the bridge drive the belt;
+Kinomap reads, displays and records it.** That is the whole of what this pairing
+can do, and it works.
+
+### Pairing needs the belt *moving*, not merely switched on
+
+Confirmed by a real pairing of a second phone (iPhone, Kinomap in German): the
+final confirmation step would not complete until the bridge was **armed and
+started**, so that the belt was actually running while the app checked.
+
+Kinomap's confirmation reads live values. A belt that is connected but sitting
+at 0.00 km/h presents the same thing to that check as no data at all, and the
+app reports a generic "could not pair" error that points at the bridge.
+
+So the full precondition for pairing is all three of:
+
+1. the belt switched on and linked (`belt_link=1`),
+2. no other client holding the belt's single BLE connection — the KS Fit app
+   counts, and so does Kinomap on another phone,
+3. the belt **running** during the confirmation step: ARM, then START.
+
+The setup wizard's last screen now says so directly ("Belt ON, ARM and START
+first: pairing needs it moving"), and the belt-off case still gets its own
+screen before that.

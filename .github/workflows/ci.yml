@@ -47,3 +47,26 @@ jobs:
             exit 1
           fi
           echo "no tracked *.apk/*.dex/*.so/*.bin or sources/ tree"
+  # Doxygen feeds Breathe, which feeds Sphinx: the API pages are generated from
+  # the headers so they cannot drift from the code. Coverage is a ratchet, not a
+  # gate - the undocumented-symbol count may fall but never rise - because a gate
+  # that fails until every module is converted just gets switched off.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: {python-version: "3.12"}
+      - run: sudo apt-get update && sudo apt-get install -y doxygen
+      - run: pip install -r docs/requirements.txt
+      - name: doxygen (XML for breathe, HTML as a convenience)
+        run: mkdir -p build/doxygen && doxygen Doxyfile
+      - name: undocumented symbols must not increase
+        run: python3 tools/doxygen_ratchet.py build/doxygen/warnings.txt .doxygen-baseline
+      - name: sphinx, warnings are errors
+        run: sphinx-build -b html -W --keep-going docs build/sphinx
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: docs-site
+          path: build/sphinx

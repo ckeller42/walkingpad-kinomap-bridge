@@ -239,6 +239,9 @@ int main(int, char**) {
     RUN_TEST(test_gate_stop_always_writes_even_when_last_poll_showed_idle);
     RUN_TEST(test_gate_forwards_tick_even_inside_the_gap);
     RUN_TEST(test_gate_status_request_shares_the_gap_with_commands);
-    RUN_TEST(test_gate_status_request_outranks_queued_command_but_not_stop);
+    RUN_TEST(test_gate_queued_command_outranks_status_request);
+    RUN_TEST(test_gate_steady_state_polling_does_not_starve_commands);
+    RUN_TEST(test_gate_constant_commands_cannot_starve_status_forever);
+    RUN_TEST(test_gate_stop_outranks_status_request);
     return UNITY_END();
 }

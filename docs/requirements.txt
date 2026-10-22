@@ -1,0 +1,11 @@
+# Documentation build. Pinned so a CI run and a local build agree.
+#
+#   doxygen Doxyfile                      # writes build/doxygen/xml
+#   sphinx-build -b html docs build/sphinx
+sphinx==9.1.1
+breathe==5.1.0
+myst-parser==5.1.0
+furo==2025.12.19
+# myst's "linkify" extension needs this; without it the build aborts rather
+# than degrading, so it is a hard dependency, not an extra.
+linkify-it-py==2.0.3
