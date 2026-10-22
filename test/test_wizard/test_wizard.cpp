@@ -129,13 +129,14 @@ void test_last_step_states_kinomap_waits_for_movement(void) {
     TEST_ASSERT_EQUAL(Step::Done, w.step());
     Screen s = w.screen(in);
     TEST_ASSERT_NOT_NULL(strstr(s.action[1], "START"));
-    // Measured: Kinomap never initiates FTMS StartResume, so the last screen
-    // must say the user starts the belt, not the app.
-    TEST_ASSERT_NOT_NULL(strstr(s.detail[2], "never starts"));
     // Kinomap's pairing check reads live values, so a stopped belt reads the
     // same as no belt. The screen has to say to start it, not just switch it on.
     TEST_ASSERT_NOT_NULL(strstr(s.detail[0], "ARM and START"));
     TEST_ASSERT_NOT_NULL(strstr(s.detail[1], "moving"));
+    // An empty belt auto-stops about 15 s after starting, so pairing fails
+    // unless someone stands on it; and re-running setup lives in the gear menu.
+    TEST_ASSERT_NOT_NULL(strstr(s.detail[2], "15 s"));
+    TEST_ASSERT_NOT_NULL(strstr(s.detail[3], "gear"));
 }
 
 // A belt left off makes Kinomap fail to pair with an error that blames the

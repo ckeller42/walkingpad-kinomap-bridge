@@ -3,7 +3,7 @@
 [![CI](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/ci.yml)
 [![firmware](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/firmware.yml/badge.svg)](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/firmware.yml)
 [![docs](https://img.shields.io/badge/docs-sphinx-blue)](docs/index.md)
-[![tests](https://img.shields.io/badge/tests-197%20host-brightgreen)](test)
+[![tests](https://img.shields.io/badge/tests-207%20host-brightgreen)](test)
 [![protocol](https://img.shields.io/badge/protocol-WiLink%20%2B%20FTMS-orange)](docs/protocol/reference.md)
 
 **Kinomap does not support the KingSmith WalkingPad R1 Pro. This makes it work
@@ -85,7 +85,7 @@ unless the user has armed the bridge on the device.
 ## Getting started
 
 ```sh
-pio test -e native      # 197 host tests, no hardware needed
+pio test -e native      # 207 host tests, no hardware needed
 pio run -e cores3       # real belt (default)
 pio run -e cores3_sim   # simulated belt, for development without the treadmill
 pio run -e cores3 -t upload --upload-port /dev/cu.usbmodem101
@@ -121,7 +121,7 @@ doxygen Doxyfile && sphinx-build -b html docs build/sphinx
 ## Design
 
 Protocol and policy live in Arduino-free `lib/` modules with host tests; BLE,
-display and Wi-Fi adapters live in `src/`. That split is what makes 197 tests
+display and Wi-Fi adapters live in `src/`. That split is what makes 207 tests
 runnable with no hardware attached, and it is worth preserving: put the
 decision in `lib/` returning a value, and the effect in `src/`.
 

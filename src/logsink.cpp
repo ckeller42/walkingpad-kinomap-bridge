@@ -32,8 +32,11 @@ uint32_t dropped = 0;
 
 bool sdReady = false;
 bool wifiTried = false;
+uint32_t wifiBeginMs = 0;      // when the last setWifi() began a connect
+bool wifiRequested = false;    // a connect is outstanding since wifiBeginMs
+constexpr uint32_t kWifiConnectMs = 15000;
 bool udpStarted = false;
-constexpr uint8_t kMaxScan = 6;
+constexpr uint8_t kMaxScan = 5;
 char scanNames[kMaxScan][33] = {};
 uint8_t scanFound = 0;
 bool scanBusy = false;
@@ -90,12 +93,17 @@ void startWifi() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, pass);
     wifiTried = true;
+    // Same bookkeeping as setWifi(): the row reads "connecting..." rather
+    // than "offline" while this attempt is outstanding.
+    wifiBeginMs = millis();
+    wifiRequested = true;
 }
 
 void stopWifi() {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     wifiTried = udpStarted = false;
+    wifiRequested = false;  // nothing outstanding; a later drop is not a failed attempt
 }
 
 }  // namespace
@@ -253,9 +261,26 @@ void setWifi(const char* ssid, const char* pass) {
         WiFi.mode(WIFI_STA);
         WiFi.begin(ssid, pass);
         wifiTried = true;
+        wifiBeginMs = millis();
+        wifiRequested = true;
     } else {
         wifiTried = false;
+        wifiRequested = false;
     }
+}
+
+bool wifiConnecting() {
+    // A connect that succeeded is finished: a later AP drop is not a failure
+    // of that request, so it must not read as "wrong password?".
+    if (WiFi.status() == WL_CONNECTED) wifiRequested = false;
+    return wifiRequested && WiFi.status() != WL_CONNECTED &&
+           WiFi.status() != WL_CONNECT_FAILED && millis() - wifiBeginMs < kWifiConnectMs;
+}
+
+bool wifiFailed() {
+    if (WiFi.status() == WL_CONNECTED) wifiRequested = false;
+    if (!wifiRequested) return false;
+    return WiFi.status() == WL_CONNECT_FAILED || millis() - wifiBeginMs >= kWifiConnectMs;
 }
 
 const char* storedSsid() {

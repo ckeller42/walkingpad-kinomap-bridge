@@ -27,7 +27,7 @@ void DevMenu::open() {
     step_ = Step::Root;
     ssid_[0] = typed_[0] = 0;
     shift_ = false;
-    numeric_ = false;
+    page_ = Page::Letters;
 }
 
 Screen DevMenu::screen(const Inputs& in) const {
@@ -50,6 +50,8 @@ Screen DevMenu::screen(const Inputs& in) const {
 
             set(s.rows[2].label, "Wi-Fi");
             if (in.wifiUp) set(s.rows[2].value, in.ip);
+            else if (in.wifiConnecting) set(s.rows[2].value, "connecting...");
+            else if (in.wifiFailed) set(s.rows[2].value, "wrong password?");
             else if (in.storedSsid && in.storedSsid[0]) set(s.rows[2].value, "offline");
             else set(s.rows[2].value, "not set");
             s.rows[2].enabled = in.devOn;
@@ -58,7 +60,9 @@ Screen DevMenu::screen(const Inputs& in) const {
             set(s.rows[3].value, in.storedSsid && in.storedSsid[0] ? "forget" : "");
             s.rows[3].enabled = in.devOn && in.storedSsid && in.storedSsid[0];
 
-            s.rowCount = 4;
+            set(s.rows[4].label, "Re-run setup");  // works with dev mode off
+
+            s.rowCount = 5;
             break;
         }
         case Step::WifiScan: {
@@ -93,7 +97,7 @@ Screen DevMenu::screen(const Inputs& in) const {
             s.phase = 64;
             s.keyboard = true;
             s.shift = shift_;
-            s.numeric = numeric_;
+            s.page = page_;
             // set() already truncates to the field's capacity; the extra
             // buffer only added a second, narrower limit and a warning.
             set(s.prompt, ssid_);
@@ -115,6 +119,7 @@ Action DevMenu::tapRow(uint8_t row, const Inputs& in) {
                 case 1: return Action::ToggleUdp;
                 case 2: step_ = Step::WifiScan; return Action::StartScan;
                 case 3: return Action::ForgetWifi;
+                case 4: return Action::RerunSetup;
                 default: return Action::None;
             }
         case Step::WifiScan:
@@ -122,7 +127,7 @@ Action DevMenu::tapRow(uint8_t row, const Inputs& in) {
                 set(ssid_, in.networks[row]);
                 typed_[0] = 0;
                 shift_ = false;
-                numeric_ = false;
+                page_ = Page::Letters;
                 step_ = Step::WifiPass;
             }
             return Action::None;
@@ -167,6 +172,6 @@ void DevMenu::backspace() {
 
 void DevMenu::toggleShift() { shift_ = !shift_; }
 
-void DevMenu::toggleNumeric() { numeric_ = !numeric_; shift_ = false; }
+void DevMenu::setPage(Page p) { page_ = p; shift_ = false; }
 
 }  // namespace devmenu

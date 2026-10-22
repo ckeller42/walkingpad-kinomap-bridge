@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 #include <unity.h>
 
@@ -24,7 +25,7 @@ void test_root_lists_the_switches(void) {
     Inputs in = base(false);
     Screen s = m.screen(in);
     TEST_ASSERT_EQUAL_STRING("DEVELOPER", s.title);
-    TEST_ASSERT_EQUAL(4, s.rowCount);
+    TEST_ASSERT_EQUAL(5, s.rowCount);
     TEST_ASSERT_EQUAL_STRING("Developer mode", s.rows[0].label);
     TEST_ASSERT_EQUAL_STRING("OFF", s.rows[0].value);
 }
@@ -152,6 +153,46 @@ void test_shift_applies_to_one_character(void) {
     TEST_ASSERT_FALSE(m.shift());
 }
 
+void test_keyboard_reaches_every_printable_ascii(void) {
+    bool seen[128] = {};
+    for (uint8_t p = 0; p < 3; ++p)
+        for (uint8_t shift = 0; shift < 2; ++shift)
+            for (uint8_t r = 0; r < 3; ++r)
+                for (uint8_t c = 0; c < 10; ++c) {
+                    const Key k = keyAt((Page)p, shift != 0, r, c);
+                    if (k.kind == Key::Kind::Char) seen[(uint8_t)k.ch] = true;
+                    if (k.kind == Key::Kind::Space) seen[' '] = true;
+                }
+    for (int ch = 0x20; ch <= 0x7E; ++ch) {
+        char msg[32]; snprintf(msg, sizeof msg, "unreachable 0x%02X '%c'", ch, ch);
+        TEST_ASSERT_TRUE_MESSAGE(seen[ch], msg);
+    }
+}
+void test_every_page_has_del_and_space_in_the_same_place(void) {
+    for (uint8_t p = 0; p < 3; ++p) {
+        TEST_ASSERT_EQUAL(Key::Kind::Del, keyAt((Page)p, false, 1, 9).kind);
+        TEST_ASSERT_EQUAL(Key::Kind::Space, keyAt((Page)p, false, 2, 9).kind);
+    }
+}
+void test_page_keys_navigate(void) {
+    TEST_ASSERT_EQUAL(Key::Kind::ToSymbols1, keyAt(Page::Letters, false, 2, 8).kind);
+    TEST_ASSERT_EQUAL(Key::Kind::ToSymbols2, keyAt(Page::Symbols1, false, 2, 0).kind);
+    TEST_ASSERT_EQUAL(Key::Kind::ToLetters, keyAt(Page::Symbols1, false, 2, 8).kind);
+    TEST_ASSERT_EQUAL(Key::Kind::ToSymbols1, keyAt(Page::Symbols2, false, 2, 0).kind);
+}
+void test_shift_uppercases_letters_only(void) {
+    TEST_ASSERT_EQUAL_CHAR('Q', keyAt(Page::Letters, true, 0, 0).ch);
+    TEST_ASSERT_EQUAL_CHAR('1', keyAt(Page::Symbols1, true, 0, 0).ch);
+}
+void test_set_page_switches_page_and_clears_shift(void) {
+    DevMenu m;
+    m.open();
+    m.toggleShift();
+    m.setPage(Page::Symbols2);
+    TEST_ASSERT_EQUAL(Page::Symbols2, m.page());
+    TEST_ASSERT_FALSE(m.shift());
+}
+
 void test_back_navigates_out_without_connecting(void) {
     DevMenu m;
     m.open();
@@ -182,15 +223,55 @@ void test_forget_row_only_offered_when_a_network_is_stored(void) {
 
 // Every row the root screen offers must do something. A row that only
 // reported a mode nobody could change used to sit at index 4; the screen is
-// four rows now, and a tap past the end is ignored rather than wrapping.
-void test_root_offers_four_live_rows_and_ignores_taps_past_them(void) {
+// five rows now, and a tap past the end is ignored rather than wrapping.
+void test_root_offers_five_live_rows_and_ignores_taps_past_them(void) {
     DevMenu m;
     m.open();
     Inputs on = base(true);
     Screen s = m.screen(on);
-    TEST_ASSERT_EQUAL(4, s.rowCount);
-    TEST_ASSERT_EQUAL(Action::None, m.tapRow(4, on));
+    TEST_ASSERT_EQUAL(5, s.rowCount);
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(5, on));
     TEST_ASSERT_EQUAL(Step::Root, m.step());
+}
+
+void test_root_offers_rerun_setup_even_with_dev_off(void) {
+    DevMenu m; m.open();
+    Inputs in = base(false);
+    Screen s = m.screen(in);
+    TEST_ASSERT_EQUAL(5, s.rowCount);
+    TEST_ASSERT_EQUAL_STRING("Re-run setup", s.rows[4].label);
+    TEST_ASSERT_TRUE(s.rows[4].enabled);
+    TEST_ASSERT_EQUAL(Action::RerunSetup, m.tapRow(4, in));
+}
+void test_wifi_row_shows_connecting_then_failed(void) {
+    DevMenu m; m.open();
+    Inputs in = base(true); in.storedSsid = "Insel";
+    in.wifiConnecting = true;
+    TEST_ASSERT_EQUAL_STRING("connecting...", m.screen(in).rows[2].value);
+    in.wifiConnecting = false; in.wifiFailed = true;
+    TEST_ASSERT_EQUAL_STRING("wrong password?", m.screen(in).rows[2].value);
+    in.wifiFailed = false; in.wifiUp = true; in.ip = "192.168.178.96";
+    TEST_ASSERT_EQUAL_STRING("192.168.178.96", m.screen(in).rows[2].value);
+}
+void test_wifi_up_outranks_a_stale_failed_flag(void) {
+    DevMenu m; m.open();
+    Inputs in = base(true); in.storedSsid = "Insel";
+    in.wifiFailed = true; in.wifiUp = true; in.ip = "192.168.178.96";
+    TEST_ASSERT_EQUAL_STRING("192.168.178.96", m.screen(in).rows[2].value);
+}
+void test_blank_keys_are_where_the_layout_says_and_shift_is_letters_only(void) {
+    for (uint8_t c = 6; c <= 8; ++c)
+        TEST_ASSERT_EQUAL(Key::Kind::Blank, keyAt(Page::Symbols2, false, 1, c).kind);
+    for (uint8_t c = 1; c <= 7; ++c)
+        TEST_ASSERT_EQUAL(Key::Kind::Blank, keyAt(Page::Symbols2, false, 2, c).kind);
+    TEST_ASSERT_EQUAL(Key::Kind::Shift, keyAt(Page::Letters, false, 2, 0).kind);
+    for (uint8_t p = 1; p < 3; ++p)
+        for (uint8_t r = 0; r < 3; ++r)
+            for (uint8_t c = 0; c < 10; ++c)
+                TEST_ASSERT_NOT_EQUAL(Key::Kind::Shift, keyAt((Page)p, false, r, c).kind);
+}
+void test_scan_list_keeps_as_many_networks_as_it_shows(void) {
+    TEST_ASSERT_EQUAL(kMaxRows, kMaxNetworks);
 }
 
 void test_every_screen_has_a_title_and_a_left_button(void) {
@@ -242,9 +323,19 @@ int main(int, char**) {
     RUN_TEST(test_typing_a_password_and_submitting);
     RUN_TEST(test_overlong_password_is_refused_not_truncated);
     RUN_TEST(test_shift_applies_to_one_character);
+    RUN_TEST(test_keyboard_reaches_every_printable_ascii);
+    RUN_TEST(test_every_page_has_del_and_space_in_the_same_place);
+    RUN_TEST(test_page_keys_navigate);
+    RUN_TEST(test_shift_uppercases_letters_only);
+    RUN_TEST(test_set_page_switches_page_and_clears_shift);
     RUN_TEST(test_back_navigates_out_without_connecting);
     RUN_TEST(test_forget_row_only_offered_when_a_network_is_stored);
-    RUN_TEST(test_root_offers_four_live_rows_and_ignores_taps_past_them);
+    RUN_TEST(test_root_offers_five_live_rows_and_ignores_taps_past_them);
+    RUN_TEST(test_root_offers_rerun_setup_even_with_dev_off);
+    RUN_TEST(test_wifi_row_shows_connecting_then_failed);
+    RUN_TEST(test_wifi_up_outranks_a_stale_failed_flag);
+    RUN_TEST(test_blank_keys_are_where_the_layout_says_and_shift_is_letters_only);
+    RUN_TEST(test_scan_list_keeps_as_many_networks_as_it_shows);
     RUN_TEST(test_every_screen_has_a_title_and_a_left_button);
     RUN_TEST(test_screens_have_distinct_phases);
     return UNITY_END();

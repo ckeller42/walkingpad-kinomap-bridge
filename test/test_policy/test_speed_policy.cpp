@@ -271,5 +271,12 @@ int main(int, char**) {
     RUN_TEST(test_external_auto_while_running_mutes_and_keeps_running);
     RUN_TEST(test_disarm_in_auto_does_not_stop);
     RUN_TEST(test_request_mode_unknown_is_refused);
+    RUN_TEST(test_start_allowed_requires_armed_link_fresh_and_stopped);
+    RUN_TEST(test_start_allowed_false_while_running_or_auto);
+    RUN_TEST(test_left_button_arm_wins_over_everything);
+    RUN_TEST(test_left_button_wait_wins_over_start);
+    RUN_TEST(test_left_button_start_when_allowed);
+    RUN_TEST(test_left_button_disarm_otherwise);
+    RUN_TEST(test_left_button_follows_a_real_start_sequence);
     return UNITY_END();
 }

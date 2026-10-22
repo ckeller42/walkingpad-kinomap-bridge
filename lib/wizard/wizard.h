@@ -13,7 +13,7 @@
  * wizard can never strand anyone.
  *
  * It opens on first boot (no stored `setup_done` flag) and again whenever the
- * BELT indicator is tapped on the main screen, and it always leaves the bridge
+ * developer menu's "Re-run setup" row is chosen, and it always leaves the bridge
  * disarmed — finishing setup must not leave the belt commandable.
  */
 namespace wizard {
@@ -131,7 +131,7 @@ public:
      * @param sim True when a simulated belt is bound, which starts at
      *            Step::SimInfo and skips pairing; false starts at Step::Welcome.
      * @note Always restarts from the beginning, even if the wizard was part-way
-     *       through, so re-entering from the BELT indicator is predictable.
+     *       through, so re-entering from the gear menu's "Re-run setup" row is predictable.
      */
     void start(bool sim);
 

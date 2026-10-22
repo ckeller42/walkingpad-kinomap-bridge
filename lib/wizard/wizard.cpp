@@ -166,10 +166,10 @@ Screen Wizard::screen(const Inputs& in) const {
             // live values, and a belt sitting at 0.00 km/h looks the same to it
             // as no data at all. Belt merely ON is necessary but not
             // sufficient - it has to be moving while the app checks.
-            set(s.detail[0], "Belt ON, ARM and START first:");
-            set(s.detail[1], "pairing needs it moving.");
-            set(s.detail[2], "Kinomap never starts it.");
-            set(s.detail[3], "Re-run setup: tap BELT dot.");
+            set(s.detail[0], "ARM and START first: pairing");
+            set(s.detail[1], "needs it moving. Stand on it:");
+            set(s.detail[2], "empty, it stops after 15 s.");
+            set(s.detail[3], "Re-run setup: gear menu.");
             break;
     }
     if (sim_) s.phase += 1000;  // sim variants are different screens

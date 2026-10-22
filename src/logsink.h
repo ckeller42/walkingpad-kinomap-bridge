@@ -143,6 +143,19 @@ void setUdp(bool on);
 void setWifi(const char* ssid, const char* pass);
 
 /**
+ * @brief Whether a connect started by setWifi() is still within its window.
+ * @return True for up to 15 s after setWifi() while Wi-Fi is not yet associated.
+ */
+bool wifiConnecting();
+
+/**
+ * @brief Whether the last connect started by setWifi() has failed.
+ * @return True when the stack reports a failed connect, or 15 s passed without
+ *         association. False once connected; cleared by the next setWifi().
+ */
+bool wifiFailed();
+
+/**
  * @brief The network the bridge will associate with.
  * @return Its SSID, or "" when none is stored.
  */

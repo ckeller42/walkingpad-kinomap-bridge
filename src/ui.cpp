@@ -2,6 +2,7 @@
 
 #include <M5Unified.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "battery.h"
 #include "logsink.h"
@@ -16,10 +17,10 @@ constexpr int SPD_BTN_W = 72;     // "-" at x 0..71, "+" at x 248..319
 constexpr int SPD_BTN_Y0 = 44, SPD_BTN_Y1 = 140;
 constexpr int BADGE_X0 = 104, BADGE_X1 = 176;  // mode badge tap zone (y < SETUP_HIT_Y), carved out of the BELT strip
 constexpr int BADGE_CX = 140, BADGE_CY = 14;
-constexpr int SETUP_HIT_Y = 40;  // top strip: tap the BELT indicator to re-run setup
+constexpr int SETUP_HIT_Y = 40;  // top strip: the gear and the mode badge
 // The settings gear: a visible affordance in the top-right corner. The menu
 // used to be a hidden tap on the PHONE indicator, which nobody could find.
-constexpr int GEAR_W = 30;       // touch target width, from the right edge
+constexpr int GEAR_W = 44;       // touch target width, from the right edge
 constexpr int GEAR_CX = W - 16, GEAR_CY = 14, GEAR_R = 9;
 
 // Developer menu list: five rows between the title and the bottom bar.
@@ -36,14 +37,8 @@ constexpr int ROW_Y0 = 30, ROW_H = 30, ROW_N = 5;
 // keyboards do, buys 51 px rows (6.5 mm) instead of 32 px, and letters are
 // still one tap.
 constexpr int KB_Y0 = 30, KB_ROW_H = 51, KB_COLS = 10, KB_COL_W = W / KB_COLS;
-constexpr int KB_ROWS = 3;
-
-// Row 1 is nine letters then backspace; row 2 is shift, seven letters, the
-// page toggle and space. Hit testing and drawing read these same tables, so
-// they cannot disagree about what a key is.
-const char* const KB_LOWER[KB_ROWS] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
-const char* const KB_UPPER[KB_ROWS] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
-const char* const KB_NUM[KB_ROWS]   = {"1234567890", "!@#$%^&*()", "-_=+:/?"};
+constexpr int KB_ROWS = devmenu::kKeyRows;
+constexpr int KB_BAR_Y = 190;  // bottom bar starts here while the keyboard shows
 
 constexpr uint16_t BG = TFT_BLACK;
 constexpr uint16_t DIM = 0x7BEF;       // mid grey
@@ -97,19 +92,20 @@ void dot(lgfx::LovyanGFX& g, int cx, const char* label, bool up, bool sim = fals
 }
 
 // One half of the bottom bar. Falls back to a smaller font if the label is wide.
-void barButton(lgfx::LovyanGFX& g, int x, uint16_t bg, const char* label) {
+void barButton(lgfx::LovyanGFX& g, int x0, int width, uint16_t bg, const char* label) {
     const int bh = H - BAR_Y;
-    g.fillRect(x, BAR_Y, HALF, bh, bg);
+    g.fillRect(x0, BAR_Y, width, bh, bg);
     g.setTextDatum(middle_center);
     g.setTextColor(TFT_WHITE, bg);
     g.setFont(&fonts::FreeSansBold18pt7b);
-    if (g.textWidth(label) > HALF - 8) g.setFont(&fonts::FreeSansBold12pt7b);
-    g.drawString(label, x + HALF / 2, BAR_Y + bh / 2);
+    if (g.textWidth(label) > width - 8) g.setFont(&fonts::FreeSansBold12pt7b);
+    if (g.textWidth(label) > width - 8) g.setFont(&fonts::FreeSansBold9pt7b);
+    g.drawString(label, x0 + width / 2, BAR_Y + bh / 2);
 }
-void barDivider(lgfx::LovyanGFX& g) {
+void barDivider(lgfx::LovyanGFX& g, int split) {
     const int bh = H - BAR_Y;
-    g.drawFastVLine(HALF - 1, BAR_Y, bh, BG);
-    g.drawFastVLine(HALF, BAR_Y, bh, BG);
+    g.drawFastVLine(split - 1, BAR_Y, bh, BG);
+    g.drawFastVLine(split, BAR_Y, bh, BG);
 }
 
 // A compact battery gauge for the top-left corner: an outline with a fill bar
@@ -197,7 +193,9 @@ void Ui::poll() {
     // The developer menu owns the whole screen while it is open, so it is
     // tested first: otherwise a row tap would also read as a speed button.
     if (menuMode_) {
-        if (t.y >= HIT_Y) {
+        // The keys end at y 183; a slipped tap just below the bottom key row
+        // must not land on CONNECT/BACK, so the keyboard leaves a dead band.
+        if (t.y >= (menuKeyboard_ ? KB_BAR_Y : HIT_Y)) {
             (left ? wizL_ : wizR_) = true;  // the bottom bar is shared with the wizard
         } else if (menuKeyboard_) {
             pollKeyboard(t.x, t.y);
@@ -209,13 +207,13 @@ void Ui::poll() {
 
     if (t.y >= HIT_Y) {
         if (wizardMode_) (left ? wizL_ : wizR_) = true;
-        else (left ? armPressed_ : stopPressed_) = true;
+        else ((t.x < barSplit_) ? armPressed_ : stopPressed_) = true;
     } else if (!wizardMode_ && t.y < SETUP_HIT_Y) {
-        // The gear is a real, visible button and owns the right edge. The BELT
-        // indicator still re-runs setup, which the wizard's last screen says.
+        // The gear is a real, visible button and owns the right edge, then the
+        // badge; the rest of the strip is inert. Re-run setup lives in the gear
+        // menu, so a slight mis-tap beside the badge no longer opens the wizard.
         if (t.x >= W - GEAR_W) devTapped_ = true;
         else if (t.x >= BADGE_X0 && t.x < BADGE_X1) modeTapped_ = true;
-        else if (left) setupTapped_ = true;
     } else if (!wizardMode_ && t.y >= SPD_BTN_Y0 && t.y < SPD_BTN_Y1) {
         if (t.x < SPD_BTN_W) speedDown_ = true;
         else if (t.x >= W - SPD_BTN_W) speedUp_ = true;
@@ -223,31 +221,24 @@ void Ui::poll() {
 }
 
 // Maps a touch in the key grid to a character or an editing action. Mirrors
-// the layout drawn by renderDevMenu(); both read KB_LOWER / KB_UPPER.
+// the layout drawn by renderDevMenu(); both read devmenu::keyAt().
 void Ui::pollKeyboard(int x, int y) {
     if (y < KB_Y0) return;
     const int row = (y - KB_Y0) / KB_ROW_H;
     const int col = x / KB_COL_W;
     if (row < 0 || row >= KB_ROWS || col < 0 || col >= KB_COLS) return;
-    const char* const* map =
-        menuNumeric_ ? KB_NUM : (menuShift_ ? KB_UPPER : KB_LOWER);
 
-    switch (row) {
-        case 0:
-            keyChar_ = map[0][col];
-            break;
-        case 1:
-            if (col == KB_COLS - 1) keyBack_ = true;  // DEL
-            else keyChar_ = map[1][col];
-            break;
-        case 2:
-            if (col == 0) { if (menuNumeric_) keyNum_ = true; else keyShift_ = true; }
-            else if (col == KB_COLS - 2) keyNum_ = true;       // 123 / ABC
-            else if (col == KB_COLS - 1) keyChar_ = ' ';       // SP
-            else keyChar_ = map[2][col - 1];
-            break;
-        default:
-            break;
+    using Kind = devmenu::Key::Kind;
+    const devmenu::Key k = devmenu::keyAt(menuPage_, menuShift_, (uint8_t)row, (uint8_t)col);
+    switch (k.kind) {
+        case Kind::Char: keyChar_ = k.ch; break;
+        case Kind::Space: keyChar_ = ' '; break;
+        case Kind::Del: keyBack_ = true; break;
+        case Kind::Shift: keyShift_ = true; break;
+        case Kind::ToLetters: keyPage_ = (int)devmenu::Page::Letters + 1; break;
+        case Kind::ToSymbols1: keyPage_ = (int)devmenu::Page::Symbols1 + 1; break;
+        case Kind::ToSymbols2: keyPage_ = (int)devmenu::Page::Symbols2 + 1; break;
+        case Kind::Blank: break;
     }
 }
 
@@ -256,7 +247,6 @@ bool Ui::tookStop() { bool r = stopPressed_; stopPressed_ = false; return r; }
 bool Ui::tookSpeedUp() { bool r = speedUp_; speedUp_ = false; return r; }
 bool Ui::tookSpeedDown() { bool r = speedDown_; speedDown_ = false; return r; }
 bool Ui::tookModeTap() { bool r = modeTapped_; modeTapped_ = false; return r; }
-bool Ui::tookSetupTap() { bool r = setupTapped_; setupTapped_ = false; return r; }
 bool Ui::tookWizardLeft() { bool r = wizL_; wizL_ = false; return r; }
 bool Ui::tookWizardRight() { bool r = wizR_; wizR_ = false; return r; }
 int Ui::tookMenuRow() { int r = menuRow_; menuRow_ = -1; return r; }
@@ -264,7 +254,7 @@ bool Ui::tookDevTap() { bool r = devTapped_; devTapped_ = false; return r; }
 char Ui::tookKeyChar() { char r = keyChar_; keyChar_ = 0; return r; }
 bool Ui::tookKeyShift() { bool r = keyShift_; keyShift_ = false; return r; }
 bool Ui::tookKeyBackspace() { bool r = keyBack_; keyBack_ = false; return r; }
-bool Ui::tookKeyNumeric() { bool r = keyNum_; keyNum_ = false; return r; }
+int Ui::tookKeyPage() { int r = keyPage_; keyPage_ = 0; return r; }
 
 // Pushes the finished frame, and (screenshot builds) emits it once per phase.
 void Ui::finishFrame(int phase) {
@@ -287,7 +277,8 @@ bool Ui::shotNow() {
 void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
                 uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
                 bool armed, bool running, int battPct, bool charging,
-                ModeBadge badge, bool autoMode) {
+                ModeBadge badge, bool autoMode, policy::LeftFace face, const char* reason,
+                bool moving) {
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
 
@@ -302,15 +293,18 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
 
     // Bridge's own battery, top-left. classify() (lib/battery) decides the
     // state; drawBattery hides it entirely when there is no cell.
-    drawBattery(g, 4, 18, battPct, battery::classify(battPct, charging));
+    drawBattery(g, 4, 31, battPct, battery::classify(battPct, charging));
 
     // The button below now names its action, so the armed state is shown here
     // instead of being inferred from a button label.
+    // A full-width stripe makes it readable from a metre away.
     if (armed) {
-        g.setFont(&fonts::FreeSans9pt7b);
-        g.setTextColor(ARM_GO, BG);
+        const uint16_t col = autoMode ? TFT_CYAN : ARM_GO;
+        g.fillRect(0, 25, W, 3, col);
+        g.setFont(&fonts::FreeSansBold9pt7b);  // 12pt would clip under the + button
+        g.setTextColor(col, BG);
         g.setTextDatum(top_right);
-        g.drawString(autoMode ? "AUTO" : "ARMED", W - 4, 30);
+        g.drawString(autoMode ? "AUTO" : "ARMED", W - 4, 28);
     }
 
     char buf[24];
@@ -328,13 +322,20 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     g.setTextColor(DIM, BG);
     // Clear of the + button (x >= W - SPD_BTN_W), which otherwise erases half
     // the unit label.
+    // Skipped while a reason is shown: the reason owns x 78..242 on this row.
     g.setTextDatum(bottom_right);
-    g.drawString("km/h", W - SPD_BTN_W - 6, 150);
+    if (reason == nullptr) g.drawString("km/h", W - SPD_BTN_W - 6, 150);
 
     // While a commanded speed has not been reached yet, show it. Without this
     // a +/- press changes nothing on screen for a poll or two and reads as a
     // dead button. Drawn dim so it never competes with the actual speed.
-    if (commandedCentiKmh != 0 && commandedCentiKmh != centiKmh) {
+    // A refusal reason takes this slot for its short window instead.
+    if (reason != nullptr) {
+        g.setFont(&fonts::FreeSansBold9pt7b);
+        g.setTextColor(TFT_ORANGE, BG);
+        g.setTextDatum(bottom_left);
+        g.drawString(reason, SPD_BTN_W + 6, 150);
+    } else if (commandedCentiKmh != 0 && commandedCentiKmh != centiKmh) {
         char tbuf[20];
         snprintf(tbuf, sizeof tbuf, "-> %u.%u", commandedCentiKmh / 100,
                  (commandedCentiKmh % 100) / 10);
@@ -377,24 +378,31 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
                  (unsigned long)(elapsedSec % 60));
     g.drawString(buf, W - W / 6, 164);
 
-    // Bottom bar: two halves flush with the screen edges. STOP is always
-    // saturated red. The left half is one control with three faces, and each
+    // Bottom bar: two buttons flush with the screen edges. STOP is always
+    // saturated red. The left button is one control with four faces, chosen by
+    // policy::leftButton() (the same call the tap handler uses), and each
     // label names what tapping DOES:
-    //   disarmed            -> ARM    (dark grey)
-    //   armed, can start    -> START  (bright green: this is the call to action)
-    //   armed otherwise     -> DISARM (dark green)
-    // It used to read ARMED in the third case, which named the state rather
-    // than the action, leaving no clue that tapping is how you undo it. The
-    // state is still carried by the colour, and now also by the top bar.
-    const bool canStart = armed && !running && beltUp && !autoMode;
-    const char* label = !armed ? "ARM" : (canStart ? "START" : "DISARM");
-    const uint16_t armBg = !armed ? ARM_OFF : (canStart ? ARM_GO : ARM_ON);
-    barButton(g, 0, armBg, label);
-    barButton(g, HALF, TFT_RED, "STOP");
-    barDivider(g);
+    //   ARM      disarmed                  (dark grey)
+    //   START    armed, can start          (bright green: the call to action)
+    //   STARTING a start is in flight      (inert armed colour)
+    //   DISARM   armed otherwise           (dark green)
+    // The state itself is carried by the colour and by the top bar.
+    using policy::LeftFace;
+    const bool canStart = face == LeftFace::Start;
+    const bool starting = face == LeftFace::Wait;
+    const char* label = face == LeftFace::Arm ? "ARM"
+                      : face == LeftFace::Start ? "START"
+                      : face == LeftFace::Wait ? "STARTING" : "DISARM";
+    const uint16_t armBg = face == LeftFace::Arm ? ARM_OFF : (canStart ? ARM_GO : ARM_ON);
+    // STOP takes two thirds of the bar while the belt moves (believed or
+    // observed) or a start is in flight, so it is the easier target than DISARM.
+    barSplit_ = (moving || starting) ? W / 3 : HALF;
+    barButton(g, 0, barSplit_, armBg, label);
+    barButton(g, barSplit_, W - barSplit_, TFT_RED, "STOP");
+    barDivider(g, barSplit_);
 
     finishFrame(100 + (armed ? 1 : 0) + (canStart ? 2 : 0) + (centiKmh > 0 ? 4 : 0) + (sim_ ? 8 : 0) +
-                (autoMode ? 16 : 0) + (badge == ModeBadge::AutoPending ? 32 : 0));
+                (autoMode ? 16 : 0) + (starting ? 64 : 0) + (badge == ModeBadge::AutoPending ? 32 : 0));
 }
 
 void Ui::renderWizard(const wizard::Screen& s, bool sim) {
@@ -429,9 +437,9 @@ void Ui::renderWizard(const wizard::Screen& s, bool sim) {
     for (int i = 0; i < 4; ++i)
         if (s.detail[i][0]) g.drawString(s.detail[i], 8, 121 + 17 * i);
 
-    barButton(g, 0, BTN_GREY, s.left);
-    barButton(g, HALF, ARM_GO, s.right);
-    barDivider(g);
+    barButton(g, 0, HALF, BTN_GREY, s.left);
+    barButton(g, HALF, HALF, ARM_GO, s.right);
+    barDivider(g, HALF);
 
     finishFrame(s.phase);
 }
@@ -457,7 +465,7 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
     // glass rather than a flag the caller has to keep in step.
     menuKeyboard_ = s.keyboard;
     menuShift_ = s.shift;
-    menuNumeric_ = s.numeric;
+    menuPage_ = s.page;
 
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
@@ -477,7 +485,21 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
         g.setFont(&fonts::FreeSans9pt7b);
         g.setTextColor(DIM, BG);
         g.setTextDatum(middle_left);
-        g.drawString(s.prompt, 8, 15);
+        {
+            // Clip the SSID so it never crosses x = 152 into the typed text's
+            // half: drop trailing characters and mark the cut. ASCII "..."
+            // because the GFX fonts have no ellipsis glyph.
+            char ssid[48];
+            snprintf(ssid, sizeof ssid, "%s", s.prompt);
+            size_t n = strlen(ssid);
+            if (g.textWidth(ssid) > 152 - 8) {
+                while (n > 0 && g.textWidth(ssid) > 152 - 8) {
+                    --n;
+                    snprintf(ssid + n, sizeof ssid - n, "...");
+                }
+            }
+            g.drawString(ssid, 8, 15);
+        }
 
         // The grid starts at y30, so there is exactly one row for both. The
         // title said "PASSWORD", which the CONNECT button and the keyboard
@@ -488,30 +510,20 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
         g.setTextDatum(middle_right);
         g.setTextColor(TFT_WHITE, BG);
         g.setFont(&fonts::FreeSansBold12pt7b);
+        // Clip from the left so the tail stays visible and the text never
+        // crosses into the SSID's half of the row.
         const char* shown = s.typed[0] ? s.typed : "_";
+        while (shown[1] && g.textWidth(shown) > W / 2 - 8) ++shown;
         g.drawString(shown, W - 8, 15);
 
-        const char* const* map =
-            s.numeric ? KB_NUM : (s.shift ? KB_UPPER : KB_LOWER);
-        char one[2] = {0, 0};
-        for (int col = 0; col < KB_COLS; ++col) {
-            one[0] = map[0][col];
-            drawKey(g, col, 0, one, false);
+        // A blank key is drawn as an empty key: same fill, no glyph.
+        for (int row = 0; row < KB_ROWS; ++row) {
+            for (int col = 0; col < KB_COLS; ++col) {
+                const devmenu::Key k = devmenu::keyAt(s.page, s.shift, (uint8_t)row, (uint8_t)col);
+                drawKey(g, col, row, k.label,
+                        k.kind != devmenu::Key::Kind::Char && k.kind != devmenu::Key::Kind::Blank);
+            }
         }
-        for (int col = 0; col < KB_COLS - 1; ++col) {
-            one[0] = map[1][col];
-            drawKey(g, col, 1, one, false);
-        }
-        drawKey(g, KB_COLS - 1, 1, "DEL", true);
-        // Shift is meaningless on the digits page, so that key becomes the way
-        // back rather than sitting there inert.
-        drawKey(g, 0, 2, s.numeric ? "ABC" : (s.shift ? "SHF" : "shf"), true);
-        for (int col = 1; col < KB_COLS - 2; ++col) {
-            one[0] = map[2][col - 1];
-            drawKey(g, col, 2, one, false);
-        }
-        drawKey(g, KB_COLS - 2, 2, s.numeric ? "ABC" : "123", true);
-        drawKey(g, KB_COLS - 1, 2, "SP", true);
     } else {
         for (int i = 0; i < s.rowCount && i < ROW_N; ++i) {
             const int y = ROW_Y0 + i * ROW_H;
@@ -529,9 +541,9 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
         }
     }
 
-    barButton(g, 0, BTN_GREY, s.left);
-    if (s.right[0]) barButton(g, HALF, ARM_GO, s.right);
+    barButton(g, 0, HALF, BTN_GREY, s.left);
+    if (s.right[0]) barButton(g, HALF, HALF, ARM_GO, s.right);
     else g.fillRect(HALF, BAR_Y, HALF, H - BAR_Y, ARM_OFF);
-    barDivider(g);
+    barDivider(g, HALF);
     finishFrame(s.phase);
 }

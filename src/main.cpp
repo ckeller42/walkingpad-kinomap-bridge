@@ -57,6 +57,11 @@ static bool startPending = false;
 static bool sawCountdown = false;
 static uint8_t pendingTenths = 0;
 static uint32_t pendingSinceMs = 0;
+/// Short refusal text for the screen, valid until #reasonUntilMs.
+static const char* reasonText = nullptr;
+static uint32_t reasonUntilMs = 0;
+/// Show @p s on the screen for 1200 ms (a tap was refused).
+static void showReason(const char* s) { reasonText = s; reasonUntilMs = millis() + 1200; }
 
 // Latest belt readings (loop thread only).
 static wilink::Status lastStatus{};
@@ -177,6 +182,9 @@ static void driveStart(const wilink::Status& st, uint8_t prevTenths, uint32_t no
     // Auto owns the speed: the belt starts and paces itself, so a pending
     // start must never write set_speed under it.
     if (state.autoActive() || state.autoPending()) { startPending = false; return; }
+    // Disarmed while the start was pending: drop it rather than write under a
+    // bridge that no longer owns the belt.
+    if (!state.armed()) { startPending = false; logsink::line("start dropped: disarmed"); return; }
     if (st.beltState == 7) sawCountdown = true;
     // State 6 is also "decelerating". Accept it as ramping up if a countdown
     // was seen, or (the 1 Hz poll can miss the 3 s countdown) speed is rising.
@@ -265,7 +273,7 @@ static void enterWizard(uint32_t now) {
     wizDirty = true;
     scanEnterMs = now;
     ui.setWizardMode(true);
-    (void)ui.tookArmButton(); (void)ui.tookStop(); (void)ui.tookSetupTap();
+    (void)ui.tookArmButton(); (void)ui.tookStop();
 }
 
 static void leaveWizard(bool completed) {
@@ -364,7 +372,7 @@ static void demoAdvance(int i, uint32_t now) {
             devMenu.append('c');
             break;
         case 17:  // the digits and symbols page
-            devMenu.toggleNumeric();
+            devMenu.setPage(devmenu::Page::Symbols1);
             break;
         case 18:
             // End on the main screen. Leaving the tour inside the menu means a
@@ -425,6 +433,12 @@ static const char* stepName() {
 // Manual speed: the ONE path for the on-screen +/- and the console `speed`
 // commands. dir != 0 steps; dir == 0 sets absTenths. BridgeState decides,
 // applyOutcome executes (BeltGate paces). Returns nullptr or an err reason.
+/// Explain a `+`/`-` tap that will be refused (disarmed, or Auto owns speed).
+static void speedTapReason() {
+    if (!state.armed()) showReason("ARM first");
+    else if (state.autoActive() || state.autoPending()) showReason("AUTO sets speed");
+}
+
 static const char* manualSpeed(int dir, uint8_t absTenths) {
     if (inWizard) return "wizard-active";
     if (!state.armed()) return "not-armed";
@@ -444,10 +458,13 @@ static devmenu::Inputs devInputs() {
     in.devOn = logsink::devOn();
     in.udpOn = logsink::udpOn();
     in.wifiUp = logsink::netOk();
+    in.wifiConnecting = logsink::wifiConnecting();
+    in.wifiFailed = logsink::wifiFailed();
     in.storedSsid = logsink::storedSsid();
     in.ip = logsink::ipText();
     in.scanning = logsink::scanning();
-    in.networkCount = logsink::scanCount();
+    const uint8_t n = logsink::scanCount();
+    in.networkCount = n < devmenu::kMaxNetworks ? n : devmenu::kMaxNetworks;
     for (uint8_t i = 0; i < in.networkCount && i < devmenu::kMaxNetworks; ++i)
         in.networks[i] = logsink::scanSsid(i);
     return in;
@@ -480,6 +497,10 @@ static void devMenuAct(devmenu::Action a) {
         case A::ForgetWifi:
             logsink::setWifi("", "");
             break;
+        case A::RerunSetup:
+            leaveDevMenu();
+            enterWizard(millis());
+            break;
         case A::None:
             break;
     }
@@ -498,13 +519,17 @@ static void devMenuTick() {
     if (const char c = ui.tookKeyChar()) { devMenu.append(c); devDirty = true; }
     if (ui.tookKeyBackspace()) { devMenu.backspace(); devDirty = true; }
     if (ui.tookKeyShift()) { devMenu.toggleShift(); devDirty = true; }
-    if (ui.tookKeyNumeric()) { devMenu.toggleNumeric(); devDirty = true; }
+    if (const int p = ui.tookKeyPage()) { devMenu.setPage((devmenu::Page)(p - 1)); devDirty = true; }
 
     if (!inDevMenu) return;  // Close was handled above
 
     // A scan finishing changes the screen with no touch at all, so redraw
     // while one is running rather than only on input.
     if (in.scanning) devDirty = true;
+    // Wi-Fi state (connecting, IP, wrong password) also changes with no
+    // touch, so refresh at least once a second while the menu is open.
+    static uint32_t lastDevRedrawMs = 0;
+    if (millis() - lastDevRedrawMs >= 1000) { devDirty = true; lastDevRedrawMs = millis(); }
     if (devDirty) {
         devDirty = false;
         ui.renderDevMenu(devMenu.screen(devInputs()));
@@ -757,11 +782,13 @@ void setup() {
     demoT0 = millis();  // the tour is started by demoAdvance(0) from loop()
     (void)setupDone;
     ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false,
-                  ModeBadge::None, false);
+                  ModeBadge::None, false,
+                  policy::leftButton(state.armed(), false, false), nullptr, false);
 #else
     if (!setupDone) enterWizard(millis());
     else ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false,
-                  ModeBadge::None, false);  // boots disarmed
+                  ModeBadge::None, false,
+                  policy::leftButton(state.armed(), false, false), nullptr, false);  // boots disarmed
 #endif
 }
 
@@ -774,7 +801,7 @@ void loop() {
     bool redraw = false;
     uint16_t centi;
     uint32_t dist, elapsed;
-    bool beltUp, phoneUp, armed, running, autoMode = false;
+    bool beltUp, phoneUp, armed, running, moving = false, autoMode = false;
     ModeBadge badge = ModeBadge::None;
     wizard::Screen wscreen;
     // (console `shot` forces a redraw via wizDirty so the frame is current)
@@ -811,41 +838,83 @@ void loop() {
                     want, !stationary || startPending || state.beltRunning());
                 // A refused tap must leave evidence: the first badge test on
                 // hardware was refused four times in silence (belt in state 3).
-                if (o.count == 0)
+                if (o.count == 0) {
                     logsink::line("mode tap refused: want=%u fresh=%d state=%u speed=%u armed=%d "
                                   "pending=%d running=%d",
                                   (unsigned)want, (int)fresh, (unsigned)lastStatus.beltState,
                                   (unsigned)lastStatus.tenthKmh, (int)state.armed(),
                                   (int)startPending, (int)state.beltRunning());
+                    if (!state.armed()) showReason("ARM first");
+                    else if (!fresh) showReason("Belt offline");
+                    else if (startPending) showReason("Starting - wait");
+                    else showReason("STOP first");
+                }
                 applyOutcome(o);
                 redraw = true;
             }
             if (ui.tookArmButton()) {
-                const bool canStart =
-                    state.armed() && !state.beltRunning() && theBelt.linkUp() && beltFresh() &&
-                    !state.autoActive() && !state.autoPending();
-                if (!state.armed()) applyOutcome(state.setArmed(true));
-                else if (canStart) applyOutcome(state.startFromUi(kUiStartTenths));
-                else applyOutcome(state.setArmed(false));  // ARMED face: tap disarms
+                // The face comes from policy::leftButton(), the same call the
+                // screen draws from, so the tap does what the picture says.
+                // Wait refuses, so an impatient second tap cannot disarm
+                // under a starting belt.
+                switch (policy::leftButton(state.armed(), startPending,
+                                           state.startAllowed(beltFresh()))) {
+                case policy::LeftFace::Arm:
+                    applyOutcome(state.setArmed(true));
+                    break;
+                case policy::LeftFace::Wait:
+                    showReason("Starting - wait");
+                    break;
+                case policy::LeftFace::Start:
+                    applyOutcome(state.startFromUi(kUiStartTenths));
+                    break;
+                case policy::LeftFace::Disarm:
+                    // Say why START was not on offer; the tap still disarms.
+                    if (!(theBelt.linkUp() && beltFresh())) showReason("Belt offline");
+                    else if (state.autoActive() || state.autoPending())
+                        showReason("AUTO: step on to start");
+                    applyOutcome(state.setArmed(false));
+                    break;
+                }
                 redraw = true;
             }
             // Same path as console `speed up|down`; ignored (button is dim) unless armed.
-            if (ui.tookSpeedUp()) { (void)manualSpeed(1, 0); redraw = true; }
-            if (ui.tookSpeedDown()) { (void)manualSpeed(-1, 0); redraw = true; }
+            if (ui.tookSpeedUp()) {
+                speedTapReason();
+                (void)manualSpeed(1, 0);
+                redraw = true;
+            }
+            if (ui.tookSpeedDown()) {
+                speedTapReason();
+                (void)manualSpeed(-1, 0);
+                redraw = true;
+            }
             if (ui.tookStop()) {
                 applyOutcome(state.stopFromUi());  // also disarms
                 redraw = true;
             }
-            // Re-open setup, but never under a moving belt.
-            if (ui.tookSetupTap() && !state.beltRunning()) enterWizard(now);
-            // The developer menu can take the radio up and down and re-pair
-            // Wi-Fi, so it is refused under a moving belt for the same reason.
-            if (ui.tookDevTap() && !state.beltRunning()) {
-                devMenu.open();
-                inDevMenu = true;
-                devDirty = true;
-                ui.setMenuMode(true);
-                logsink::line("dev menu opened");
+            // The developer menu can take the radio up and down, re-pair
+            // Wi-Fi and re-run setup, so it is refused unless the belt is
+            // known to be stopped, and AUTO must be left first. Opening it
+            // disarms: the menu has no STOP of its own.
+            if (ui.tookDevTap()) {
+                // With the link down a bridge cannot move the belt, and setup
+                // and Wi-Fi must stay reachable, so only a linked belt that
+                // is not known to be parked refuses.
+                if (theBelt.linkUp() && (!beltFresh() || !wilink::parked(lastStatus))) {
+                    showReason("Belt not ready");
+                    redraw = true;
+                } else if (state.autoActive() || state.autoPending()) {
+                    showReason("Leave AUTO first");
+                    redraw = true;
+                } else {
+                    applyOutcome(state.setArmed(false));
+                    devMenu.open();
+                    inDevMenu = true;
+                    devDirty = true;
+                    ui.setMenuMode(true);
+                    logsink::line("dev menu opened");
+                }
             }
         }
         if (stopRequested) {  // FTMS Stop/Pause: honour it
@@ -895,6 +964,9 @@ void loop() {
         phoneUp = bleServer.phoneConnected();
         armed = state.armed();
         running = state.beltRunning();
+        // The wide STOP follows observed motion too, not only the bridge's belief
+        // (a belt started from KS Fit or by stepping on in Auto).
+        moving = running || (fresh && !wilink::parked(lastStatus));
         autoMode = state.autoActive() || state.autoPending();
         badge = state.autoPending() ? ModeBadge::AutoPending
               : state.autoActive()  ? ModeBadge::Auto
@@ -929,7 +1001,10 @@ void loop() {
         if (!inDevMenu)
             ui.render(centi, commanded, dist, elapsed, lastStatus.steps, beltUp, phoneUp,
                       armed, running, battPct, charging,
-                      badge, autoMode);
+                      badge, autoMode,
+                      policy::leftButton(armed, startPending, state.startAllowed(beltFresh())),
+                      (int32_t)(reasonUntilMs - millis()) > 0 ? reasonText : nullptr,
+                      moving);
     }
     if (shotPending) {
         shotPending = false;

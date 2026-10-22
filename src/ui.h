@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "bridge_state.h"  // policy::LeftFace only; the UI decides nothing
 #include "devmenu.h"
 #include "wizard.h"
 
@@ -13,13 +14,15 @@
  *
  * | y        | content |
  * |----------|---------|
- * | 0..27    | link indicators (BELT left, PHONE right), battery gauge (top-left), mode badge (centre) and the settings gear |
+ * | 0..24    | link indicators (BELT left, PHONE right), mode badge (centre) and the settings gear (x >= 276) |
+ * | 25..27   | armed stripe, full width (green; cyan in Auto) |
+ * | 28..43   | `ARMED`/`AUTO` tag (right); battery gauge (left, y 31..43) |
  * | 28..149  | instantaneous speed, very large |
  * | 44..139  | the readout flanked by `-` (x 0..71) and `+` (x 248..319), enabled only while armed and not in Auto |
- * | 150..175 | distance (left), steps (centre) and elapsed time (right) |
- * | 184..239 | bottom bar: left = ARM / START / DISARM, right = STOP |
+ * | 150..175 | distance (left), steps (centre) and elapsed time (right); a refusal reason replaces the "-> commanded" text beside `km/h` |
+ * | 184..239 | bottom bar: left = ARM / START / STARTING / DISARM, right = STOP; split at the middle, or at x 106 (STOP two thirds wide) while the belt moves or starts |
  *
- * The left button is one control with three faces, and each label names what
+ * The left button is one control with four faces (ARM, START, STARTING, DISARM; chosen by policy::leftButton()), and each label names what
  * tapping *does* rather than what the bridge *is*; the armed state is shown in
  * the top bar instead.
  *
@@ -83,7 +86,8 @@ public:
      * @param steps             Session step count, from the belt's status frame.
      * @param beltUp            Belt linked and delivering fresh status.
      * @param phoneUp           A phone is connected.
-     * @param armed             The bridge is armed; enables `+`/`-` unless @p autoMode.
+     * @param armed             The bridge is armed; enables `+`/`-` unless @p autoMode,
+     *        and draws the full-width armed stripe.
      * @param running           The belt is moving.
      * @param battPct           Bridge battery charge 0..100, or < 0 if unknown / no cell.
      * @param charging          True while the bridge is on external power and charging.
@@ -91,11 +95,21 @@ public:
      *        while disarmed.
      * @param autoMode          Auto is observed or pending. Mutes `+`/`-`,
      *        turns the `ARMED` tag into `AUTO` and removes the `START` face.
+     * @param face              The left button's face from policy::leftButton();
+     *        the label and colour are drawn from it and nothing else
+     *        (`STARTING` is the inert armed colour).
+     * @param reason            Short refusal text to show for about a second,
+     *        or nullptr. Drawn in orange beside the readout in place of the
+     *        "-> commanded" text.
+     * @param moving            The belt is believed or observed moving. With
+     *        @p face == Wait it widens STOP to two thirds of the bar (and
+     *        narrows the left tap zone to match).
      */
     void render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
                 uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
                 bool armed, bool running, int battPct, bool charging,
-                ModeBadge badge, bool autoMode);
+                ModeBadge badge, bool autoMode, policy::LeftFace face, const char* reason,
+                bool moving);
 
     /**
      * @brief Emit the current frame over serial (the console's `shot`).
@@ -161,8 +175,11 @@ public:
     /** @brief The keyboard's DEL key. @return True once per tap. */
     bool tookKeyBackspace();
 
-    /** @brief The keyboard's 123 / ABC page toggle. @return True once per tap. */
-    bool tookKeyNumeric();
+    /**
+     * @brief The keyboard's page keys (ABC / 123 / #+=).
+     * @return 0 when none was tapped, else the devmenu::Page index plus one.
+     */
+    int tookKeyPage();
 
     /** @brief The main screen's left button. @return True once per tap. */
     bool tookArmButton();
@@ -175,9 +192,6 @@ public:
 
     /** @brief The `-` beside the readout. @return True once per tap. */
     bool tookSpeedDown();
-
-    /** @brief The BELT indicator, which re-runs setup. @return True once per tap. */
-    bool tookSetupTap();
 
     /** @brief The mode badge in the top bar. @return True once per tap. */
     bool tookModeTap();
@@ -199,20 +213,19 @@ private:
     bool stopPressed_ = false;
     bool speedUp_ = false;
     bool speedDown_ = false;
-    bool setupTapped_ = false;  // BELT strip; the badge zone is carved out of it
     bool modeTapped_ = false;
     bool wizL_ = false;
     bool wizR_ = false;
     bool menuMode_ = false;
     bool menuKeyboard_ = false;  // set by renderDevMenu from the screen it drew
     bool menuShift_ = false;
-    bool menuNumeric_ = false;
+    devmenu::Page menuPage_ = devmenu::Page::Letters;
     int menuRow_ = -1;
     bool devTapped_ = false;
     char keyChar_ = 0;
     bool keyShift_ = false;
     bool keyBack_ = false;
-    bool keyNum_ = false;
+    int keyPage_ = 0;  // 0 = none, else page + 1
     // Highest contact count and sample total since boot. Reported by
     // describeTouch(): max == 0 with samples climbing means the panel is
     // being polled correctly and answering nothing, which is the signature
@@ -220,4 +233,8 @@ private:
     unsigned touchMax_ = 0;
     unsigned long touchSamples_ = 0;
     int shotPhase_ = -1;
+    /// Bottom-bar split x: `W / 3` while the belt moves or a start is in flight (wide STOP),
+    /// else `W / 2`. Set by render(), read by poll(), so the drawn button and
+    /// its tap zone cannot disagree.
+    int barSplit_ = 160;
 };
