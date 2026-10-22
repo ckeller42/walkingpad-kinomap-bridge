@@ -36,14 +36,8 @@ constexpr int ROW_Y0 = 30, ROW_H = 30, ROW_N = 5;
 // keyboards do, buys 51 px rows (6.5 mm) instead of 32 px, and letters are
 // still one tap.
 constexpr int KB_Y0 = 30, KB_ROW_H = 51, KB_COLS = 10, KB_COL_W = W / KB_COLS;
-constexpr int KB_ROWS = 3;
-
-// Row 1 is nine letters then backspace; row 2 is shift, seven letters, the
-// page toggle and space. Hit testing and drawing read these same tables, so
-// they cannot disagree about what a key is.
-const char* const KB_LOWER[KB_ROWS] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
-const char* const KB_UPPER[KB_ROWS] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
-const char* const KB_NUM[KB_ROWS]   = {"1234567890", "!@#$%^&*()", "-_=+:/?"};
+constexpr int KB_ROWS = devmenu::kKeyRows;
+constexpr int KB_BAR_Y = 190;  // bottom bar starts here while the keyboard shows
 
 constexpr uint16_t BG = TFT_BLACK;
 constexpr uint16_t DIM = 0x7BEF;       // mid grey
@@ -198,7 +192,9 @@ void Ui::poll() {
     // The developer menu owns the whole screen while it is open, so it is
     // tested first: otherwise a row tap would also read as a speed button.
     if (menuMode_) {
-        if (t.y >= HIT_Y) {
+        // The keys end at y 183; a slipped tap just below the bottom key row
+        // must not land on CONNECT/BACK, so the keyboard leaves a dead band.
+        if (t.y >= (menuKeyboard_ ? KB_BAR_Y : HIT_Y)) {
             (left ? wizL_ : wizR_) = true;  // the bottom bar is shared with the wizard
         } else if (menuKeyboard_) {
             pollKeyboard(t.x, t.y);
@@ -224,31 +220,24 @@ void Ui::poll() {
 }
 
 // Maps a touch in the key grid to a character or an editing action. Mirrors
-// the layout drawn by renderDevMenu(); both read KB_LOWER / KB_UPPER.
+// the layout drawn by renderDevMenu(); both read devmenu::keyAt().
 void Ui::pollKeyboard(int x, int y) {
     if (y < KB_Y0) return;
     const int row = (y - KB_Y0) / KB_ROW_H;
     const int col = x / KB_COL_W;
     if (row < 0 || row >= KB_ROWS || col < 0 || col >= KB_COLS) return;
-    const char* const* map =
-        menuNumeric_ ? KB_NUM : (menuShift_ ? KB_UPPER : KB_LOWER);
 
-    switch (row) {
-        case 0:
-            keyChar_ = map[0][col];
-            break;
-        case 1:
-            if (col == KB_COLS - 1) keyBack_ = true;  // DEL
-            else keyChar_ = map[1][col];
-            break;
-        case 2:
-            if (col == 0) { if (menuNumeric_) keyNum_ = true; else keyShift_ = true; }
-            else if (col == KB_COLS - 2) keyNum_ = true;       // 123 / ABC
-            else if (col == KB_COLS - 1) keyChar_ = ' ';       // SP
-            else keyChar_ = map[2][col - 1];
-            break;
-        default:
-            break;
+    using Kind = devmenu::Key::Kind;
+    const devmenu::Key k = devmenu::keyAt(menuPage_, menuShift_, (uint8_t)row, (uint8_t)col);
+    switch (k.kind) {
+        case Kind::Char: keyChar_ = k.ch; break;
+        case Kind::Space: keyChar_ = ' '; break;
+        case Kind::Del: keyBack_ = true; break;
+        case Kind::Shift: keyShift_ = true; break;
+        case Kind::ToLetters: keyPage_ = (int)devmenu::Page::Letters + 1; break;
+        case Kind::ToSymbols1: keyPage_ = (int)devmenu::Page::Symbols1 + 1; break;
+        case Kind::ToSymbols2: keyPage_ = (int)devmenu::Page::Symbols2 + 1; break;
+        case Kind::Blank: break;
     }
 }
 
@@ -265,7 +254,7 @@ bool Ui::tookDevTap() { bool r = devTapped_; devTapped_ = false; return r; }
 char Ui::tookKeyChar() { char r = keyChar_; keyChar_ = 0; return r; }
 bool Ui::tookKeyShift() { bool r = keyShift_; keyShift_ = false; return r; }
 bool Ui::tookKeyBackspace() { bool r = keyBack_; keyBack_ = false; return r; }
-bool Ui::tookKeyNumeric() { bool r = keyNum_; keyNum_ = false; return r; }
+int Ui::tookKeyPage() { int r = keyPage_; keyPage_ = 0; return r; }
 
 // Pushes the finished frame, and (screenshot builds) emits it once per phase.
 void Ui::finishFrame(int phase) {
@@ -471,7 +460,7 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
     // glass rather than a flag the caller has to keep in step.
     menuKeyboard_ = s.keyboard;
     menuShift_ = s.shift;
-    menuNumeric_ = s.numeric;
+    menuPage_ = s.page;
 
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
@@ -505,27 +494,14 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
         const char* shown = s.typed[0] ? s.typed : "_";
         g.drawString(shown, W - 8, 15);
 
-        const char* const* map =
-            s.numeric ? KB_NUM : (s.shift ? KB_UPPER : KB_LOWER);
-        char one[2] = {0, 0};
-        for (int col = 0; col < KB_COLS; ++col) {
-            one[0] = map[0][col];
-            drawKey(g, col, 0, one, false);
+        // A blank key is drawn as an empty key: same fill, no glyph.
+        for (int row = 0; row < KB_ROWS; ++row) {
+            for (int col = 0; col < KB_COLS; ++col) {
+                const devmenu::Key k = devmenu::keyAt(s.page, s.shift, (uint8_t)row, (uint8_t)col);
+                drawKey(g, col, row, k.label,
+                        k.kind != devmenu::Key::Kind::Char && k.kind != devmenu::Key::Kind::Blank);
+            }
         }
-        for (int col = 0; col < KB_COLS - 1; ++col) {
-            one[0] = map[1][col];
-            drawKey(g, col, 1, one, false);
-        }
-        drawKey(g, KB_COLS - 1, 1, "DEL", true);
-        // Shift is meaningless on the digits page, so that key becomes the way
-        // back rather than sitting there inert.
-        drawKey(g, 0, 2, s.numeric ? "ABC" : (s.shift ? "SHF" : "shf"), true);
-        for (int col = 1; col < KB_COLS - 2; ++col) {
-            one[0] = map[2][col - 1];
-            drawKey(g, col, 2, one, false);
-        }
-        drawKey(g, KB_COLS - 2, 2, s.numeric ? "ABC" : "123", true);
-        drawKey(g, KB_COLS - 1, 2, "SP", true);
     } else {
         for (int i = 0; i < s.rowCount && i < ROW_N; ++i) {
             const int y = ROW_Y0 + i * ROW_H;

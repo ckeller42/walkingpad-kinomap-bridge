@@ -17,6 +17,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "keyboard_layout.h"
+
 namespace devmenu {
 
 /** @brief Which screen of the developer menu is showing. */
@@ -88,7 +90,7 @@ struct Screen {
     char prompt[28] = {};  ///< Keyboard screen: which network is being joined.
     char typed[kMaxPassword] = {};  ///< Keyboard screen: the password so far.
     bool shift = false;    ///< Keyboard screen: next character is shifted.
-    bool numeric = false;  ///< Keyboard screen: digits/symbols page is showing.
+    Page page = Page::Letters;  ///< Keyboard screen: which page is showing.
 };
 
 /**
@@ -147,14 +149,17 @@ public:
     /** @brief Flip shift. It applies to one character, like a phone keyboard. */
     void toggleShift();
 
-    /** @brief Switch between the letter page and the digits/symbols page. */
-    void toggleNumeric();
+    /**
+     * @brief Show another keyboard page. Clears a pending shift.
+     * @param p The page a Key::Kind::ToLetters / ToSymbols1 / ToSymbols2 key names.
+     */
+    void setPage(Page p);
 
     /**
      * @brief Which keyboard page is showing.
-     * @return True for the digits/symbols page, false for letters.
+     * @return The current devmenu::Page.
      */
-    bool numeric() const { return numeric_; }
+    Page page() const { return page_; }
 
     /**
      * @brief Whether the next character will be shifted.
@@ -179,7 +184,7 @@ private:
     char ssid_[kMaxSsid] = {};
     char typed_[kMaxPassword] = {};
     bool shift_ = false;
-    bool numeric_ = false;
+    Page page_ = Page::Letters;
 };
 
 }  // namespace devmenu

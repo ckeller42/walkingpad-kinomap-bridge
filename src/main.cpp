@@ -372,7 +372,7 @@ static void demoAdvance(int i, uint32_t now) {
             devMenu.append('c');
             break;
         case 17:  // the digits and symbols page
-            devMenu.toggleNumeric();
+            devMenu.setPage(devmenu::Page::Symbols1);
             break;
         case 18:
             // End on the main screen. Leaving the tour inside the menu means a
@@ -512,7 +512,7 @@ static void devMenuTick() {
     if (const char c = ui.tookKeyChar()) { devMenu.append(c); devDirty = true; }
     if (ui.tookKeyBackspace()) { devMenu.backspace(); devDirty = true; }
     if (ui.tookKeyShift()) { devMenu.toggleShift(); devDirty = true; }
-    if (ui.tookKeyNumeric()) { devMenu.toggleNumeric(); devDirty = true; }
+    if (const int p = ui.tookKeyPage()) { devMenu.setPage((devmenu::Page)(p - 1)); devDirty = true; }
 
     if (!inDevMenu) return;  // Close was handled above
 

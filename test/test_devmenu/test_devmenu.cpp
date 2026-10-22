@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 #include <unity.h>
 
@@ -152,6 +153,46 @@ void test_shift_applies_to_one_character(void) {
     TEST_ASSERT_FALSE(m.shift());
 }
 
+void test_keyboard_reaches_every_printable_ascii(void) {
+    bool seen[128] = {};
+    for (uint8_t p = 0; p < 3; ++p)
+        for (uint8_t shift = 0; shift < 2; ++shift)
+            for (uint8_t r = 0; r < 3; ++r)
+                for (uint8_t c = 0; c < 10; ++c) {
+                    const Key k = keyAt((Page)p, shift != 0, r, c);
+                    if (k.kind == Key::Kind::Char) seen[(uint8_t)k.ch] = true;
+                    if (k.kind == Key::Kind::Space) seen[' '] = true;
+                }
+    for (int ch = 0x20; ch <= 0x7E; ++ch) {
+        char msg[32]; snprintf(msg, sizeof msg, "unreachable 0x%02X '%c'", ch, ch);
+        TEST_ASSERT_TRUE_MESSAGE(seen[ch], msg);
+    }
+}
+void test_every_page_has_del_and_space_in_the_same_place(void) {
+    for (uint8_t p = 0; p < 3; ++p) {
+        TEST_ASSERT_EQUAL(Key::Kind::Del, keyAt((Page)p, false, 1, 9).kind);
+        TEST_ASSERT_EQUAL(Key::Kind::Space, keyAt((Page)p, false, 2, 9).kind);
+    }
+}
+void test_page_keys_navigate(void) {
+    TEST_ASSERT_EQUAL(Key::Kind::ToSymbols1, keyAt(Page::Letters, false, 2, 8).kind);
+    TEST_ASSERT_EQUAL(Key::Kind::ToSymbols2, keyAt(Page::Symbols1, false, 2, 0).kind);
+    TEST_ASSERT_EQUAL(Key::Kind::ToLetters, keyAt(Page::Symbols1, false, 2, 8).kind);
+    TEST_ASSERT_EQUAL(Key::Kind::ToSymbols1, keyAt(Page::Symbols2, false, 2, 0).kind);
+}
+void test_shift_uppercases_letters_only(void) {
+    TEST_ASSERT_EQUAL_CHAR('Q', keyAt(Page::Letters, true, 0, 0).ch);
+    TEST_ASSERT_EQUAL_CHAR('1', keyAt(Page::Symbols1, true, 0, 0).ch);
+}
+void test_set_page_switches_page_and_clears_shift(void) {
+    DevMenu m;
+    m.open();
+    m.toggleShift();
+    m.setPage(Page::Symbols2);
+    TEST_ASSERT_EQUAL(Page::Symbols2, m.page());
+    TEST_ASSERT_FALSE(m.shift());
+}
+
 void test_back_navigates_out_without_connecting(void) {
     DevMenu m;
     m.open();
@@ -242,6 +283,11 @@ int main(int, char**) {
     RUN_TEST(test_typing_a_password_and_submitting);
     RUN_TEST(test_overlong_password_is_refused_not_truncated);
     RUN_TEST(test_shift_applies_to_one_character);
+    RUN_TEST(test_keyboard_reaches_every_printable_ascii);
+    RUN_TEST(test_every_page_has_del_and_space_in_the_same_place);
+    RUN_TEST(test_page_keys_navigate);
+    RUN_TEST(test_shift_uppercases_letters_only);
+    RUN_TEST(test_set_page_switches_page_and_clears_shift);
     RUN_TEST(test_back_navigates_out_without_connecting);
     RUN_TEST(test_forget_row_only_offered_when_a_network_is_stored);
     RUN_TEST(test_root_offers_four_live_rows_and_ignores_taps_past_them);

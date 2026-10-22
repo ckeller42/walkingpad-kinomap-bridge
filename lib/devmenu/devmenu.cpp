@@ -27,7 +27,7 @@ void DevMenu::open() {
     step_ = Step::Root;
     ssid_[0] = typed_[0] = 0;
     shift_ = false;
-    numeric_ = false;
+    page_ = Page::Letters;
 }
 
 Screen DevMenu::screen(const Inputs& in) const {
@@ -93,7 +93,7 @@ Screen DevMenu::screen(const Inputs& in) const {
             s.phase = 64;
             s.keyboard = true;
             s.shift = shift_;
-            s.numeric = numeric_;
+            s.page = page_;
             // set() already truncates to the field's capacity; the extra
             // buffer only added a second, narrower limit and a warning.
             set(s.prompt, ssid_);
@@ -122,7 +122,7 @@ Action DevMenu::tapRow(uint8_t row, const Inputs& in) {
                 set(ssid_, in.networks[row]);
                 typed_[0] = 0;
                 shift_ = false;
-                numeric_ = false;
+                page_ = Page::Letters;
                 step_ = Step::WifiPass;
             }
             return Action::None;
@@ -167,6 +167,6 @@ void DevMenu::backspace() {
 
 void DevMenu::toggleShift() { shift_ = !shift_; }
 
-void DevMenu::toggleNumeric() { numeric_ = !numeric_; shift_ = false; }
+void DevMenu::setPage(Page p) { page_ = p; shift_ = false; }
 
 }  // namespace devmenu

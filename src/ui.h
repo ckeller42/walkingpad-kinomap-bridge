@@ -169,8 +169,11 @@ public:
     /** @brief The keyboard's DEL key. @return True once per tap. */
     bool tookKeyBackspace();
 
-    /** @brief The keyboard's 123 / ABC page toggle. @return True once per tap. */
-    bool tookKeyNumeric();
+    /**
+     * @brief The keyboard's page keys (ABC / 123 / #+=).
+     * @return 0 when none was tapped, else the devmenu::Page index plus one.
+     */
+    int tookKeyPage();
 
     /** @brief The main screen's left button. @return True once per tap. */
     bool tookArmButton();
@@ -218,13 +221,13 @@ private:
     bool menuMode_ = false;
     bool menuKeyboard_ = false;  // set by renderDevMenu from the screen it drew
     bool menuShift_ = false;
-    bool menuNumeric_ = false;
+    devmenu::Page menuPage_ = devmenu::Page::Letters;
     int menuRow_ = -1;
     bool devTapped_ = false;
     char keyChar_ = 0;
     bool keyShift_ = false;
     bool keyBack_ = false;
-    bool keyNum_ = false;
+    int keyPage_ = 0;  // 0 = none, else page + 1
     // Highest contact count and sample total since boot. Reported by
     // describeTouch(): max == 0 with samples climbing means the panel is
     // being polled correctly and answering nothing, which is the signature
