@@ -187,13 +187,6 @@ public:
     /** @brief The `-` beside the readout. @return True once per tap. */
     bool tookSpeedDown();
 
-    /**
-     * @brief Formerly the BELT indicator (re-run setup).
-     * @return Always false: no longer latched, since setup lives in the gear
-     *         menu. Kept until its caller is removed.
-     */
-    bool tookSetupTap();
-
     /** @brief The mode badge in the top bar. @return True once per tap. */
     bool tookModeTap();
 
@@ -214,7 +207,6 @@ private:
     bool stopPressed_ = false;
     bool speedUp_ = false;
     bool speedDown_ = false;
-    bool setupTapped_ = false;  // no longer latched; removed with tookSetupTap()
     bool modeTapped_ = false;
     bool wizL_ = false;
     bool wizR_ = false;

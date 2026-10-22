@@ -73,4 +73,6 @@ which is what lets Kinomap begin its session.
 ![Main screen, walking](screens/main-walking.png)
 
 Running at 2.0 km/h (simulated belt, 8 s after START). The left button reads
-ARMED; tapping it disarms without stopping the belt.
+DISARM; the button's faces are ARM, START, STARTING and DISARM, and tapping
+DISARM disarms without stopping the belt. To run setup again, open the gear
+menu and tap its "Re-run setup" row.

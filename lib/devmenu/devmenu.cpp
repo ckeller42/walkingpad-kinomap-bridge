@@ -50,6 +50,8 @@ Screen DevMenu::screen(const Inputs& in) const {
 
             set(s.rows[2].label, "Wi-Fi");
             if (in.wifiUp) set(s.rows[2].value, in.ip);
+            else if (in.wifiConnecting) set(s.rows[2].value, "connecting...");
+            else if (in.wifiFailed) set(s.rows[2].value, "wrong password?");
             else if (in.storedSsid && in.storedSsid[0]) set(s.rows[2].value, "offline");
             else set(s.rows[2].value, "not set");
             s.rows[2].enabled = in.devOn;
@@ -58,7 +60,9 @@ Screen DevMenu::screen(const Inputs& in) const {
             set(s.rows[3].value, in.storedSsid && in.storedSsid[0] ? "forget" : "");
             s.rows[3].enabled = in.devOn && in.storedSsid && in.storedSsid[0];
 
-            s.rowCount = 4;
+            set(s.rows[4].label, "Re-run setup");  // works with dev mode off
+
+            s.rowCount = 5;
             break;
         }
         case Step::WifiScan: {
@@ -115,6 +119,7 @@ Action DevMenu::tapRow(uint8_t row, const Inputs& in) {
                 case 1: return Action::ToggleUdp;
                 case 2: step_ = Step::WifiScan; return Action::StartScan;
                 case 3: return Action::ForgetWifi;
+                case 4: return Action::RerunSetup;
                 default: return Action::None;
             }
         case Step::WifiScan:

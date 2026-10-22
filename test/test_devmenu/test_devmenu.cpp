@@ -25,7 +25,7 @@ void test_root_lists_the_switches(void) {
     Inputs in = base(false);
     Screen s = m.screen(in);
     TEST_ASSERT_EQUAL_STRING("DEVELOPER", s.title);
-    TEST_ASSERT_EQUAL(4, s.rowCount);
+    TEST_ASSERT_EQUAL(5, s.rowCount);
     TEST_ASSERT_EQUAL_STRING("Developer mode", s.rows[0].label);
     TEST_ASSERT_EQUAL_STRING("OFF", s.rows[0].value);
 }
@@ -223,15 +223,38 @@ void test_forget_row_only_offered_when_a_network_is_stored(void) {
 
 // Every row the root screen offers must do something. A row that only
 // reported a mode nobody could change used to sit at index 4; the screen is
-// four rows now, and a tap past the end is ignored rather than wrapping.
-void test_root_offers_four_live_rows_and_ignores_taps_past_them(void) {
+// five rows now, and a tap past the end is ignored rather than wrapping.
+void test_root_offers_five_live_rows_and_ignores_taps_past_them(void) {
     DevMenu m;
     m.open();
     Inputs on = base(true);
     Screen s = m.screen(on);
-    TEST_ASSERT_EQUAL(4, s.rowCount);
-    TEST_ASSERT_EQUAL(Action::None, m.tapRow(4, on));
+    TEST_ASSERT_EQUAL(5, s.rowCount);
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(5, on));
     TEST_ASSERT_EQUAL(Step::Root, m.step());
+}
+
+void test_root_offers_rerun_setup_even_with_dev_off(void) {
+    DevMenu m; m.open();
+    Inputs in = base(false);
+    Screen s = m.screen(in);
+    TEST_ASSERT_EQUAL(5, s.rowCount);
+    TEST_ASSERT_EQUAL_STRING("Re-run setup", s.rows[4].label);
+    TEST_ASSERT_TRUE(s.rows[4].enabled);
+    TEST_ASSERT_EQUAL(Action::RerunSetup, m.tapRow(4, in));
+}
+void test_wifi_row_shows_connecting_then_failed(void) {
+    DevMenu m; m.open();
+    Inputs in = base(true); in.storedSsid = "Insel";
+    in.wifiConnecting = true;
+    TEST_ASSERT_EQUAL_STRING("connecting...", m.screen(in).rows[2].value);
+    in.wifiConnecting = false; in.wifiFailed = true;
+    TEST_ASSERT_EQUAL_STRING("wrong password?", m.screen(in).rows[2].value);
+    in.wifiFailed = false; in.wifiUp = true; in.ip = "192.168.178.96";
+    TEST_ASSERT_EQUAL_STRING("192.168.178.96", m.screen(in).rows[2].value);
+}
+void test_scan_list_keeps_as_many_networks_as_it_shows(void) {
+    TEST_ASSERT_EQUAL(kMaxRows, kMaxNetworks);
 }
 
 void test_every_screen_has_a_title_and_a_left_button(void) {
@@ -290,7 +313,10 @@ int main(int, char**) {
     RUN_TEST(test_set_page_switches_page_and_clears_shift);
     RUN_TEST(test_back_navigates_out_without_connecting);
     RUN_TEST(test_forget_row_only_offered_when_a_network_is_stored);
-    RUN_TEST(test_root_offers_four_live_rows_and_ignores_taps_past_them);
+    RUN_TEST(test_root_offers_five_live_rows_and_ignores_taps_past_them);
+    RUN_TEST(test_root_offers_rerun_setup_even_with_dev_off);
+    RUN_TEST(test_wifi_row_shows_connecting_then_failed);
+    RUN_TEST(test_scan_list_keeps_as_many_networks_as_it_shows);
     RUN_TEST(test_every_screen_has_a_title_and_a_left_button);
     RUN_TEST(test_screens_have_distinct_phases);
     return UNITY_END();

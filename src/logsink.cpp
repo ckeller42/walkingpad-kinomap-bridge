@@ -32,6 +32,9 @@ uint32_t dropped = 0;
 
 bool sdReady = false;
 bool wifiTried = false;
+uint32_t wifiBeginMs = 0;      // when the last setWifi() began a connect
+bool wifiRequested = false;    // a connect is outstanding since wifiBeginMs
+constexpr uint32_t kWifiConnectMs = 15000;
 bool udpStarted = false;
 constexpr uint8_t kMaxScan = 6;
 char scanNames[kMaxScan][33] = {};
@@ -253,9 +256,22 @@ void setWifi(const char* ssid, const char* pass) {
         WiFi.mode(WIFI_STA);
         WiFi.begin(ssid, pass);
         wifiTried = true;
+        wifiBeginMs = millis();
+        wifiRequested = true;
     } else {
         wifiTried = false;
+        wifiRequested = false;
     }
+}
+
+bool wifiConnecting() {
+    return wifiRequested && WiFi.status() != WL_CONNECTED &&
+           WiFi.status() != WL_CONNECT_FAILED && millis() - wifiBeginMs < kWifiConnectMs;
+}
+
+bool wifiFailed() {
+    if (!wifiRequested || WiFi.status() == WL_CONNECTED) return false;
+    return WiFi.status() == WL_CONNECT_FAILED || millis() - wifiBeginMs >= kWifiConnectMs;
 }
 
 const char* storedSsid() {

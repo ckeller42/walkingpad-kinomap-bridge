@@ -246,7 +246,6 @@ bool Ui::tookStop() { bool r = stopPressed_; stopPressed_ = false; return r; }
 bool Ui::tookSpeedUp() { bool r = speedUp_; speedUp_ = false; return r; }
 bool Ui::tookSpeedDown() { bool r = speedDown_; speedDown_ = false; return r; }
 bool Ui::tookModeTap() { bool r = modeTapped_; modeTapped_ = false; return r; }
-bool Ui::tookSetupTap() { bool r = setupTapped_; setupTapped_ = false; return r; }
 bool Ui::tookWizardLeft() { bool r = wizL_; wizL_ = false; return r; }
 bool Ui::tookWizardRight() { bool r = wizR_; wizR_ = false; return r; }
 int Ui::tookMenuRow() { int r = menuRow_; menuRow_ = -1; return r; }
@@ -491,7 +490,10 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
         g.setTextDatum(middle_right);
         g.setTextColor(TFT_WHITE, BG);
         g.setFont(&fonts::FreeSansBold12pt7b);
+        // Clip from the left so the tail stays visible and the text never
+        // crosses into the SSID's half of the row.
         const char* shown = s.typed[0] ? s.typed : "_";
+        while (shown[1] && g.textWidth(shown) > W / 2 - 8) ++shown;
         g.drawString(shown, W - 8, 15);
 
         // A blank key is drawn as an empty key: same fill, no glyph.

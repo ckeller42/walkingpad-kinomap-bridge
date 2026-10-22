@@ -11,8 +11,7 @@
 // carry out, so the state machine can be tested on the host with no BLE, no
 // Wi-Fi and no screen.
 //
-// Reached by tapping the PHONE indicator on the main screen, mirroring the
-// BELT indicator that re-opens the setup wizard.
+// Reached by tapping the gear in the top-right corner of the main screen.
 
 #include <stddef.h>
 #include <stdint.h>
@@ -42,9 +41,11 @@ enum class Action : uint8_t {
     StartScan,       ///< Begin a Wi-Fi scan.
     SubmitPassword,  ///< Connect using ssid() and password().
     ForgetWifi,      ///< Clear the stored credentials.
+    RerunSetup,      ///< Close the menu and open the setup wizard.
 };
 
-constexpr uint8_t kMaxNetworks = 6;  ///< Scan results kept.
+constexpr uint8_t kMaxRows = 5;  ///< Rows that fit on the 320x240 panel.
+constexpr uint8_t kMaxNetworks = kMaxRows;  ///< Scan results kept: as many as shown.
 constexpr size_t kMaxSsid = 33;      ///< 32 characters plus NUL.
 constexpr size_t kMaxPassword = 64;  ///< WPA2 allows 63 characters, plus NUL.
 
@@ -59,6 +60,8 @@ struct Inputs {
     bool wifiUp = false;          ///< Wi-Fi is associated.
     const char* storedSsid = "";  ///< Stored SSID, or "" when none.
     const char* ip = "";          ///< Current IP, or "" when offline.
+    bool wifiConnecting = false;  ///< A connect was requested and is still within its window.
+    bool wifiFailed = false;      ///< The last connect was rejected or timed out.
     bool scanning = false;        ///< A Wi-Fi scan is in progress.
     uint8_t networkCount = 0;     ///< Networks in @ref networks.
     const char* networks[kMaxNetworks] = {};  ///< Scan results, strongest first.
@@ -70,8 +73,6 @@ struct Row {
     char value[18] = {};  ///< Right-hand text, often a state.
     bool enabled = true;  ///< A disabled row is drawn dim and ignores taps.
 };
-
-constexpr uint8_t kMaxRows = 5;  ///< Rows that fit on the 320x240 panel.
 
 /**
  * @brief A screen description for the host to draw.
@@ -96,8 +97,7 @@ struct Screen {
 /**
  * @brief The developer menu's screen flow.
  *
- * Reached by tapping the PHONE indicator on the main screen, mirroring the
- * BELT indicator that re-opens the setup wizard.
+ * Reached by tapping the gear in the top-right corner of the main screen.
  */
 class DevMenu {
 public:

@@ -273,7 +273,7 @@ static void enterWizard(uint32_t now) {
     wizDirty = true;
     scanEnterMs = now;
     ui.setWizardMode(true);
-    (void)ui.tookArmButton(); (void)ui.tookStop(); (void)ui.tookSetupTap();
+    (void)ui.tookArmButton(); (void)ui.tookStop();
 }
 
 static void leaveWizard(bool completed) {
@@ -458,6 +458,8 @@ static devmenu::Inputs devInputs() {
     in.devOn = logsink::devOn();
     in.udpOn = logsink::udpOn();
     in.wifiUp = logsink::netOk();
+    in.wifiConnecting = logsink::wifiConnecting();
+    in.wifiFailed = logsink::wifiFailed();
     in.storedSsid = logsink::storedSsid();
     in.ip = logsink::ipText();
     in.scanning = logsink::scanning();
@@ -494,6 +496,10 @@ static void devMenuAct(devmenu::Action a) {
         case A::ForgetWifi:
             logsink::setWifi("", "");
             break;
+        case A::RerunSetup:
+            leaveDevMenu();
+            enterWizard(millis());
+            break;
         case A::None:
             break;
     }
@@ -519,6 +525,10 @@ static void devMenuTick() {
     // A scan finishing changes the screen with no touch at all, so redraw
     // while one is running rather than only on input.
     if (in.scanning) devDirty = true;
+    // Wi-Fi state (connecting, IP, wrong password) also changes with no
+    // touch, so refresh at least once a second while the menu is open.
+    static uint32_t lastDevRedrawMs = 0;
+    if (millis() - lastDevRedrawMs >= 1000) { devDirty = true; lastDevRedrawMs = millis(); }
     if (devDirty) {
         devDirty = false;
         ui.renderDevMenu(devMenu.screen(devInputs()));
@@ -867,16 +877,21 @@ void loop() {
                 applyOutcome(state.stopFromUi());  // also disarms
                 redraw = true;
             }
-            // Re-open setup, but never under a moving belt.
-            if (ui.tookSetupTap() && !state.beltRunning()) enterWizard(now);
-            // The developer menu can take the radio up and down and re-pair
-            // Wi-Fi, so it is refused under a moving belt for the same reason.
-            if (ui.tookDevTap() && !state.beltRunning()) {
-                devMenu.open();
-                inDevMenu = true;
-                devDirty = true;
-                ui.setMenuMode(true);
-                logsink::line("dev menu opened");
+            // The developer menu can take the radio up and down, re-pair
+            // Wi-Fi and re-run setup, so it is refused unless the belt is
+            // known to be stopped, and AUTO must be left first. Opening it
+            // disarms: the menu has no STOP of its own.
+            if (ui.tookDevTap()) {
+                if (!wilink::parked(lastStatus) || !beltFresh()) showReason("STOP first");
+                else if (state.autoActive() || state.autoPending()) showReason("Leave AUTO first");
+                else {
+                    applyOutcome(state.setArmed(false));
+                    devMenu.open();
+                    inDevMenu = true;
+                    devDirty = true;
+                    ui.setMenuMode(true);
+                    logsink::line("dev menu opened");
+                }
             }
         }
         if (stopRequested) {  // FTMS Stop/Pause: honour it

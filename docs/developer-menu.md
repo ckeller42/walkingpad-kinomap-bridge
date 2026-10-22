@@ -4,10 +4,11 @@ Everything with a radio lives behind this menu, and a shipped firmware has it
 all switched off. The bridge does not bring Wi-Fi up at all until developer
 mode is on.
 
-**To open it: tap the PHONE indicator** on the main screen. That mirrors the
-BELT indicator, which re-opens the setup wizard. Both are refused while the
-belt is moving — the menu can take the radio up and down and re-pair Wi-Fi,
-which is not something to do underfoot.
+**To open it: tap the gear in the top-right corner** of the main screen. It is
+refused unless the belt is known to be stopped (the screen says "STOP first"),
+and in AUTO ("Leave AUTO first") — the menu can take the radio up and down and
+re-pair Wi-Fi, which is not something to do underfoot. Opening it disarms. The
+menu's "Re-run setup" row is the way back into the setup wizard.
 
 ![The developer menu: the radio switches and the stored network](screens/dev-menu-root.png)
 
@@ -17,8 +18,9 @@ which is not something to do underfoot.
 |---|---|
 | **Developer mode** | The master switch. Off means no radio at all, whatever the other settings say. |
 | **UDP log** | The log broadcast itself. Reads `needs dev` and ignores taps while developer mode is off, rather than storing a setting that silently does nothing. |
-| **Wi-Fi** | Scan and pair. Shows the current IP when associated, `offline` when credentials are stored but not connected, `not set` when there are none. |
+| **Wi-Fi** | Scan and pair. Shows the current IP when associated, `connecting...` for up to 15 s after CONNECT, `wrong password?` when the connect failed, `offline` when credentials are stored but not connected, `not set` when there are none. |
 | *(network name)* | Forget the stored credentials. Only offered when something is stored. |
+| **Re-run setup** | Closes the menu and opens the setup wizard. Always available, even with developer mode off. |
 
 There is no protocol row. The bridge is a treadmill and only a treadmill: it
 presents FTMS (`0x1826`) and nothing else, so there is nothing to choose. A row
