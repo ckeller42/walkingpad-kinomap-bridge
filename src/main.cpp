@@ -685,10 +685,12 @@ void setup() {
 #if UI_SCREENSHOT
     demoT0 = millis();  // the tour is started by demoAdvance(0) from loop()
     (void)setupDone;
-    ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false);
+    ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false,
+                  ModeBadge::None, false);
 #else
     if (!setupDone) enterWizard(millis());
-    else ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false);  // boots disarmed
+    else ui.render(0, 0, 0, 0, 0, false, false, state.armed(), false, -1, false,
+                  ModeBadge::None, false);  // boots disarmed
 #endif
 }
 
@@ -818,7 +820,8 @@ void loop() {
         const bool charging = M5.Power.isCharging();
         if (!inDevMenu)
             ui.render(centi, commanded, dist, elapsed, lastStatus.steps, beltUp, phoneUp,
-                      armed, running, battPct, charging);
+                      armed, running, battPct, charging,
+                      ModeBadge::None, false);
     }
     if (shotPending) {
         shotPending = false;

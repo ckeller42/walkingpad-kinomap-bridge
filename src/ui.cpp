@@ -14,6 +14,8 @@ constexpr int HIT_Y = 180;  // just above the bar, clear of the distance/time ro
 constexpr int HALF = W / 2;
 constexpr int SPD_BTN_W = 72;     // "-" at x 0..71, "+" at x 248..319
 constexpr int SPD_BTN_Y0 = 44, SPD_BTN_Y1 = 140;
+constexpr int BADGE_X0 = 104, BADGE_X1 = 176;  // mode badge tap zone (y < SETUP_HIT_Y), carved out of the BELT strip
+constexpr int BADGE_CX = 140, BADGE_CY = 14;
 constexpr int SETUP_HIT_Y = 40;  // top strip: tap the BELT indicator to re-run setup
 // The settings gear: a visible affordance in the top-right corner. The menu
 // used to be a hidden tap on the PHONE indicator, which nobody could find.
@@ -68,6 +70,22 @@ void drawGear(lgfx::LovyanGFX& g, int cx, int cy, int r, uint16_t fg) {
     }
     g.fillCircle(cx, cy, r - 2, fg);
     g.fillCircle(cx, cy, r - 5, BG);
+}
+
+// Belt mode badge: a small rounded box with one letter. M green, A cyan,
+// A? amber. Grey when disarmed (it is still a tap target, but visibly quiet).
+void drawModeBadge(lgfx::LovyanGFX& g, int cx, int cy, ModeBadge b, bool armed) {
+    if (b == ModeBadge::None) return;
+    const char* txt = "M";
+    uint16_t col = TFT_GREEN;
+    if (b == ModeBadge::Auto) { txt = "A"; col = TFT_CYAN; }
+    else if (b == ModeBadge::AutoPending) { txt = "A?"; col = TFT_ORANGE; }
+    if (!armed) col = DIM;
+    g.drawRoundRect(cx - 13, cy - 10, 26, 20, 5, col);
+    g.setTextColor(col, BG);
+    g.setTextDatum(middle_center);
+    g.setFont(b == ModeBadge::AutoPending ? &fonts::FreeSans9pt7b : &fonts::FreeSansBold12pt7b);
+    g.drawString(txt, cx, cy);
 }
 
 void dot(lgfx::LovyanGFX& g, int cx, const char* label, bool up, bool sim = false) {
@@ -196,6 +214,7 @@ void Ui::poll() {
         // The gear is a real, visible button and owns the right edge. The BELT
         // indicator still re-runs setup, which the wizard's last screen says.
         if (t.x >= W - GEAR_W) devTapped_ = true;
+        else if (t.x >= BADGE_X0 && t.x < BADGE_X1) modeTapped_ = true;
         else if (left) setupTapped_ = true;
     } else if (!wizardMode_ && t.y >= SPD_BTN_Y0 && t.y < SPD_BTN_Y1) {
         if (t.x < SPD_BTN_W) speedDown_ = true;
@@ -236,6 +255,7 @@ bool Ui::tookArmButton() { bool r = armPressed_; armPressed_ = false; return r; 
 bool Ui::tookStop() { bool r = stopPressed_; stopPressed_ = false; return r; }
 bool Ui::tookSpeedUp() { bool r = speedUp_; speedUp_ = false; return r; }
 bool Ui::tookSpeedDown() { bool r = speedDown_; speedDown_ = false; return r; }
+bool Ui::tookModeTap() { bool r = modeTapped_; modeTapped_ = false; return r; }
 bool Ui::tookSetupTap() { bool r = setupTapped_; setupTapped_ = false; return r; }
 bool Ui::tookWizardLeft() { bool r = wizL_; wizL_ = false; return r; }
 bool Ui::tookWizardRight() { bool r = wizR_; wizR_ = false; return r; }
@@ -266,7 +286,8 @@ bool Ui::shotNow() {
 
 void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
                 uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
-                bool armed, bool running, int battPct, bool charging) {
+                bool armed, bool running, int battPct, bool charging,
+                ModeBadge badge, bool autoMode) {
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
 
@@ -277,6 +298,7 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     dot(g, HALF + HALF / 2 - 18, "PHONE", phoneUp);
 
     drawGear(g, GEAR_CX, GEAR_CY, GEAR_R, DIM);
+    drawModeBadge(g, BADGE_CX, BADGE_CY, badge, armed);
 
     // Bridge's own battery, top-left. classify() (lib/battery) decides the
     // state; drawBattery hides it entirely when there is no cell.
@@ -288,7 +310,7 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
         g.setFont(&fonts::FreeSans9pt7b);
         g.setTextColor(ARM_GO, BG);
         g.setTextDatum(top_right);
-        g.drawString("ARMED", W - 4, 30);
+        g.drawString(autoMode ? "AUTO" : "ARMED", W - 4, 30);
     }
 
     char buf[24];
@@ -324,8 +346,9 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
 
     // Speed -/+ : dim and unmistakably inert while disarmed, like START.
     {
-        const uint16_t bg = armed ? BTN_GREY : ARM_OFF;
-        const uint16_t fg = armed ? TFT_WHITE : DIM;
+        const bool speedOk = armed && !autoMode;  // Auto: the belt owns speed
+        const uint16_t bg = speedOk ? BTN_GREY : ARM_OFF;
+        const uint16_t fg = speedOk ? TFT_WHITE : DIM;
         const int by = SPD_BTN_Y0, bh = SPD_BTN_Y1 - SPD_BTN_Y0, cy = by + bh / 2;
         g.fillRoundRect(2, by, SPD_BTN_W - 4, bh, 8, bg);
         g.fillRoundRect(W - SPD_BTN_W + 2, by, SPD_BTN_W - 4, bh, 8, bg);
@@ -363,14 +386,15 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     // It used to read ARMED in the third case, which named the state rather
     // than the action, leaving no clue that tapping is how you undo it. The
     // state is still carried by the colour, and now also by the top bar.
-    const bool canStart = armed && !running && beltUp;
+    const bool canStart = armed && !running && beltUp && !autoMode;
     const char* label = !armed ? "ARM" : (canStart ? "START" : "DISARM");
     const uint16_t armBg = !armed ? ARM_OFF : (canStart ? ARM_GO : ARM_ON);
     barButton(g, 0, armBg, label);
     barButton(g, HALF, TFT_RED, "STOP");
     barDivider(g);
 
-    finishFrame(100 + (armed ? 1 : 0) + (canStart ? 2 : 0) + (centiKmh > 0 ? 4 : 0) + (sim_ ? 8 : 0));
+    finishFrame(100 + (armed ? 1 : 0) + (canStart ? 2 : 0) + (centiKmh > 0 ? 4 : 0) + (sim_ ? 8 : 0) +
+                (autoMode ? 16 : 0) + (badge == ModeBadge::AutoPending ? 32 : 0));
 }
 
 void Ui::renderWizard(const wizard::Screen& s, bool sim) {

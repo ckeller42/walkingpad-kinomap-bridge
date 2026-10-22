@@ -13,9 +13,9 @@
  *
  * | y        | content |
  * |----------|---------|
- * | 0..27    | link indicators (BELT left, PHONE right), battery gauge (top-left) and the settings gear |
+ * | 0..27    | link indicators (BELT left, PHONE right), battery gauge (top-left), mode badge (centre) and the settings gear |
  * | 28..149  | instantaneous speed, very large |
- * | 44..139  | the readout flanked by `-` (x 0..71) and `+` (x 248..319), enabled only while armed |
+ * | 44..139  | the readout flanked by `-` (x 0..71) and `+` (x 248..319), enabled only while armed and not in Auto |
  * | 150..175 | distance (left), steps (centre) and elapsed time (right) |
  * | 184..239 | bottom bar: left = ARM / START / DISARM, right = STOP |
  *
@@ -28,6 +28,19 @@
  * setMenuMode(); the menu is tested first, so a row tap cannot also read as a
  * speed button.
  */
+
+/**
+ * @brief What the top-bar mode badge shows.
+ *
+ * The UI only draws this; deciding it (and what a tap on it means) is the
+ * caller's policy.
+ */
+enum class ModeBadge : uint8_t {
+    None,         ///< Mode unknown or no belt: nothing is drawn.
+    Manual,       ///< Belt is in manual mode (`M`, green).
+    Auto,         ///< Belt is in auto mode (`A`, cyan).
+    AutoPending,  ///< Auto requested but not yet confirmed by the belt (`A?`, amber).
+};
 
 /**
  * @brief The bridge's screen and its latched touch input.
@@ -74,10 +87,15 @@ public:
      * @param running           The belt is moving.
      * @param battPct           Bridge battery charge 0..100, or < 0 if unknown / no cell.
      * @param charging          True while the bridge is on external power and charging.
+     * @param badge             What the top-bar mode badge shows; drawn dim
+     *        while disarmed.
+     * @param autoMode          Auto is observed or pending. Mutes `+`/`-`,
+     *        turns the `ARMED` tag into `AUTO` and removes the `START` face.
      */
     void render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance10m,
                 uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
-                bool armed, bool running, int battPct, bool charging);
+                bool armed, bool running, int battPct, bool charging,
+                ModeBadge badge, bool autoMode);
 
     /**
      * @brief Emit the current frame over serial (the console's `shot`).
@@ -161,6 +179,9 @@ public:
     /** @brief The BELT indicator, which re-runs setup. @return True once per tap. */
     bool tookSetupTap();
 
+    /** @brief The mode badge in the top bar. @return True once per tap. */
+    bool tookModeTap();
+
     /** @brief The bottom bar's left button. @return True once per tap. */
     bool tookWizardLeft();
 
@@ -178,7 +199,8 @@ private:
     bool stopPressed_ = false;
     bool speedUp_ = false;
     bool speedDown_ = false;
-    bool setupTapped_ = false;
+    bool setupTapped_ = false;  // BELT strip; the badge zone is carved out of it
+    bool modeTapped_ = false;
     bool wizL_ = false;
     bool wizR_ = false;
     bool menuMode_ = false;
