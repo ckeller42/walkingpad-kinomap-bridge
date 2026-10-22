@@ -104,6 +104,7 @@ void barButton(lgfx::LovyanGFX& g, int x0, int width, uint16_t bg, const char* l
     g.setTextColor(TFT_WHITE, bg);
     g.setFont(&fonts::FreeSansBold18pt7b);
     if (g.textWidth(label) > width - 8) g.setFont(&fonts::FreeSansBold12pt7b);
+    if (g.textWidth(label) > width - 8) g.setFont(&fonts::FreeSansBold9pt7b);
     g.drawString(label, x0 + width / 2, BAR_Y + bh / 2);
 }
 void barDivider(lgfx::LovyanGFX& g, int split) {
@@ -310,10 +311,10 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     if (armed) {
         const uint16_t col = autoMode ? TFT_CYAN : ARM_GO;
         g.fillRect(0, 25, W, 3, col);
-        g.setFont(&fonts::FreeSansBold12pt7b);
+        g.setFont(&fonts::FreeSansBold9pt7b);  // 12pt would clip under the + button
         g.setTextColor(col, BG);
         g.setTextDatum(top_right);
-        g.drawString(autoMode ? "AUTO" : "ARMED", W - 4, 30);
+        g.drawString(autoMode ? "AUTO" : "ARMED", W - 4, 28);
     }
 
     char buf[24];
@@ -331,15 +332,16 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     g.setTextColor(DIM, BG);
     // Clear of the + button (x >= W - SPD_BTN_W), which otherwise erases half
     // the unit label.
+    // Skipped while a reason is shown: the reason owns x 78..242 on this row.
     g.setTextDatum(bottom_right);
-    g.drawString("km/h", W - SPD_BTN_W - 6, 150);
+    if (reason == nullptr) g.drawString("km/h", W - SPD_BTN_W - 6, 150);
 
     // While a commanded speed has not been reached yet, show it. Without this
     // a +/- press changes nothing on screen for a poll or two and reads as a
     // dead button. Drawn dim so it never competes with the actual speed.
     // A refusal reason takes this slot for its short window instead.
     if (reason != nullptr) {
-        g.setFont(&fonts::FreeSansBold12pt7b);
+        g.setFont(&fonts::FreeSansBold9pt7b);
         g.setTextColor(TFT_ORANGE, BG);
         g.setTextDatum(bottom_left);
         g.drawString(reason, SPD_BTN_W + 6, 150);

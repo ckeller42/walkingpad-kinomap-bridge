@@ -433,6 +433,12 @@ static const char* stepName() {
 // Manual speed: the ONE path for the on-screen +/- and the console `speed`
 // commands. dir != 0 steps; dir == 0 sets absTenths. BridgeState decides,
 // applyOutcome executes (BeltGate paces). Returns nullptr or an err reason.
+/// Explain a `+`/`-` tap that will be refused (disarmed, or Auto owns speed).
+static void speedTapReason() {
+    if (!state.armed()) showReason("ARM first");
+    else if (state.autoActive() || state.autoPending()) showReason("AUTO sets speed");
+}
+
 static const char* manualSpeed(int dir, uint8_t absTenths) {
     if (inWizard) return "wizard-active";
     if (!state.armed()) return "not-armed";
@@ -819,13 +825,12 @@ void loop() {
                     want, !stationary || startPending || state.beltRunning());
                 // A refused tap must leave evidence: the first badge test on
                 // hardware was refused four times in silence (belt in state 3).
-                if (o.count == 0)
+                if (o.count == 0) {
                     logsink::line("mode tap refused: want=%u fresh=%d state=%u speed=%u armed=%d "
                                   "pending=%d running=%d",
                                   (unsigned)want, (int)fresh, (unsigned)lastStatus.beltState,
                                   (unsigned)lastStatus.tenthKmh, (int)state.armed(),
                                   (int)startPending, (int)state.beltRunning());
-                if (o.count == 0) {
                     if (!state.armed()) showReason("ARM first");
                     else if (!fresh) showReason("Belt offline");
                     else if (startPending) showReason("Starting - wait");
@@ -848,11 +853,14 @@ void loop() {
                 redraw = true;
             }
             // Same path as console `speed up|down`; ignored (button is dim) unless armed.
-            for (const int dir : {ui.tookSpeedUp() ? 1 : 0, ui.tookSpeedDown() ? -1 : 0}) {
-                if (dir == 0) continue;
-                if (!state.armed()) showReason("ARM first");
-                else if (state.autoActive() || state.autoPending()) showReason("AUTO: belt sets speed");
-                (void)manualSpeed(dir, 0);
+            if (ui.tookSpeedUp()) {
+                speedTapReason();
+                (void)manualSpeed(1, 0);
+                redraw = true;
+            }
+            if (ui.tookSpeedDown()) {
+                speedTapReason();
+                (void)manualSpeed(-1, 0);
                 redraw = true;
             }
             if (ui.tookStop()) {
