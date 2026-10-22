@@ -70,7 +70,8 @@ static constexpr uint32_t kCmdBaseMs = 3000;
 // After a Stop the belt keeps reporting motion while it decelerates; do not
 // treat that as a fresh start (it would re-notify Kinomap "started").
 static constexpr uint32_t kPostStopGraceMs = 5000;
-static uint32_t lastStopMs = 0;
+// Starts one grace period in the past so boot does not mask Auto detection.
+static uint32_t lastStopMs = 0 - kPostStopGraceMs;
 
 static policy::BeltMode toBeltMode(uint8_t wireMode) {
     switch (wireMode) {
@@ -818,11 +819,13 @@ void loop() {
                 const auto prevMode = state.observedMode();
                 applyOutcome(state.observeMode(toBeltMode(st.mode)));
                 if (state.observedMode() != prevMode)
-                    logsink::line("belt mode %u -> %u pending=%d active=%d", (unsigned)prevMode,
-                                  (unsigned)state.observedMode(), (int)state.autoPending(),
-                                  (int)state.autoActive());
+                    logsink::line("belt mode %u -> %u raw=%u pending=%d active=%d", (unsigned)prevMode,
+                                  (unsigned)state.observedMode(), (unsigned)st.mode,
+                                  (int)state.autoPending(), (int)state.autoActive());
+                // Fresh millis(), not `now`: a Stop applied earlier this iteration
+                // sets lastStopMs > now, and the unsigned delta would wrap.
                 if (state.autoActive() && !state.beltRunning() && st.beltState == 1 &&
-                    now - lastStopMs >= kPostStopGraceMs)
+                    millis() - lastStopMs >= kPostStopGraceMs)
                     applyOutcome(state.onBeltObservedRunning());
                 speedPolicy.onBeltSpeed(st.tenthKmh);
                 driveStart(st, prevTenths, now);
