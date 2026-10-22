@@ -463,7 +463,8 @@ static devmenu::Inputs devInputs() {
     in.storedSsid = logsink::storedSsid();
     in.ip = logsink::ipText();
     in.scanning = logsink::scanning();
-    in.networkCount = logsink::scanCount();
+    const uint8_t n = logsink::scanCount();
+    in.networkCount = n < devmenu::kMaxNetworks ? n : devmenu::kMaxNetworks;
     for (uint8_t i = 0; i < in.networkCount && i < devmenu::kMaxNetworks; ++i)
         in.networks[i] = logsink::scanSsid(i);
     return in;
