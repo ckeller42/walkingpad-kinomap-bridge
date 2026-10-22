@@ -292,7 +292,7 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     g.fillScreen(BG);
 
     // A simulated belt must never look like a healthy real one: amber "SIM".
-    if (sim_) dot(g, HALF / 2, "SIM BELT", true, true);
+    if (sim_) dot(g, HALF / 2, "SIM", true, true);
     else dot(g, HALF / 2, "BELT", beltUp);
     // Shifted left of centre to clear the settings gear in the corner.
     dot(g, HALF + HALF / 2 - 18, "PHONE", phoneUp);

@@ -83,7 +83,7 @@ public:
      * @param steps             Session step count, from the belt's status frame.
      * @param beltUp            Belt linked and delivering fresh status.
      * @param phoneUp           A phone is connected.
-     * @param armed             The bridge is armed; also enables `+`/`-`.
+     * @param armed             The bridge is armed; enables `+`/`-` unless @p autoMode.
      * @param running           The belt is moving.
      * @param battPct           Bridge battery charge 0..100, or < 0 if unknown / no cell.
      * @param charging          True while the bridge is on external power and charging.
@@ -129,7 +129,7 @@ public:
     void setMenuMode(bool on) { menuMode_ = on; }
 
     /**
-     * @brief Mark the belt indicator as amber "SIM BELT".
+     * @brief Mark the belt indicator as amber "SIM".
      * @param sim True while a simulated belt is bound.
      * @note A simulated belt must never read as a healthy real one.
      */
