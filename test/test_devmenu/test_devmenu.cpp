@@ -253,6 +253,23 @@ void test_wifi_row_shows_connecting_then_failed(void) {
     in.wifiFailed = false; in.wifiUp = true; in.ip = "192.168.178.96";
     TEST_ASSERT_EQUAL_STRING("192.168.178.96", m.screen(in).rows[2].value);
 }
+void test_wifi_up_outranks_a_stale_failed_flag(void) {
+    DevMenu m; m.open();
+    Inputs in = base(true); in.storedSsid = "Insel";
+    in.wifiFailed = true; in.wifiUp = true; in.ip = "192.168.178.96";
+    TEST_ASSERT_EQUAL_STRING("192.168.178.96", m.screen(in).rows[2].value);
+}
+void test_blank_keys_are_where_the_layout_says_and_shift_is_letters_only(void) {
+    for (uint8_t c = 6; c <= 8; ++c)
+        TEST_ASSERT_EQUAL(Key::Kind::Blank, keyAt(Page::Symbols2, false, 1, c).kind);
+    for (uint8_t c = 1; c <= 7; ++c)
+        TEST_ASSERT_EQUAL(Key::Kind::Blank, keyAt(Page::Symbols2, false, 2, c).kind);
+    TEST_ASSERT_EQUAL(Key::Kind::Shift, keyAt(Page::Letters, false, 2, 0).kind);
+    for (uint8_t p = 1; p < 3; ++p)
+        for (uint8_t r = 0; r < 3; ++r)
+            for (uint8_t c = 0; c < 10; ++c)
+                TEST_ASSERT_NOT_EQUAL(Key::Kind::Shift, keyAt((Page)p, false, r, c).kind);
+}
 void test_scan_list_keeps_as_many_networks_as_it_shows(void) {
     TEST_ASSERT_EQUAL(kMaxRows, kMaxNetworks);
 }
@@ -316,6 +333,8 @@ int main(int, char**) {
     RUN_TEST(test_root_offers_five_live_rows_and_ignores_taps_past_them);
     RUN_TEST(test_root_offers_rerun_setup_even_with_dev_off);
     RUN_TEST(test_wifi_row_shows_connecting_then_failed);
+    RUN_TEST(test_wifi_up_outranks_a_stale_failed_flag);
+    RUN_TEST(test_blank_keys_are_where_the_layout_says_and_shift_is_letters_only);
     RUN_TEST(test_scan_list_keeps_as_many_networks_as_it_shows);
     RUN_TEST(test_every_screen_has_a_title_and_a_left_button);
     RUN_TEST(test_screens_have_distinct_phases);

@@ -801,7 +801,7 @@ void loop() {
     bool redraw = false;
     uint16_t centi;
     uint32_t dist, elapsed;
-    bool beltUp, phoneUp, armed, running, autoMode = false;
+    bool beltUp, phoneUp, armed, running, moving = false, autoMode = false;
     ModeBadge badge = ModeBadge::None;
     wizard::Screen wscreen;
     // (console `shot` forces a redraw via wizDirty so the frame is current)
@@ -898,9 +898,16 @@ void loop() {
             // known to be stopped, and AUTO must be left first. Opening it
             // disarms: the menu has no STOP of its own.
             if (ui.tookDevTap()) {
-                if (!wilink::parked(lastStatus) || !beltFresh()) showReason("STOP first");
-                else if (state.autoActive() || state.autoPending()) showReason("Leave AUTO first");
-                else {
+                // With the link down a bridge cannot move the belt, and setup
+                // and Wi-Fi must stay reachable, so only a linked belt that
+                // is not known to be parked refuses.
+                if (theBelt.linkUp() && (!beltFresh() || !wilink::parked(lastStatus))) {
+                    showReason("Belt not ready");
+                    redraw = true;
+                } else if (state.autoActive() || state.autoPending()) {
+                    showReason("Leave AUTO first");
+                    redraw = true;
+                } else {
                     applyOutcome(state.setArmed(false));
                     devMenu.open();
                     inDevMenu = true;
@@ -957,6 +964,9 @@ void loop() {
         phoneUp = bleServer.phoneConnected();
         armed = state.armed();
         running = state.beltRunning();
+        // The wide STOP follows observed motion too, not only the bridge's belief
+        // (a belt started from KS Fit or by stepping on in Auto).
+        moving = running || (fresh && !wilink::parked(lastStatus));
         autoMode = state.autoActive() || state.autoPending();
         badge = state.autoPending() ? ModeBadge::AutoPending
               : state.autoActive()  ? ModeBadge::Auto
@@ -993,8 +1003,8 @@ void loop() {
                       armed, running, battPct, charging,
                       badge, autoMode,
                       policy::leftButton(armed, startPending, state.startAllowed(beltFresh())),
-                      millis() < reasonUntilMs ? reasonText : nullptr,
-                      running);
+                      (int32_t)(reasonUntilMs - millis()) > 0 ? reasonText : nullptr,
+                      moving);
     }
     if (shotPending) {
         shotPending = false;
