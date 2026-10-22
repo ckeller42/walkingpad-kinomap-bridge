@@ -133,11 +133,12 @@ commands:
     function: 0x02
     argument: {name: mode, enum: mode}
     summary: Select the belt mode.
-    provenance: community
-    evidence: "design doc: Established facts; modes 1 and 2 also measured"
+    provenance: measured
+    evidence: "test-log: Stage 2 (modes 1 and 2); UDP capture 2026-10-22: from standby the bridge sent 'f7 a2 02 00 a4 fd' and the belt reported mode 0 within 1 s ('f8 a2 00 00 00 ...'); 'f7 a2 02 02 a6 fd' then returned it to standby"
     notes: Mode 0 (auto) is produced by the bridge only on an explicit user request, and the bridge treats Auto as active only once a status frame reports mode 0.
     examples:
       - {label: manual, argument: 1}
+      - {label: auto, argument: 0}
   - id: start_belt
     name: Start belt
     group: 0xA2
