@@ -53,7 +53,28 @@ enum class Emit {
     /// The caller **MUST** call `SpeedPolicy::adopt(Outcome::tenthKmh, now)`.
     /// The user changed the speed by hand, so the policy reference follows it.
     SyncPolicy,
+    /// Write `set_mode Outcome::mode`. Only ever Auto, Manual or Standby —
+    /// never BeltMode::Unknown.
+    SetMode,
 };
+
+/**
+ * @brief The belt's mode as reported in status byte 4.
+ *
+ * Auto is the belt following the walker on its own; Manual is the mode a start
+ * needs; Standby is where a stop parks it.
+ */
+enum class BeltMode : uint8_t {
+    Unknown,  ///< No status seen yet, or the belt link is down. A sentinel, not a wire value.
+    Auto,     ///< The belt adjusts its own speed.
+    Manual,   ///< The app or the bridge sets the speed.
+    Standby,  ///< Stopped; refuses to start until set back to manual.
+};
+
+/// Status frames an Auto request may wait for the belt to confirm it. A frame
+/// that still shows the old mode counts as "not applied yet"; the
+/// kModeConfirmFrames-th such frame gives the request up.
+constexpr uint8_t kModeConfirmFrames = 5;
 
 /// Manual speed step for the UI +/- buttons and the console `speed up|down`,
 /// in 0.1 km/h units: 0.5 km/h.
@@ -106,13 +127,16 @@ struct [[nodiscard]] Outcome {
     /// and Emit::SyncPolicy. Entry points that clamp report the clamped value
     /// here, so the UI can show what was actually asked for.
     uint8_t tenthKmh;
+    /// Mode to write. Valid for Emit::SetMode; BeltMode::Unknown otherwise.
+    BeltMode mode;
 };
 
 /**
  * @brief The arming gate and the belt's believed running state.
  *
  * Knows four bits of world — armed, belt link, phone link, belt running — and
- * nothing else. It issues no commands and keeps no clock; every effect is
+ * the mode the belt last reported (plus any mode request awaiting confirmation),
+ * and nothing else. It issues no commands and keeps no clock; every effect is
  * described by the @ref Outcome it returns.
  *
  * The running flag is *optimistic*: it is set the moment a start is emitted,
@@ -153,6 +177,8 @@ public:
      *         cleared, with another Emit::ResetPolicy if the belt was running;
      *         after a reconnect the belt is treated as stopped until a fresh
      *         armed target starts it.
+     *         The observed mode goes back to BeltMode::Unknown and any pending
+     *         mode request is dropped; a reconnect never re-sends it.
      */
     Outcome onBeltLink(bool up);
 
@@ -278,11 +304,65 @@ public:
      */
     Outcome stopFromUi();
 
+    /**
+     * @brief Ask the belt to change mode.
+     *
+     * @param m The wanted mode: Auto, Manual or Standby.
+     * @param observedRunning Whether the belt is *observed* moving, from its own
+     *        status rather than @ref beltRunning(). A mode change under a
+     *        moving belt is not ours to make.
+     * @return Emit::SetMode with Outcome::mode = @p m, and the request becomes
+     *         pending until observeMode() confirms or rejects it. Emits nothing
+     *         unless the bridge is armed, the belt link is up, and the belt is
+     *         not observed running.
+     */
+    Outcome requestMode(BeltMode m, bool observedRunning);
+
+    /**
+     * @brief Record the mode from one status frame.
+     *
+     * Call once per status frame. With a request pending, a frame showing the
+     * requested mode confirms it; a frame still showing the mode seen when it
+     * was made means "not applied yet" and counts toward
+     * @ref kModeConfirmFrames; any other mode is a rejection. Both clear the
+     * pending request.
+     *
+     * @param m The mode the frame reports.
+     * @return Emit::ResetPolicy when the belt has left Auto, whoever moved it:
+     *         the policy's reference was made under Auto and is stale. Nothing
+     *         otherwise.
+     */
+    Outcome observeMode(BeltMode m);
+
+    /**
+     * @brief The mode the belt last reported.
+     * @return BeltMode::Unknown before the first frame and after a belt link loss.
+     */
+    BeltMode observedMode() const { return observedMode_; }
+
+    /**
+     * @brief Whether the belt is in Auto.
+     * @return True when @ref observedMode() is BeltMode::Auto, however it got
+     *         there — an Auto set from the belt's own remote counts.
+     */
+    bool autoActive() const { return observedMode_ == BeltMode::Auto; }
+
+    /**
+     * @brief Whether an Auto request is waiting for confirmation.
+     * @return True from the Emit::SetMode for Auto until the belt confirms,
+     *         rejects or times it out.
+     */
+    bool autoPending() const { return pendingMode_ == BeltMode::Auto; }
+
 private:
     bool armed_ = false;
     bool beltUp_ = false;
     bool phoneUp_ = false;
     bool running_ = false;
+    BeltMode observedMode_ = BeltMode::Unknown;
+    BeltMode pendingMode_ = BeltMode::Unknown;  ///< Unknown when nothing is pending.
+    BeltMode pendingFrom_ = BeltMode::Unknown;  ///< Mode observed when the request was made.
+    uint8_t pendingFrames_ = 0;                 ///< Unchanged frames seen since the request.
 };
 
 }  // namespace policy

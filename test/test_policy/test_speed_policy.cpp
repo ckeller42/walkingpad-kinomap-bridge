@@ -244,5 +244,17 @@ int main(int, char**) {
     RUN_TEST(test_ui_start_armed_runs_start_sequence_and_notifies);
     RUN_TEST(test_ui_start_with_belt_down_or_already_running_emits_nothing);
     RUN_TEST(test_no_outcome_exceeds_the_emit_array);
+    RUN_TEST(test_request_mode_refused_when_disarmed);
+    RUN_TEST(test_request_mode_refused_when_belt_down);
+    RUN_TEST(test_request_mode_refused_while_observed_running);
+    RUN_TEST(test_request_mode_emits_set_mode_and_is_pending_not_active);
+    RUN_TEST(test_observe_mode_confirms_pending_request);
+    RUN_TEST(test_observe_mode_third_mode_while_pending_is_a_rejection);
+    RUN_TEST(test_observe_mode_unchanged_frames_time_out_after_confirm_frames);
+    RUN_TEST(test_external_auto_while_disarmed_is_observed_hands_off);
+    RUN_TEST(test_leaving_auto_emits_reset_policy);
+    RUN_TEST(test_request_manual_from_auto_at_rest_emits_set_mode_manual);
+    RUN_TEST(test_belt_link_loss_clears_pending_and_reconnect_resends_nothing);
+    RUN_TEST(test_initial_mode_is_unknown_and_not_auto);
     return UNITY_END();
 }

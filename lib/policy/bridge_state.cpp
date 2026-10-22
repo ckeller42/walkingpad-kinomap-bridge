@@ -4,7 +4,7 @@ namespace policy {
 
 namespace {
 Outcome empty(uint8_t tenth = 0) {
-    return Outcome{{Emit::None, Emit::None, Emit::None}, 0, tenth};
+    return Outcome{{Emit::None, Emit::None, Emit::None}, 0, tenth, BeltMode::Unknown};
 }
 }  // namespace
 
@@ -19,6 +19,10 @@ Outcome BridgeState::onBeltLink(bool up) {
     Outcome o = empty();
     if (up && !beltUp_) o.emits[o.count++] = Emit::ResetPolicy;
     beltUp_ = up;
+    if (!up) {  // the mode is unknowable too, and a pending request is void
+        observedMode_ = BeltMode::Unknown;
+        pendingMode_ = BeltMode::Unknown;
+    }
     if (!up && running_) {
         running_ = false;
         o.emits[o.count++] = Emit::ResetPolicy;
@@ -125,6 +129,35 @@ Outcome BridgeState::stopFromUi() {
     o.emits[o.count++] = Emit::ResetPolicy;
     running_ = false;
     armed_ = false;
+    return o;
+}
+
+Outcome BridgeState::requestMode(BeltMode m, bool observedRunning) {
+    Outcome o = empty();
+    if (!armed_ || !beltUp_ || observedRunning) return o;
+    pendingMode_ = m;
+    pendingFrom_ = observedMode_;
+    pendingFrames_ = 0;
+    o.emits[o.count++] = Emit::SetMode;
+    o.mode = m;
+    return o;
+}
+
+Outcome BridgeState::observeMode(BeltMode m) {
+    Outcome o = empty();
+    if (pendingMode_ != BeltMode::Unknown) {
+        if (m == pendingMode_) {
+            pendingMode_ = BeltMode::Unknown;  // confirmed
+        } else if (m == pendingFrom_) {        // not applied yet
+            if (++pendingFrames_ >= kModeConfirmFrames) pendingMode_ = BeltMode::Unknown;
+        } else {                               // the belt went somewhere else
+            pendingMode_ = BeltMode::Unknown;
+        }
+    }
+    if (observedMode_ == BeltMode::Auto && m != BeltMode::Auto) {
+        o.emits[o.count++] = Emit::ResetPolicy;
+    }
+    observedMode_ = m;
     return o;
 }
 

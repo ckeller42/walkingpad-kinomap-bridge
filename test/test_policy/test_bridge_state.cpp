@@ -360,4 +360,111 @@ void test_no_outcome_exceeds_the_emit_array(void) {
     check(s.setArmed(false));
     check(s.onPhoneLink(false));
     check(s.onBeltLink(false));
+    check(s.requestMode(policy::BeltMode::Auto, false));
+    check(s.observeMode(policy::BeltMode::Auto));
+    check(s.observeMode(policy::BeltMode::Manual));
+}
+
+void test_request_mode_refused_when_disarmed(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true);
+    auto o = s.requestMode(policy::BeltMode::Auto, false);
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+    TEST_ASSERT_FALSE(s.autoPending());
+}
+void test_request_mode_refused_when_belt_down(void) {
+    policy::BridgeState s;
+    (void)s.setArmed(true);
+    auto o = s.requestMode(policy::BeltMode::Auto, false);
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+}
+void test_request_mode_refused_while_observed_running(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.setArmed(true);
+    auto o = s.requestMode(policy::BeltMode::Auto, true);
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+    TEST_ASSERT_FALSE(s.autoPending());
+}
+void test_request_mode_emits_set_mode_and_is_pending_not_active(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.setArmed(true);
+    auto o = s.requestMode(policy::BeltMode::Auto, false);
+    TEST_ASSERT_EQUAL_size_t(1, o.count);
+    TEST_ASSERT_EQUAL(policy::Emit::SetMode, o.emits[0]);
+    TEST_ASSERT_EQUAL(policy::BeltMode::Auto, o.mode);
+    TEST_ASSERT_TRUE(s.autoPending());
+    TEST_ASSERT_FALSE(s.autoActive());
+}
+void test_observe_mode_confirms_pending_request(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.setArmed(true);
+    (void)s.requestMode(policy::BeltMode::Auto, false);
+    auto o = s.observeMode(policy::BeltMode::Auto);
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+    TEST_ASSERT_TRUE(s.autoActive());
+    TEST_ASSERT_FALSE(s.autoPending());
+}
+void test_observe_mode_third_mode_while_pending_is_a_rejection(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.setArmed(true);
+    (void)s.observeMode(policy::BeltMode::Manual);          // belt is Manual
+    (void)s.requestMode(policy::BeltMode::Auto, false);     // ask for Auto
+    (void)s.observeMode(policy::BeltMode::Standby);         // belt went elsewhere
+    TEST_ASSERT_FALSE(s.autoPending());
+    TEST_ASSERT_FALSE(s.autoActive());
+    TEST_ASSERT_EQUAL(policy::BeltMode::Standby, s.observedMode());
+}
+void test_observe_mode_unchanged_frames_time_out_after_confirm_frames(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.setArmed(true);
+    (void)s.observeMode(policy::BeltMode::Manual);          // belt is Manual
+    (void)s.requestMode(policy::BeltMode::Auto, false);
+    for (uint8_t i = 0; i + 1 < policy::kModeConfirmFrames; ++i) {
+        (void)s.observeMode(policy::BeltMode::Manual);      // not applied yet
+        TEST_ASSERT_TRUE(s.autoPending());
+    }
+    (void)s.observeMode(policy::BeltMode::Manual);          // the kModeConfirmFrames-th frame
+    TEST_ASSERT_FALSE(s.autoPending());
+    TEST_ASSERT_FALSE(s.autoActive());
+}
+void test_external_auto_while_disarmed_is_observed_hands_off(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true);  // disarmed
+    auto o = s.observeMode(policy::BeltMode::Auto);
+    TEST_ASSERT_EQUAL_size_t(0, o.count);
+    TEST_ASSERT_TRUE(s.autoActive());
+}
+void test_leaving_auto_emits_reset_policy(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true);
+    (void)s.observeMode(policy::BeltMode::Auto);
+    auto o = s.observeMode(policy::BeltMode::Manual);
+    TEST_ASSERT_EQUAL_size_t(1, o.count);
+    TEST_ASSERT_EQUAL(policy::Emit::ResetPolicy, o.emits[0]);
+    TEST_ASSERT_FALSE(s.autoActive());
+}
+void test_request_manual_from_auto_at_rest_emits_set_mode_manual(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.setArmed(true);
+    (void)s.observeMode(policy::BeltMode::Auto);
+    auto o = s.requestMode(policy::BeltMode::Manual, false);
+    TEST_ASSERT_EQUAL_size_t(1, o.count);
+    TEST_ASSERT_EQUAL(policy::Emit::SetMode, o.emits[0]);
+    TEST_ASSERT_EQUAL(policy::BeltMode::Manual, o.mode);
+}
+void test_belt_link_loss_clears_pending_and_reconnect_resends_nothing(void) {
+    policy::BridgeState s;
+    (void)s.onBeltLink(true); (void)s.setArmed(true);
+    (void)s.requestMode(policy::BeltMode::Auto, false);
+    (void)s.onBeltLink(false);
+    TEST_ASSERT_FALSE(s.autoPending());
+    TEST_ASSERT_EQUAL(policy::BeltMode::Unknown, s.observedMode());
+    auto o = s.onBeltLink(true);
+    for (size_t i = 0; i < o.count; ++i) TEST_ASSERT_NOT_EQUAL(policy::Emit::SetMode, o.emits[i]);
+}
+void test_initial_mode_is_unknown_and_not_auto(void) {
+    policy::BridgeState s;
+    TEST_ASSERT_EQUAL(policy::BeltMode::Unknown, s.observedMode());
+    TEST_ASSERT_FALSE(s.autoActive());
+    TEST_ASSERT_FALSE(s.autoPending());
 }
