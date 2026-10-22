@@ -825,6 +825,12 @@ void loop() {
                                   (unsigned)want, (int)fresh, (unsigned)lastStatus.beltState,
                                   (unsigned)lastStatus.tenthKmh, (int)state.armed(),
                                   (int)startPending, (int)state.beltRunning());
+                if (o.count == 0) {
+                    if (!state.armed()) showReason("ARM first");
+                    else if (!fresh) showReason("Belt offline");
+                    else if (startPending) showReason("Starting - wait");
+                    else showReason("STOP first");
+                }
                 applyOutcome(o);
                 redraw = true;
             }
@@ -842,8 +848,13 @@ void loop() {
                 redraw = true;
             }
             // Same path as console `speed up|down`; ignored (button is dim) unless armed.
-            if (ui.tookSpeedUp()) { (void)manualSpeed(1, 0); redraw = true; }
-            if (ui.tookSpeedDown()) { (void)manualSpeed(-1, 0); redraw = true; }
+            for (const int dir : {ui.tookSpeedUp() ? 1 : 0, ui.tookSpeedDown() ? -1 : 0}) {
+                if (dir == 0) continue;
+                if (!state.armed()) showReason("ARM first");
+                else if (state.autoActive() || state.autoPending()) showReason("AUTO: belt sets speed");
+                (void)manualSpeed(dir, 0);
+                redraw = true;
+            }
             if (ui.tookStop()) {
                 applyOutcome(state.stopFromUi());  // also disarms
                 redraw = true;

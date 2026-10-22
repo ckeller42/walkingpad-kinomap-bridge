@@ -16,10 +16,10 @@ constexpr int SPD_BTN_W = 72;     // "-" at x 0..71, "+" at x 248..319
 constexpr int SPD_BTN_Y0 = 44, SPD_BTN_Y1 = 140;
 constexpr int BADGE_X0 = 104, BADGE_X1 = 176;  // mode badge tap zone (y < SETUP_HIT_Y), carved out of the BELT strip
 constexpr int BADGE_CX = 140, BADGE_CY = 14;
-constexpr int SETUP_HIT_Y = 40;  // top strip: tap the BELT indicator to re-run setup
+constexpr int SETUP_HIT_Y = 40;  // top strip: the gear and the mode badge
 // The settings gear: a visible affordance in the top-right corner. The menu
 // used to be a hidden tap on the PHONE indicator, which nobody could find.
-constexpr int GEAR_W = 30;       // touch target width, from the right edge
+constexpr int GEAR_W = 44;       // touch target width, from the right edge
 constexpr int GEAR_CX = W - 16, GEAR_CY = 14, GEAR_R = 9;
 
 // Developer menu list: five rows between the title and the bottom bar.
@@ -97,19 +97,19 @@ void dot(lgfx::LovyanGFX& g, int cx, const char* label, bool up, bool sim = fals
 }
 
 // One half of the bottom bar. Falls back to a smaller font if the label is wide.
-void barButton(lgfx::LovyanGFX& g, int x, uint16_t bg, const char* label) {
+void barButton(lgfx::LovyanGFX& g, int x0, int width, uint16_t bg, const char* label) {
     const int bh = H - BAR_Y;
-    g.fillRect(x, BAR_Y, HALF, bh, bg);
+    g.fillRect(x0, BAR_Y, width, bh, bg);
     g.setTextDatum(middle_center);
     g.setTextColor(TFT_WHITE, bg);
     g.setFont(&fonts::FreeSansBold18pt7b);
-    if (g.textWidth(label) > HALF - 8) g.setFont(&fonts::FreeSansBold12pt7b);
-    g.drawString(label, x + HALF / 2, BAR_Y + bh / 2);
+    if (g.textWidth(label) > width - 8) g.setFont(&fonts::FreeSansBold12pt7b);
+    g.drawString(label, x0 + width / 2, BAR_Y + bh / 2);
 }
-void barDivider(lgfx::LovyanGFX& g) {
+void barDivider(lgfx::LovyanGFX& g, int split) {
     const int bh = H - BAR_Y;
-    g.drawFastVLine(HALF - 1, BAR_Y, bh, BG);
-    g.drawFastVLine(HALF, BAR_Y, bh, BG);
+    g.drawFastVLine(split - 1, BAR_Y, bh, BG);
+    g.drawFastVLine(split, BAR_Y, bh, BG);
 }
 
 // A compact battery gauge for the top-left corner: an outline with a fill bar
@@ -209,13 +209,13 @@ void Ui::poll() {
 
     if (t.y >= HIT_Y) {
         if (wizardMode_) (left ? wizL_ : wizR_) = true;
-        else (left ? armPressed_ : stopPressed_) = true;
+        else ((t.x < barSplit_) ? armPressed_ : stopPressed_) = true;
     } else if (!wizardMode_ && t.y < SETUP_HIT_Y) {
-        // The gear is a real, visible button and owns the right edge. The BELT
-        // indicator still re-runs setup, which the wizard's last screen says.
+        // The gear is a real, visible button and owns the right edge, then the
+        // badge; the rest of the strip is inert. Re-run setup lives in the gear
+        // menu, so a slight mis-tap beside the badge no longer opens the wizard.
         if (t.x >= W - GEAR_W) devTapped_ = true;
         else if (t.x >= BADGE_X0 && t.x < BADGE_X1) modeTapped_ = true;
-        else if (left) setupTapped_ = true;
     } else if (!wizardMode_ && t.y >= SPD_BTN_Y0 && t.y < SPD_BTN_Y1) {
         if (t.x < SPD_BTN_W) speedDown_ = true;
         else if (t.x >= W - SPD_BTN_W) speedUp_ = true;
@@ -288,7 +288,6 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
                 uint32_t elapsedSec, uint32_t steps, bool beltUp, bool phoneUp,
                 bool armed, bool running, int battPct, bool charging,
                 ModeBadge badge, bool autoMode, bool starting, const char* reason) {
-    (void)reason;  // drawn by a later change; carried so callers need not change again
     lgfx::LovyanGFX& g = target();
     g.fillScreen(BG);
 
@@ -303,13 +302,16 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
 
     // Bridge's own battery, top-left. classify() (lib/battery) decides the
     // state; drawBattery hides it entirely when there is no cell.
-    drawBattery(g, 4, 18, battPct, battery::classify(battPct, charging));
+    drawBattery(g, 4, 31, battPct, battery::classify(battPct, charging));
 
     // The button below now names its action, so the armed state is shown here
     // instead of being inferred from a button label.
+    // A full-width stripe makes it readable from a metre away.
     if (armed) {
-        g.setFont(&fonts::FreeSans9pt7b);
-        g.setTextColor(ARM_GO, BG);
+        const uint16_t col = autoMode ? TFT_CYAN : ARM_GO;
+        g.fillRect(0, 25, W, 3, col);
+        g.setFont(&fonts::FreeSansBold12pt7b);
+        g.setTextColor(col, BG);
         g.setTextDatum(top_right);
         g.drawString(autoMode ? "AUTO" : "ARMED", W - 4, 30);
     }
@@ -335,7 +337,13 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     // While a commanded speed has not been reached yet, show it. Without this
     // a +/- press changes nothing on screen for a poll or two and reads as a
     // dead button. Drawn dim so it never competes with the actual speed.
-    if (commandedCentiKmh != 0 && commandedCentiKmh != centiKmh) {
+    // A refusal reason takes this slot for its short window instead.
+    if (reason != nullptr) {
+        g.setFont(&fonts::FreeSansBold12pt7b);
+        g.setTextColor(TFT_ORANGE, BG);
+        g.setTextDatum(bottom_left);
+        g.drawString(reason, SPD_BTN_W + 6, 150);
+    } else if (commandedCentiKmh != 0 && commandedCentiKmh != centiKmh) {
         char tbuf[20];
         snprintf(tbuf, sizeof tbuf, "-> %u.%u", commandedCentiKmh / 100,
                  (commandedCentiKmh % 100) / 10);
@@ -390,9 +398,12 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     const bool canStart = armed && !running && !starting && beltUp && !autoMode;
     const char* label = !armed ? "ARM" : (canStart ? "START" : (starting ? "STARTING" : "DISARM"));
     const uint16_t armBg = !armed ? ARM_OFF : (canStart ? ARM_GO : ARM_ON);
-    barButton(g, 0, armBg, label);
-    barButton(g, HALF, TFT_RED, "STOP");
-    barDivider(g);
+    // STOP takes two thirds of the bar while the belt moves, so it is the
+    // easier target than DISARM.
+    barSplit_ = (running || starting) ? W / 3 : HALF;
+    barButton(g, 0, barSplit_, armBg, label);
+    barButton(g, barSplit_, W - barSplit_, TFT_RED, "STOP");
+    barDivider(g, barSplit_);
 
     finishFrame(100 + (armed ? 1 : 0) + (canStart ? 2 : 0) + (centiKmh > 0 ? 4 : 0) + (sim_ ? 8 : 0) +
                 (autoMode ? 16 : 0) + (starting ? 64 : 0) + (badge == ModeBadge::AutoPending ? 32 : 0));
@@ -430,9 +441,9 @@ void Ui::renderWizard(const wizard::Screen& s, bool sim) {
     for (int i = 0; i < 4; ++i)
         if (s.detail[i][0]) g.drawString(s.detail[i], 8, 121 + 17 * i);
 
-    barButton(g, 0, BTN_GREY, s.left);
-    barButton(g, HALF, ARM_GO, s.right);
-    barDivider(g);
+    barButton(g, 0, HALF, BTN_GREY, s.left);
+    barButton(g, HALF, HALF, ARM_GO, s.right);
+    barDivider(g, HALF);
 
     finishFrame(s.phase);
 }
@@ -530,9 +541,9 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
         }
     }
 
-    barButton(g, 0, BTN_GREY, s.left);
-    if (s.right[0]) barButton(g, HALF, ARM_GO, s.right);
+    barButton(g, 0, HALF, BTN_GREY, s.left);
+    if (s.right[0]) barButton(g, HALF, HALF, ARM_GO, s.right);
     else g.fillRect(HALF, BAR_Y, HALF, H - BAR_Y, ARM_OFF);
-    barDivider(g);
+    barDivider(g, HALF);
     finishFrame(s.phase);
 }
