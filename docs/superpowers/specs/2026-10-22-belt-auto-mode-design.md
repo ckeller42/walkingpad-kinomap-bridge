@@ -92,28 +92,77 @@ byte 4 reports in Auto. The design below does not depend on either for safety.
 
 ### Model: `BridgeState` learns the belt mode
 
-- New state: `observedMode` (last status byte 4, as `wilink::Mode`) and
-  `wantAuto` (the walker's preference, a bool).
-- Derived: `autoActive() == (observedMode == Mode::Auto)`.
-- New entry point `requestMode(Mode m, bool beltRunning)` → `Outcome`.
-  Gate: `armed && beltUp && !beltRunning`; otherwise emits nothing. Sets
-  `wantAuto = (m == Auto)` and emits `set_mode m`.
-- New entry point `observeMode(Mode m)` → `Outcome`. Updates `observedMode`.
-  An **external** change (one the bridge did not request) emits nothing —
-  hands-off. Transitions are logged by `main.cpp`.
-- **Structural mute**: every speed-producing entry point (`onTarget` /
-  SetSpeed, UI `+`/`-`, the phone `0x07` translation) returns an empty
-  `Outcome` while `autoActive()`, exactly as they do while disarmed. One gate,
-  in policy, not scattered `if`s in `src/`.
-- STOP (UI, phone, link loss) emits Standby as today in every mode, and
-  **preserves** `wantAuto`.
-- START while `armed && wantAuto && !autoActive()` emits `set_mode Auto`
-  (re-request) instead of the Manual start sequence. The walker then steps
-  into the front zone to start the belt.
-- **Unconfirmed request**: after emitting `set_mode Auto`, if no status frame
-  reports mode 0 within the confirmation window, the badge stays *unconfirmed*
-  and the bridge keeps its Manual personality. The walker may retry or use the
-  belt's A key. Nothing else changes.
+State (in `lib/policy/bridge_state.h`, host-tested):
+
+- `observedMode` — last status byte 4 as `wilink::Mode`, plus an **`Unknown`**
+  sentinel (not a wire value) used before the first status frame and after a
+  belt link loss.
+- `wantAuto` — the walker's preference. It follows the **last human act**: a
+  badge tap or the belt's own **M**/**A** key. Bridge-driven transitions (STOP →
+  Standby, the Manual start sequence) never touch it.
+- `pendingMode` — the mode the bridge last emitted and is awaiting, with a
+  **status-frame counter**. `BridgeState` keeps no clock: each `observeMode()`
+  call is one tick, so the confirmation window is counted in frames.
+
+Derived: `autoActive() == (observedMode == Mode::Auto)` and
+`autoPending() == (pendingMode == Mode::Auto)`.
+
+Entry points (each returns a `[[nodiscard]] Outcome`):
+
+- **`requestMode(Mode m)`** — gate: `armed && beltUp && !observedRunning`,
+  where *observedRunning* is the belt's reported state/speed, **not** the
+  optimistic `running_`. Otherwise emits nothing. Sets `wantAuto = (m == Auto)`,
+  `pendingMode = m`, and emits the new **`Emit::SetMode`** (the mode travels in
+  the `Outcome`). **Both directions switch only at rest** — to leave Auto
+  mid-walk, STOP first. That is the "no mid-walk flip" anti-goal made
+  structural.
+- **`observeMode(Mode m)`** — called once per status frame.
+  - `m == pendingMode` → confirmed; clear pending.
+  - a *different* mode arrives while pending (e.g. Manual after an Auto
+    request) → the belt rejected it; clear pending, **no automatic retry**,
+    log it.
+  - no pending and `m != observedMode` → an **external** change (belt key).
+    Update `observedMode`, set `wantAuto = (m == Auto)` — the walker just
+    expressed it on the belt — and emit nothing else: hands-off, even while
+    disarmed.
+  - frame counter passes the window with no confirmation → clear pending
+    (badge back to `M`), log it; the walker may tap again.
+  - on **leaving** Auto by any route, also emit `ResetPolicy`, so the first
+    target after Auto is not deadbanded against a stale reference.
+- **`onBeltObservedRunning()`** — new, the mirror of `onBeltObservedStopped()`.
+  In Auto the belt starts on step-on with **no bridge emission**, so `running_`
+  must follow *observed* status there: set `running_` and emit `NotifyStarted`,
+  which is what makes Kinomap begin its session. Outside Auto the existing
+  optimistic path is unchanged.
+- **Structural mute**: `apply()`, `setSpeedFromUi()`, `stepSpeedFromUi()`, the
+  speed path of `startFromUi()` and the phone `0x07` translation return an
+  empty `Outcome` while **`autoActive() || autoPending()`**, exactly as while
+  disarmed. Muting while merely *pending* closes the window in which a belt
+  that really is in Auto, but not yet confirmed, could be fought by `+`/`-`.
+- **STOP** (`stopFromUi()`, phone stop, link loss) emits `Stop` (Standby) as
+  today in every mode, clears `pendingMode`, and **preserves `wantAuto`**. As
+  today, UI STOP also disarms.
+- **START** (`startFromUi()`) while `armed && wantAuto && !autoActive()` emits
+  `SetMode(Auto)` — the re-request — instead of `StartSequence`. The walker
+  then steps into the front zone. The re-request fires on **START**, never on
+  ARM: ARM stays "enable only", matching today's two-step. So after a STOP the
+  walker re-ARMs, then taps START.
+- **`onBeltLink(false)`** resets `observedMode` to `Unknown` and clears
+  `pendingMode`; `wantAuto` survives the reconnect.
+- **Disarm** (`setArmed(false)`) behaves as today — it stops a moving belt —
+  which in Auto parks it in Standby and so leaves Auto.
+
+Leaving Auto therefore has two routes: the badge at rest (`SetMode(Manual)`),
+or STOP → Standby followed by today's Manual start sequence, which already
+writes mode Manual first.
+
+**Accepted unknown.** If this belt accepts `set_mode 0` but reports some byte-4
+value other than 0, the bridge will show `A?` then fall back to `M` while the
+belt is actually in Auto. Two things make this safe rather than dangerous: the
+command path is muted while pending, and the app evidence says the belt itself
+rejects speed commands in Auto, so a stray `+` could not fight it. The capture
+(below) is what would reveal this; it is the reason the provenance stays
+`community`.
 
 ### Screen
 
@@ -125,8 +174,19 @@ byte 4 reports in Auto. The design below does not depend on either for safety.
   `AUTO`, the left bottom button shows `DISARM` only (no `START`). `STOP`
   unchanged.
 - The badge is a **tap** target (visible affordance; no hidden gesture).
+- Left bottom button faces, extending today's three:
+  - disarmed → `ARM`
+  - armed, `wantAuto`, not `autoActive` → `START` (re-requests Auto)
+  - armed, `autoActive` → `DISARM`
+  - armed, Manual, can start → `START`; armed otherwise → `DISARM` (as today)
 - The screenshot tour (`cores3_shot`) gains phases for Manual, Auto and
   unconfirmed.
+
+### `Outcome` / `Emit`
+
+- Add `Emit::SetMode`, with the requested mode carried in `Outcome` (a new
+  `mode` field beside `tenthKmh`). `kMaxEmits` stays 3: no new outcome emits
+  more than one thing plus a policy hint.
 
 ### Kinomap
 
@@ -153,24 +213,63 @@ provenance to `measured` with the log as evidence.
 ### Tests (host, `lib/`)
 
 `BridgeState`:
-- `requestMode` emits nothing when disarmed, when belt down, or when running;
-  emits `set_mode` otherwise and records `wantAuto`.
+- `requestMode` emits nothing when disarmed, when the belt link is down, or
+  while the belt is *observed* running (both directions); otherwise emits one
+  `SetMode` and records `wantAuto` and `pendingMode`.
 - `autoActive()` is true only after `observeMode(Auto)`, never after a bare
-  `requestMode(Auto)`.
-- While `autoActive()`: `onTarget`, UI `+`/`-` and phone start emit nothing;
-  STOP emits Standby.
-- External `observeMode(Auto)` while disarmed emits nothing (hands-off).
-- After STOP with `wantAuto`, START emits `set_mode Auto`, not the Manual
-  start sequence.
-- `wantAuto` survives STOP; is cleared by `requestMode(Manual)`.
+  `requestMode(Auto)`; `autoPending()` is true in between.
+- While `autoActive()` **or** `autoPending()`: `apply()`, `setSpeedFromUi()`,
+  `stepSpeedFromUi()` and the phone start emit nothing; STOP still emits
+  `Stop`.
+- `observeMode` confirms a pending request; a different mode while pending
+  clears it with no retry; the frame-window timeout clears it.
+- External `observeMode(Auto)` while disarmed emits nothing (hands-off) and
+  sets `wantAuto`; external `observeMode(Manual)` clears `wantAuto`.
+- Leaving Auto by any route emits `ResetPolicy`.
+- `onBeltObservedRunning()` while `autoActive()` sets `running_` and emits
+  `NotifyStarted` exactly once; outside Auto it leaves the optimistic path
+  alone.
+- After STOP with `wantAuto`, re-ARM then START emits `SetMode(Auto)`, not
+  `StartSequence`; without `wantAuto` START is unchanged.
+- `wantAuto` survives STOP and belt link loss; `observedMode` resets to
+  `Unknown` on link loss and `pendingMode` clears.
+- No outcome exceeds `kMaxEmits` (extend the existing pinning test).
 
 ## Left to the builder
 
-- The confirmation window for an unconfirmed Auto request (suggest ~3 s or 5
-  status frames — pick one, name the constant).
+- The confirmation window, **in status frames** (clock-free; suggest 5 — name
+  the constant).
 - Exact badge geometry in the top bar (centre gap is roughly x 106..173,
   y 0..27).
-- Whether leaving Auto needs an explicit `set_mode Manual` or whether the
-  existing Manual start sequence (which already writes Manual) suffices.
 - Log line format for mode transitions (verbatim hex + decoded mode, per the
   evidence discipline).
+- `AGENTS.md` quotes two stale host-test counts (145 / 153; it is 168 now).
+  Nothing in CI ratchets on the count — refresh the numbers as part of this
+  work.
+
+## Builder-check resolutions
+
+A fresh reviewer read the draft and raised ten points; all were settled here
+rather than sent back, because each is either implied by the agreed intent or
+is a builder-level call. Recorded so the calls can be checked:
+
+1. Requested vs external mode change → distinguished by `pendingMode`;
+   `wantAuto` follows the last human act (badge or belt key) and ignores
+   bridge-driven transitions.
+2. Auto starts without a bridge emission → `onBeltObservedRunning()` sets
+   `running_` from status and emits `NotifyStarted`; the `requestMode` gate
+   uses *observed* running.
+3. Auto → Manual while moving → refused; STOP first (anti-goal made
+   structural).
+4. Post-STOP flow → re-ARM, then START re-requests Auto; the re-request is on
+   START, not ARM; left-button faces defined above.
+5. Unconfirmed state → `pendingMode` + a frame counter, no clock; timeout or
+   a rejecting frame clears it; no automatic retry.
+6. Belt in Auto but unconfirmed → command path muted while pending; residual
+   case recorded as an accepted unknown that the capture resolves.
+7. Initial / link-down `observedMode` → `Unknown` sentinel; reset on link
+   loss; `wantAuto` survives.
+8. Stale test counts in `AGENTS.md` → informational only; refresh.
+9. `set_mode` outcome → new `Emit::SetMode` with the mode in `Outcome`;
+   `kMaxEmits` unchanged.
+10. Policy reference after Auto → `ResetPolicy` emitted on leaving Auto.
