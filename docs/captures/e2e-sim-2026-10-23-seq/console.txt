@@ -1,0 +1,90 @@
+3.245 > status
+3.455 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+3.455 < ok
+3.456 > log udp on
+3.665 < ok
+6.016 > status
+6.156 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+6.157 < ok
+6.157 > stop
+6.363 < ok
+6.363 > status
+6.573 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=4 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+6.573 < ok
+6.574 > status
+6.775 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=4 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+6.775 < ok
+6.776 > stop
+6.978 < ok
+6.978 > start
+7.188 < err not-armed
+8.282 > speed 3
+8.431 < err not-armed
+8.432 > status
+8.641 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=4 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+8.641 < ok
+8.641 > stop
+8.844 < ok
+10.827 > arm
+10.904 < ok
+10.904 > start
+11.107 < notify started (2ADA 04), phone=1
+11.107 < ok
+18.399 > status
+18.566 < status armed=1 running=1 belt_link=1 phone_link=1 belt_state=1 speed=20 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+18.566 < ok
+18.567 > stop
+18.776 < ok
+21.359 > status
+21.485 < status armed=0 running=0 belt_link=1 phone_link=1 belt_state=4 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+21.485 < ok
+21.488 > status
+21.692 < status armed=0 running=0 belt_link=1 phone_link=1 belt_state=4 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+21.692 < ok
+21.692 > stop
+21.902 < ok
+22.980 > arm
+23.149 < ok
+23.352 < cp op=0x00 len=1
+23.352 < cp op=0x07 len=1
+23.352 < notify started (2ADA 04), phone=1
+30.619 < cp op=0x02 len=3 payload=fa 00
+31.446 < cp op=0x08 len=2 payload=01
+35.442 > status
+35.607 < status armed=1 running=0 belt_link=1 phone_link=1 belt_state=4 speed=0 target=250 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+35.607 < ok
+35.609 > status
+35.808 < status armed=1 running=0 belt_link=1 phone_link=1 belt_state=4 speed=0 target=250 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+35.808 < ok
+35.808 > stop
+36.018 < ok
+36.018 > arm
+36.228 < ok
+36.228 > mode auto
+36.438 < ok
+38.397 > speed 3
+38.509 < err auto-mode
+40.443 > mode manual
+40.584 < ok
+42.532 > stop
+42.660 < ok
+42.660 > status
+42.870 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=250 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+42.870 < ok
+42.870 > stop
+43.079 < ok
+43.080 > wizard
+43.284 < ok
+43.284 > status
+43.494 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=250 wizard=siminfo menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+43.494 < ok
+43.495 > wizard next
+43.701 < ok
+43.701 > wizard next
+43.911 < ok
+43.911 > wizard next
+44.116 < setup: complete
+44.116 < ok
+44.116 > status
+44.326 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=4 speed=0 target=250 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+44.326 < ok

@@ -23,6 +23,8 @@ void test_every_documented_command_parses(void) {
     TEST_ASSERT_EQUAL(Cmd::SpeedUp, parse("speed up"));
     TEST_ASSERT_EQUAL(Cmd::SpeedDown, parse("SPEED  Down"));
     TEST_ASSERT_EQUAL(Cmd::SpeedSet, parse("speed 3.5"));
+    TEST_ASSERT_EQUAL(Cmd::ModeAuto, parse("mode auto"));
+    TEST_ASSERT_EQUAL(Cmd::ModeManual, parse("Mode  Manual"));
     TEST_ASSERT_EQUAL(Cmd::Cp, parse("cp"));
     TEST_ASSERT_EQUAL(Cmd::Shot, parse("shot"));
     TEST_ASSERT_EQUAL(Cmd::Help, parse("help"));
@@ -91,6 +93,8 @@ void test_unknown_and_prefix_commands_are_unknown_not_silent(void) {
     TEST_ASSERT_EQUAL(Cmd::Unknown, parse("arm now"));
     TEST_ASSERT_EQUAL(Cmd::Unknown, parse("sim"));
     TEST_ASSERT_EQUAL(Cmd::Unknown, parse("sim maybe"));
+    TEST_ASSERT_EQUAL(Cmd::Unknown, parse("mode"));
+    TEST_ASSERT_EQUAL(Cmd::Unknown, parse("mode fast"));
 }
 
 void test_blank_line_is_empty(void) {

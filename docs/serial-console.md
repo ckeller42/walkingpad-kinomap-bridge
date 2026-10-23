@@ -18,12 +18,18 @@ then exactly one terminating line, `ok` or `err <reason>`.
 | `stop` | like STOP (also disarms) |
 | `sim on` / `sim off` | `ok` if already so, otherwise `err reboot-required` (the belt source is bound at boot) |
 | `wizard` | re-enter setup (`err belt-running` if the belt is moving); `wizard next` / `wizard back` press the right / left button |
+| `speed up` / `speed down` / `speed <km/h>` | like the speed buttons; `err not-armed`, `err belt-down`, `err wizard-active`, `err bad-value`, `err out-of-range`, `err auto-mode` (the belt sets its own speed in Auto) |
+| `mode auto` / `mode manual` | asks the belt to switch mode, like tapping the badge; `err wizard-active`, `err not-armed`, `err belt-down`, `err belt-moving` (belt not parked or a start in flight), `err refused` |
 | `shot` | emit one screenshot frame now (`err not-built` outside the `cores3_shot` build) |
 | `help` | list commands |
 
 Anything else is `err unknown-command`. All commands go through the same
 `BridgeState`, `applyOutcome` and `BeltGate` paths as the touch UI, so
 `start` while disarmed is refused exactly as the button is.
+
+This console is also what `tools/e2e_sim.py` drives: the bench end-to-end
+harness ([developing](developing.md#end-to-end-on-the-bench)) sends these
+commands and checks their replies against the FTMS and UDP streams.
 
 ```sh
 ~/tools/venv-ble/bin/python tools/console.py status

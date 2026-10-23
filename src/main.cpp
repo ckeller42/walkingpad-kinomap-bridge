@@ -448,6 +448,7 @@ static void speedTapReason() {
 static const char* manualSpeed(int dir, uint8_t absTenths) {
     if (inWizard) return "wizard-active";
     if (!state.armed()) return "not-armed";
+    if (state.autoActive() || state.autoPending()) return "auto-mode";
     if (!(theBelt.linkUp() && beltFresh())) return "belt-down";
     uint8_t base = lastCmdTenths;
     if (millis() - lastCmdMs > kCmdBaseMs) base = lastStatus.tenthKmh;  // remote may have moved it
@@ -672,7 +673,7 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             logsink::setSd(console::parse(line) == Cmd::SdOn);
             break;
         case Cmd::Log: {
-            char buf[160];
+            char buf[224];  // describe() runs to ~170 chars; unicast= is last and must not be cut
             logsink::describe(buf, sizeof buf);
             Serial.println(buf);
             break;
@@ -706,6 +707,24 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             if (e) { Serial.printf("err %s\n", e); return; }
             break;
         }
+        case Cmd::ModeAuto:
+        case Cmd::ModeManual: {
+            // Mirrors the badge tap: set_mode must not precede start_belt, and
+            // lastStatus lags a poll, so a pending or running start also counts.
+            if (inWizard) { Serial.println("err wizard-active"); return; }
+            if (!state.armed()) { Serial.println("err not-armed"); return; }
+            if (!(theBelt.linkUp() && beltFresh())) { Serial.println("err belt-down"); return; }
+            if (!wilink::parked(lastStatus) || startPending || state.beltRunning()) {
+                Serial.println("err belt-moving");
+                return;
+            }
+            const auto want = console::parse(line) == Cmd::ModeAuto ? policy::BeltMode::Auto
+                                                                    : policy::BeltMode::Manual;
+            const auto o = state.requestMode(want, false);
+            if (o.count == 0) { Serial.println("err refused"); return; }
+            applyOutcome(o);
+            break;
+        }
         case Cmd::Cp: {
             // Control Point writes since boot, by raw opcode byte; only seen ones.
             Serial.print("cp");
@@ -718,7 +737,7 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             shotPending = true;  // answered once the frame has been drawn and emitted
             return;
         case Cmd::Help:
-            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | menu close | touch | speed up|down|<km/h> | cp | log | log udp on|off | log sd on|off | dev on|off | wifi <ssid> <pass> | ota [check|apply|url <u>] | shot | help");
+            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | menu close | touch | speed up|down|<km/h> | mode auto|manual | cp | log | log udp on|off | log sd on|off | dev on|off | wifi <ssid> <pass> | ota [check|apply|url <u>] | shot | help");
             break;
         case Cmd::Unknown:
         case Cmd::TooLong:

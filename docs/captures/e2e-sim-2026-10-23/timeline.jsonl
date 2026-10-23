@@ -1,0 +1,161 @@
+{"t": 3.248083, "stream": "console", "dir": ">", "line": "status"}
+{"t": 3.458097, "stream": "console", "dir": "<", "line": "status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0"}
+{"t": 3.458175, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 3.458516, "stream": "console", "dir": ">", "line": "log udp on"}
+{"t": 3.658398, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 4.367804, "stream": "udp", "ip": "192.168.178.96", "millis": 2265, "line": "udp log ON"}
+{"t": 5.259652, "stream": "udp", "ip": "192.168.178.96", "millis": 3870, "line": "emit ResetPolicy tenths=0"}
+{"t": 5.810994, "stream": "ftms", "kind": "connect", "uuid": "", "hex": ""}
+{"t": 5.976233, "stream": "ftms", "kind": "disconnect", "uuid": "", "hex": ""}
+{"t": 5.976401, "stream": "scenario", "name": "boot"}
+{"t": 5.976421, "stream": "console", "dir": ">", "line": "stop"}
+{"t": 6.139782, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 6.140179, "stream": "console", "dir": ">", "line": "status"}
+{"t": 6.280029, "stream": "udp", "ip": "192.168.178.96", "millis": 4795, "line": "emit Stop tenths=0"}
+{"t": 6.280068, "stream": "udp", "ip": "192.168.178.96", "millis": 4795, "line": "emit ResetPolicy tenths=0"}
+{"t": 6.349999, "stream": "console", "dir": "<", "line": "status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0"}
+{"t": 6.350033, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 6.350194, "stream": "scenario", "name": "refusals"}
+{"t": 6.350208, "stream": "console", "dir": ">", "line": "stop"}
+{"t": 6.557689, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 6.557874, "stream": "console", "dir": ">", "line": "start"}
+{"t": 6.767894, "stream": "console", "dir": "<", "line": "err not-armed"}
+{"t": 6.768824, "stream": "console", "dir": ">", "line": "speed 3"}
+{"t": 6.968221, "stream": "console", "dir": "<", "line": "err not-armed"}
+{"t": 6.968357, "stream": "scenario", "name": "ui_start_stop"}
+{"t": 6.968374, "stream": "console", "dir": ">", "line": "stop"}
+{"t": 7.178435, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 7.434308, "stream": "udp", "ip": "192.168.178.96", "millis": 5075, "line": "belt mode 2 -> 3 raw=2 pending=0 active=0"}
+{"t": 7.434317, "stream": "udp", "ip": "192.168.178.96", "millis": 5153, "line": "emit Stop tenths=0"}
+{"t": 7.43432, "stream": "udp", "ip": "192.168.178.96", "millis": 5153, "line": "emit ResetPolicy tenths=0"}
+{"t": 7.434322, "stream": "udp", "ip": "192.168.178.96", "millis": 5772, "line": "emit Stop tenths=0"}
+{"t": 7.434324, "stream": "udp", "ip": "192.168.178.96", "millis": 5772, "line": "emit ResetPolicy tenths=0"}
+{"t": 8.300929, "stream": "udp", "ip": "192.168.178.96", "millis": 6621, "line": "emit ResetPolicy tenths=0"}
+{"t": 8.391999, "stream": "ftms", "kind": "connect", "uuid": "", "hex": ""}
+{"t": 8.511962, "stream": "console", "dir": ">", "line": "arm"}
+{"t": 8.624589, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 8.624816, "stream": "console", "dir": ">", "line": "start"}
+{"t": 8.661112, "stream": "ftms", "kind": "notify", "uuid": "2ada", "hex": "04"}
+{"t": 8.827522, "stream": "console", "dir": "<", "line": "notify started (2ADA 04), phone=1"}
+{"t": 8.827562, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 9.351192, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 9.480573, "stream": "udp", "ip": "192.168.178.96", "millis": 7322, "line": "emit ResetPolicy tenths=0"}
+{"t": 9.480582, "stream": "udp", "ip": "192.168.178.96", "millis": 7442, "line": "emit StartSequence tenths=20"}
+{"t": 9.480585, "stream": "udp", "ip": "192.168.178.96", "millis": 7442, "line": "emit NotifyStarted tenths=20"}
+{"t": 9.480586, "stream": "udp", "ip": "192.168.178.96", "millis": 7442, "line": "emit ResetPolicy tenths=20"}
+{"t": 10.325743, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 11.347272, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 12.351402, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 13.370894, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 14.375707, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 46 00"}
+{"t": 15.38085, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 8c 00"}
+{"t": 16.415793, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 c8 00"}
+{"t": 16.465914, "stream": "console", "dir": ">", "line": "status"}
+{"t": 16.499593, "stream": "console", "dir": "<", "line": "status armed=1 running=1 belt_link=1 phone_link=1 belt_state=1 speed=20 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0"}
+{"t": 16.499636, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 16.499863, "stream": "console", "dir": ">", "line": "stop"}
+{"t": 16.701723, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 17.405846, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 82 00"}
+{"t": 17.468017, "stream": "udp", "ip": "192.168.178.96", "millis": 15358, "line": "emit Stop tenths=0"}
+{"t": 17.468027, "stream": "udp", "ip": "192.168.178.96", "millis": 15358, "line": "emit ResetPolicy tenths=0"}
+{"t": 18.410932, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 32 00"}
+{"t": 18.491565, "stream": "udp", "ip": "192.168.178.96", "millis": 16188, "line": "belt mode 2 -> 3 raw=2 pending=0 active=0"}
+{"t": 19.430948, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 19.491194, "stream": "console", "dir": ">", "line": "status"}
+{"t": 19.611753, "stream": "console", "dir": "<", "line": "status armed=0 running=0 belt_link=1 phone_link=1 belt_state=4 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0"}
+{"t": 19.611784, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 19.612966, "stream": "ftms", "kind": "disconnect", "uuid": "", "hex": ""}
+{"t": 19.613104, "stream": "scenario", "name": "phone_start"}
+{"t": 19.613123, "stream": "console", "dir": ">", "line": "stop"}
+{"t": 19.821893, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 20.543147, "stream": "udp", "ip": "192.168.178.96", "millis": 18413, "line": "emit Stop tenths=0"}
+{"t": 20.543158, "stream": "udp", "ip": "192.168.178.96", "millis": 18413, "line": "emit ResetPolicy tenths=0"}
+{"t": 20.543161, "stream": "udp", "ip": "192.168.178.96", "millis": 18959, "line": "emit ResetPolicy tenths=0"}
+{"t": 20.797228, "stream": "ftms", "kind": "connect", "uuid": "", "hex": ""}
+{"t": 20.887511, "stream": "console", "dir": ">", "line": "arm"}
+{"t": 21.066226, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 21.066541, "stream": "ftms", "kind": "write", "uuid": "2ad9", "hex": "00"}
+{"t": 21.096657, "stream": "ftms", "kind": "indication", "uuid": "2ad9", "hex": "80 00 01"}
+{"t": 21.097037, "stream": "ftms", "kind": "write", "uuid": "2ad9", "hex": "07"}
+{"t": 21.126357, "stream": "ftms", "kind": "indication", "uuid": "2ad9", "hex": "80 07 01"}
+{"t": 21.142347, "stream": "ftms", "kind": "notify", "uuid": "2ada", "hex": "04"}
+{"t": 21.276442, "stream": "console", "dir": "<", "line": "cp op=0x00 len=1"}
+{"t": 21.276517, "stream": "console", "dir": "<", "line": "cp op=0x07 len=1"}
+{"t": 21.276534, "stream": "console", "dir": "<", "line": "notify started (2ADA 04), phone=1"}
+{"t": 21.456654, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 21.566005, "stream": "udp", "ip": "192.168.178.96", "millis": 19703, "line": "emit ResetPolicy tenths=0"}
+{"t": 21.566012, "stream": "udp", "ip": "192.168.178.96", "millis": 19877, "line": "cp 00"}
+{"t": 21.566015, "stream": "udp", "ip": "192.168.178.96", "millis": 19908, "line": "cp 07"}
+{"t": 21.566017, "stream": "udp", "ip": "192.168.178.96", "millis": 19925, "line": "emit StartSequence tenths=20"}
+{"t": 21.566019, "stream": "udp", "ip": "192.168.178.96", "millis": 19925, "line": "emit NotifyStarted tenths=20"}
+{"t": 22.523994, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 22.587748, "stream": "udp", "ip": "192.168.178.96", "millis": 20231, "line": "belt mode 3 -> 2 raw=1 pending=0 active=0"}
+{"t": 23.466574, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 24.486206, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 25.505962, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 26.511111, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 46 00"}
+{"t": 27.516612, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 8c 00"}
+{"t": 28.52132, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 c8 00"}
+{"t": 28.544691, "stream": "ftms", "kind": "write", "uuid": "2ad9", "hex": "02 fa 00"}
+{"t": 28.550164, "stream": "console", "dir": "<", "line": "cp op=0x02 len=3 payload=fa 00"}
+{"t": 28.567069, "stream": "ftms", "kind": "indication", "uuid": "2ad9", "hex": "80 02 01"}
+{"t": 29.551636, "stream": "udp", "ip": "192.168.178.96", "millis": 27347, "line": "cp 02 fa 00"}
+{"t": 29.551652, "stream": "udp", "ip": "192.168.178.96", "millis": 27392, "line": "emit SetSpeed tenths=25"}
+{"t": 29.556035, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 fa 00"}
+{"t": 29.649116, "stream": "ftms", "kind": "write", "uuid": "2ad9", "hex": "08 01"}
+{"t": 29.706554, "stream": "ftms", "kind": "indication", "uuid": "2ad9", "hex": "80 08 01"}
+{"t": 29.787176, "stream": "console", "dir": "<", "line": "cp op=0x08 len=2 payload=01"}
+{"t": 30.580857, "stream": "udp", "ip": "192.168.178.96", "millis": 28487, "line": "cp 08 01"}
+{"t": 30.58087, "stream": "udp", "ip": "192.168.178.96", "millis": 28489, "line": "emit Stop tenths=0"}
+{"t": 30.595305, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 b4 00"}
+{"t": 31.596058, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 64 00"}
+{"t": 31.600277, "stream": "udp", "ip": "192.168.178.96", "millis": 29341, "line": "belt mode 2 -> 3 raw=2 pending=0 active=0"}
+{"t": 32.571548, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 14 00"}
+{"t": 33.606214, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 33.654128, "stream": "console", "dir": ">", "line": "status"}
+{"t": 33.736929, "stream": "console", "dir": "<", "line": "status armed=1 running=0 belt_link=1 phone_link=1 belt_state=4 speed=0 target=250 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0"}
+{"t": 33.736953, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 33.737656, "stream": "ftms", "kind": "disconnect", "uuid": "", "hex": ""}
+{"t": 33.737747, "stream": "scenario", "name": "auto_mode"}
+{"t": 33.73776, "stream": "console", "dir": ">", "line": "stop"}
+{"t": 33.947131, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 33.947494, "stream": "console", "dir": ">", "line": "arm"}
+{"t": 34.151629, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 34.151976, "stream": "console", "dir": ">", "line": "mode auto"}
+{"t": 34.358825, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 34.671283, "stream": "udp", "ip": "192.168.178.96", "millis": 32552, "line": "emit Stop tenths=0"}
+{"t": 34.671301, "stream": "udp", "ip": "192.168.178.96", "millis": 32552, "line": "emit ResetPolicy tenths=0"}
+{"t": 34.671307, "stream": "udp", "ip": "192.168.178.96", "millis": 32752, "line": "emit ResetPolicy tenths=0"}
+{"t": 34.671311, "stream": "udp", "ip": "192.168.178.96", "millis": 32952, "line": "emit SetMode mode=1"}
+{"t": 36.724521, "stream": "udp", "ip": "192.168.178.96", "millis": 34386, "line": "belt mode 3 -> 1 raw=0 pending=0 active=1"}
+{"t": 36.735837, "stream": "console", "dir": ">", "line": "speed 3"}
+{"t": 36.851784, "stream": "console", "dir": "<", "line": "err auto-mode"}
+{"t": 36.852064, "stream": "console", "dir": ">", "line": "mode manual"}
+{"t": 37.061938, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 37.745633, "stream": "udp", "ip": "192.168.178.96", "millis": 35658, "line": "emit SetMode mode=2"}
+{"t": 38.767716, "stream": "udp", "ip": "192.168.178.96", "millis": 36406, "line": "emit ResetPolicy tenths=0"}
+{"t": 38.76775, "stream": "udp", "ip": "192.168.178.96", "millis": 36406, "line": "belt mode 1 -> 2 raw=1 pending=0 active=0"}
+{"t": 38.769254, "stream": "console", "dir": ">", "line": "stop"}
+{"t": 38.935163, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 38.935336, "stream": "scenario", "name": "wizard"}
+{"t": 38.935356, "stream": "console", "dir": ">", "line": "stop"}
+{"t": 39.138295, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 39.138436, "stream": "console", "dir": ">", "line": "wizard"}
+{"t": 39.348419, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 39.348586, "stream": "console", "dir": ">", "line": "status"}
+{"t": 39.555341, "stream": "console", "dir": "<", "line": "status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=250 wizard=siminfo menu=off src=sim setup_done=1 rx_join=0 rx_lost=0"}
+{"t": 39.555377, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 39.555571, "stream": "console", "dir": ">", "line": "wizard next"}
+{"t": 39.764291, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 39.764512, "stream": "console", "dir": ">", "line": "wizard next"}
+{"t": 39.796538, "stream": "udp", "ip": "192.168.178.96", "millis": 37581, "line": "emit Stop tenths=0"}
+{"t": 39.796559, "stream": "udp", "ip": "192.168.178.96", "millis": 37581, "line": "emit ResetPolicy tenths=0"}
+{"t": 39.79657, "stream": "udp", "ip": "192.168.178.96", "millis": 37740, "line": "emit Stop tenths=0"}
+{"t": 39.796575, "stream": "udp", "ip": "192.168.178.96", "millis": 37740, "line": "emit ResetPolicy tenths=0"}
+{"t": 39.968351, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 39.968583, "stream": "console", "dir": ">", "line": "wizard next"}
+{"t": 40.178545, "stream": "console", "dir": "<", "line": "setup: complete"}
+{"t": 40.178601, "stream": "console", "dir": "<", "line": "ok"}
+{"t": 40.178858, "stream": "console", "dir": ">", "line": "status"}
+{"t": 40.388706, "stream": "console", "dir": "<", "line": "status armed=0 running=0 belt_link=1 phone_link=0 belt_state=4 speed=0 target=250 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0"}
+{"t": 40.388747, "stream": "console", "dir": "<", "line": "ok"}

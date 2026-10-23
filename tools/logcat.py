@@ -10,7 +10,10 @@ link, so the console cannot be used during the sessions actually worth watching.
 This can run for an entire workout without disturbing anything.
 
 The bridge broadcasts, so nothing needs configuring here beyond being on the
-same network. If nothing arrives: check `log` on the console for the Wi-Fi
+same network. Each datagram opens with a `<millis> udp-seq <n>` line; it is
+printed like any other, and a jump in `n` is a datagram that never arrived.
+This script never says `hello`, so it only ever gets the broadcast copy (see
+docs/logging.md, "Sequence numbers and unicast"). If nothing arrives: check `log` on the console for the Wi-Fi
 state, and remember macOS asks once for local-network permission.
 """
 import socket

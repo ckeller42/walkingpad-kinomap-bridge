@@ -1,0 +1,85 @@
+192.168.178.96  2271 udp-seq 1
+192.168.178.96  2271 udp log ON
+192.168.178.96  3289 udp-seq 2
+192.168.178.96  3289 udp unicast to 192.168.178.43
+192.168.178.96  4051 udp-seq 3
+192.168.178.96  4051 emit ResetPolicy tenths=0
+192.168.178.96  4974 emit Stop tenths=0
+192.168.178.96  4974 emit ResetPolicy tenths=0
+192.168.178.96  5052 udp-seq 4
+192.168.178.96  5052 belt mode 2 -> 3 raw=2 pending=0 active=0
+192.168.178.96  5593 emit Stop tenths=0
+192.168.178.96  5593 emit ResetPolicy tenths=0
+192.168.178.96  7054 udp-seq 4 idle
+192.168.178.96  7455 udp-seq 5
+192.168.178.96  7455 emit Stop tenths=0
+192.168.178.96  7455 emit ResetPolicy tenths=0
+192.168.178.96  8900 udp-seq 6
+192.168.178.96  8900 emit ResetPolicy tenths=0
+192.168.178.96  9645 udp-seq 7
+192.168.178.96  9645 emit ResetPolicy tenths=0
+192.168.178.96  9723 emit StartSequence tenths=20
+192.168.178.96  9723 emit NotifyStarted tenths=20
+192.168.178.96  9723 emit ResetPolicy tenths=20
+192.168.178.96  10069 udp-seq 8
+192.168.178.96  10069 belt mode 3 -> 2 raw=1 pending=0 active=0
+192.168.178.96  12073 udp-seq 8 idle
+192.168.178.96  13078 udp-seq 8 idle
+192.168.178.96  14080 udp-seq 8 idle
+192.168.178.96  15084 udp-seq 8 idle
+192.168.178.96  16088 udp-seq 8 idle
+192.168.178.96  17091 udp-seq 8 idle
+192.168.178.96  17376 udp-seq 9
+192.168.178.96  17376 emit Stop tenths=0
+192.168.178.96  17376 emit ResetPolicy tenths=0
+192.168.178.96  18109 udp-seq 10
+192.168.178.96  18109 belt mode 2 -> 3 raw=2 pending=0 active=0
+192.168.178.96  20107 udp-seq 10 idle
+192.168.178.96  20508 udp-seq 11
+192.168.178.96  20508 emit Stop tenths=0
+192.168.178.96  20508 emit ResetPolicy tenths=0
+192.168.178.96  21014 emit ResetPolicy tenths=0
+192.168.178.96  21783 udp-seq 12
+192.168.178.96  21783 emit ResetPolicy tenths=0
+192.168.178.96  21972 cp 00
+192.168.178.96  22002 cp 07
+192.168.178.96  22007 emit StartSequence tenths=20
+192.168.178.96  22007 emit NotifyStarted tenths=20
+192.168.178.96  22132 udp-seq 13
+192.168.178.96  22132 belt mode 3 -> 2 raw=1 pending=0 active=0
+192.168.178.96  24136 udp-seq 13 idle
+192.168.178.96  25139 udp-seq 13 idle
+192.168.178.96  26143 udp-seq 13 idle
+192.168.178.96  27146 udp-seq 13 idle
+192.168.178.96  28150 udp-seq 13 idle
+192.168.178.96  29154 udp-seq 13 idle
+192.168.178.96  29292 udp-seq 14
+192.168.178.96  29292 cp 02 fa 00
+192.168.178.96  29298 emit SetSpeed tenths=25
+192.168.178.96  30237 udp-seq 15
+192.168.178.96  30237 cp 08 01
+192.168.178.96  30258 emit Stop tenths=0
+192.168.178.96  31163 udp-seq 16
+192.168.178.96  31163 belt mode 2 -> 3 raw=2 pending=0 active=0
+192.168.178.96  33167 udp-seq 16 idle
+192.168.178.96  34172 udp-seq 16 idle
+192.168.178.96  34617 udp-seq 17
+192.168.178.96  34617 emit Stop tenths=0
+192.168.178.96  34617 emit ResetPolicy tenths=0
+192.168.178.96  34838 emit ResetPolicy tenths=0
+192.168.178.96  35039 emit SetMode mode=1
+192.168.178.96  36177 udp-seq 17 idle
+192.168.178.96  36199 udp-seq 18
+192.168.178.96  36199 belt mode 3 -> 1 raw=0 pending=0 active=1
+192.168.178.96  38183 udp-seq 18 idle
+192.168.178.96  39186 udp-seq 18 idle
+192.168.178.96  39286 udp-seq 19
+192.168.178.96  39286 emit SetMode mode=2
+192.168.178.96  40220 udp-seq 20
+192.168.178.96  40220 emit ResetPolicy tenths=0
+192.168.178.96  40220 belt mode 1 -> 2 raw=1 pending=0 active=0
+192.168.178.96  41340 udp-seq 21
+192.168.178.96  41340 emit Stop tenths=0
+192.168.178.96  41340 emit ResetPolicy tenths=0
+192.168.178.96  41681 emit Stop tenths=0
+192.168.178.96  41681 emit ResetPolicy tenths=0

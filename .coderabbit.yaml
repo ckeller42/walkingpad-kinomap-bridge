@@ -1,0 +1,56 @@
+# CodeRabbit configuration (https://docs.coderabbit.ai/reference/configuration).
+# The GitHub App must be installed on the repository for this to take effect.
+#
+# The project's hard rules are in AGENTS.md; the reviewer is pointed at them so
+# a review that misses one of them is a configuration error, not a judgement
+# call.
+language: en-GB
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "lib/**"
+      instructions: >-
+        This directory must stay Arduino-free (no Arduino.h, no BLE, no
+        display) and every behaviour here must be covered by the host tests
+        under test/. A state-changing entry point on BridgeState returns a
+        [[nodiscard]] Outcome drained by applyOutcome(); flag any new path
+        that performs an effect directly.
+    - path: "src/belt_link.cpp"
+      instructions: >-
+        Only command group 0xA2 may ever be written; group 0xE8 is the WiLink
+        OTA group and can brick the belt. There must be exactly one write path
+        (BeltLink::send). The Telink OTA service UUID must not appear anywhere.
+    - path: "src/**"
+      instructions: >-
+        Nothing may move the belt unless the bridge is armed, and STOP must
+        work whether armed or not. The manufacturer string must never be
+        "decathlon". Opening the serial port reboots the board, so no live
+        session may depend on it.
+    - path: "protocol/*.yaml"
+      instructions: >-
+        Every fact needs provenance (measured or community) and evidence.
+        docs/protocol/*.md is generated from these files and must not be
+        hand-edited; a change here needs the generators re-run.
+    - path: "docs/captures/**"
+      instructions: >-
+        Verbatim evidence from the hardware. It must never be edited by hand;
+        flag any change that is not a whole new capture.
+  path_filters:
+    - "!docs/screens/**"
+    - "!docs/captures/**"
+    - "!docs/protocol/**"
+    - "!tools/fixtures/**"
+    - "!**/*.png"
+
+chat:
+  auto_reply: true

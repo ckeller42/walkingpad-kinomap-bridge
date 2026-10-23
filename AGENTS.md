@@ -52,7 +52,7 @@ Consequences you will hit:
 | `docs/` | Also the Sphinx source directory. |
 | `tools/` | Host-side test and analysis scripts. |
 
-The `lib`/`src` split is what makes 207 tests runnable with no hardware. When
+The `lib`/`src` split is what makes 214 tests runnable with no hardware. When
 adding behaviour, put the decision in `lib/` returning a value, and the effect
 in `src/`. `BridgeState` is the model: every state-changing entry point returns
 a `[[nodiscard]] Outcome` that exactly one `applyOutcome()` drains.
@@ -60,12 +60,14 @@ a `[[nodiscard]] Outcome` that exactly one `applyOutcome()` drains.
 ## Commands
 
 ```sh
-pio test -e native            # 207 host tests - NOT "pio run -e native"
+pio test -e native            # 214 host tests - NOT "pio run -e native"
 pio run -e cores3             # real belt (default)
 pio run -e cores3_sim         # simulated belt
 pio run -e cores3 -t upload --upload-port /dev/cu.usbmodem101
 doxygen Doxyfile && python3 tools/doxygen_ratchet.py build/doxygen/warnings.txt .doxygen-baseline
 sphinx-build -b html -W docs build/sphinx
+~/tools/venv-ble/bin/python tools/e2e_sim.py          # bench E2E on the sim belt (needs the CoreS3)
+python3 tools/e2e_sim.py --replay docs/captures/e2e-sim-2026-10-23
 ```
 
 Python tooling lives in `~/tools/venv-ble/bin/python`, not the system Python.

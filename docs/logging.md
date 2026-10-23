@@ -77,6 +77,46 @@ the listening side beyond being on the same network. If nothing arrives, check
 `log` on the console for the Wi-Fi state; macOS also asks once for local-network
 permission.
 
+The broadcast is **not lossless**. About one second of lines goes out as one
+datagram, and broadcast frames are not acknowledged, so a dropped datagram is a
+silent one-second gap. When completeness matters, read the SD sink as well.
+
+### Sequence numbers and unicast
+
+Because a broadcast frame is unacknowledged, one lost frame loses a second of
+evidence, and before sequence numbers nothing showed that it had. Every
+datagram now opens with a header line, which parses like any other log line:
+
+```text
+48211 udp-seq 57      n counts datagrams from 1 per boot; millis is the first line's
+48211 emit SetSpeed tenths=25
+```
+
+A jump in `n` is a lost datagram, so a gap is visible instead of silent. To
+make loss rare as well, the sink's socket is bound to port 9999 and listens: a
+host that sends a datagram starting `hello` to `<bridge ip>:9999` becomes the
+unicast target for 120 s, and while it is, every datagram goes out twice,
+broadcast as before and unicast to that host. The unicast copy goes to the
+sender's IP on port 9999, not to the port it said hello from; that works
+because a listener binds 9999 to hear the broadcast anyway. Unicast frames are
+acknowledged and retried by the Wi-Fi MAC. `log` shows the target as
+`unicast=<ip>` (or `unicast=-`). The listener then sees each datagram twice
+and drops the second copy by its header. A flush with nothing to send gives
+the target alone a header-only heartbeat, `<millis> udp-seq <n> idle`, which
+says datagrams up to `n` were sent and nothing since. A reader that counts only
+data-bearing headers as received then tells a quiet log (heartbeat `n` after
+datagram `n`) from a lost datagram (heartbeat `n`, no datagram `n`). The
+heartbeat repeats `n` instead of taking a new number, so broadcast listeners,
+which never get it, see no gap; `logparse.py` shows it as an `udp-seq` row with
+`idle` in its text.
+`tools/e2e_sim.py` does all of this (hello on the first datagram, then every
+60 s). A check whose window overlaps a gap still fails, and its evidence ends
+in `; udp lost (seq a->b)`, which says why. `tools/logcat.py` only listens, so
+it gets the broadcast and prints the header lines as they are. Two listeners
+on one Mac (say `logcat.py` and the harness, both bound to 9999) each get
+every broadcast, but the unicast copy reaches only one of them, so either may
+see only some of the unicast copies.
+
 ## What is recorded
 
 At the choke points, so nothing slips past:
