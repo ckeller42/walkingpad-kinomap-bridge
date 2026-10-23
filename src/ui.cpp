@@ -534,9 +534,19 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
             const int y = ROW_Y0 + i * ROW_H;
             const bool on = s.rows[i].enabled;
             g.setFont(&fonts::FreeSans9pt7b);
+            // The value keeps its full width; the label gets what is left and
+            // is cut with no ellipsis, so a 39-character updater message or
+            // a long SSID ends at the edge instead of running under the value
+            // or off the panel.
+            const int valueW = s.rows[i].value[0] ? g.textWidth(s.rows[i].value) + 8 : 0;
+            char label[sizeof(s.rows[i].label)];
+            strncpy(label, s.rows[i].label, sizeof label);
+            label[sizeof label - 1] = 0;
+            for (size_t n = strlen(label); n > 0 && g.textWidth(label) > W - 16 - valueW; --n)
+                label[n - 1] = 0;
             g.setTextDatum(middle_left);
             g.setTextColor(on ? TFT_WHITE : DIM, BG);
-            g.drawString(s.rows[i].label, 8, y + ROW_H / 2);
+            g.drawString(label, 8, y + ROW_H / 2);
             if (s.rows[i].value[0]) {
                 g.setTextDatum(middle_right);
                 g.setTextColor(on ? ARM_GO : DIM, BG);

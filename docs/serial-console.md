@@ -75,9 +75,11 @@ every screen (4 s each); any console command ends the tour.
 ```
 
 `tools/decode_shots.py` writes one PNG per distinct complete frame and reports
-truncated or damaged ones (capture at least 12 s per frame; the whole tour is
-28 phases of 4 s, 112 s plus boot, hence `--seconds 140`). The shot build is
-for documentation only: it never writes the `setup_done` flag.
+truncated or damaged ones. A frame dumps in well under a second (measured
+2026-10-23: 31 frames, the slowest 0.2 s from `[SHOT` to `[/SHOT]`), so the
+capture length is set by the tour, not the transfer: 28 phases of 4 s, 112 s
+plus boot, hence `--seconds 140`, which leaves margin for the last frame. The
+shot build is for documentation only: it never writes the `setup_done` flag.
 
 ## Status fields for split status frames
 

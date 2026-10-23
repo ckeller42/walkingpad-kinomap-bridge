@@ -491,20 +491,12 @@ static_assert((int)devmenu::OtaState::Idle == (int)ota::State::Idle &&
 
 // "downloading NN%", written by otaProgress() while ota::apply() blocks; shown
 // in place of ota::message() while the state is Installing.
-static char otaProgressMsg[32] = "";
+static char otaProgressMsg[48] = "";  // "downloading " + a 31-char version
 
 /// The host part of the manifest URL, for the Update screen's Source row.
 static const char* otaHostText() {
     static char host[64];
-    const char* u = ota::url();
-    const char* p = strstr(u, "://");
-    p = p ? p + 3 : u;
-    size_t n = 0;
-    while (p[n] && p[n] != '/' && p[n] != ':' && p[n] != '?' && n + 1 < sizeof host) {
-        host[n] = p[n];
-        ++n;
-    }
-    host[n] = 0;
+    devmenu::urlHost(ota::url(), host, sizeof host);
     return host;
 }
 
@@ -534,6 +526,7 @@ static devmenu::Inputs devInputs() {
     in.otaHost = otaHostText();
     in.otaImageEnv = ota::imageEnv();
     in.otaEnvMismatch = ota::state() == ota::State::Available && !ota::envMatches();
+    in.beltRunning = state.beltRunning();
     return in;
 }
 
@@ -593,17 +586,23 @@ static void devMenuAct(devmenu::Action a) {
         case A::OpenUpdate:
             break;  // the Update screen reads ota:: fresh; the redraw below is enough
         case A::CheckOta:
+            // The menu blanks its button while the belt runs (Inputs::beltRunning),
+            // so a press that got here was offered; the guard is belt and braces.
+            if (state.beltRunning()) { logsink::line("ota: check refused, belt running"); break; }
             drawDevMenuOta(devmenu::OtaState::Checking, "fetching manifest");
             ota::check();
             break;
         case A::InstallOta:
             // Same guards as the console's `ota apply`: the download blocks for
             // seconds and the belt link goes stale meanwhile. The menu cannot
-            // be open over a moving belt, so this is belt and braces.
+            // be open over a moving belt and blanks INSTALL if one starts, so
+            // this is belt and braces.
             if (state.beltRunning()) { logsink::line("ota: refused, belt running"); break; }
             applyOutcome(state.setArmed(false));
-            otaProgressMsg[0] = 0;
-            drawDevMenuOta(devmenu::OtaState::Installing, "connecting");
+            // The same words ota::apply() will log first, so the glass and the
+            // log agree from the first frame.
+            snprintf(otaProgressMsg, sizeof otaProgressMsg, "downloading %s", ota::availableVersion());
+            drawDevMenuOta(devmenu::OtaState::Installing, otaProgressMsg);
             ota::apply(otaProgress);  // reboots on success; returns on failure
             otaProgressMsg[0] = 0;
             break;
@@ -669,7 +668,8 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
 #endif
     if (overflow) { Serial.println("err line-too-long"); return; }
     wizDirty = true;  // whatever happens, redraw
-    switch (console::parse(line)) {
+    const console::Cmd cmd = console::parse(line);
+    switch (cmd) {
         case Cmd::Empty:
             return;
         case Cmd::Status:
@@ -819,10 +819,18 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
                 Serial.println("err belt-moving");
                 return;
             }
-            const auto want = console::parse(line) == Cmd::ModeAuto ? policy::BeltMode::Auto
-                                                                    : policy::BeltMode::Manual;
+            const auto want = cmd == Cmd::ModeAuto ? policy::BeltMode::Auto
+                                                     : policy::BeltMode::Manual;
             const auto o = state.requestMode(want, false);
-            if (o.count == 0) { Serial.println("err refused"); return; }
+            if (o.count == 0) {
+                // Leave evidence in the log like the badge tap does: a replayed
+                // capture must show why nothing moved.
+                logsink::line("mode console refused: want=%u state=%u speed=%u armed=%d",
+                              (unsigned)want, (unsigned)lastStatus.beltState,
+                              (unsigned)lastStatus.tenthKmh, (int)state.armed());
+                Serial.println("err refused");
+                return;
+            }
             applyOutcome(o);
             break;
         }

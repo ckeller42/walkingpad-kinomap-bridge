@@ -33,25 +33,30 @@ const char* otaWord(OtaState st) {
     return "";
 }
 
-/// Why the Update screen cannot act right now, or nullptr when it can.
-const char* updateBlocker(const Inputs& in, char* buf, size_t cap) {
+/// Why the Update screen can do nothing at all right now, or nullptr.
+/// Both ota:: calls block loop() for seconds, so a moving belt rules out a
+/// check as well as an install.
+const char* updateBlocker(const Inputs& in) {
     if (!in.devOn) return "needs dev mode";
     if (!in.wifiUp) return "needs Wi-Fi";
-    if (in.otaState == OtaState::Available && in.otaEnvMismatch) {
-        snprintf(buf, cap, "image is for %s", in.otaImageEnv ? in.otaImageEnv : "");
-        return buf;
-    }
+    if (in.beltRunning) return "belt running";
     return nullptr;
 }
 
+bool envMismatch(const Inputs& in) {
+    return in.otaState == OtaState::Available && in.otaEnvMismatch;
+}
+
 /// The Update screen's right-hand button label: "" when nothing can be done.
+/// An image for another build cannot be installed, but the site may change,
+/// so CHECK stays offered.
 const char* updateButton(const Inputs& in, bool blocked) {
     if (blocked) return "";
     switch (in.otaState) {
         case OtaState::Idle:
         case OtaState::UpToDate:
         case OtaState::Failed: return "CHECK";
-        case OtaState::Available: return "INSTALL";
+        case OtaState::Available: return envMismatch(in) ? "CHECK" : "INSTALL";
         case OtaState::Checking:
         case OtaState::Installing: return "";
     }
@@ -60,8 +65,34 @@ const char* updateButton(const Inputs& in, bool blocked) {
 
 }  // namespace
 
+size_t urlHost(const char* url, char* out, size_t cap) {
+    if (!url) url = "";
+    if (cap == 0) return 0;
+    const char* p = strstr(url, "://");
+    p = p ? p + 3 : url;
+    // The authority ends at the first '/', '?' or '#'; userinfo, if any, ends
+    // at the last '@' before that.
+    size_t end = 0;
+    while (p[end] && p[end] != '/' && p[end] != '?' && p[end] != '#') ++end;
+    for (size_t i = end; i > 0; --i) {
+        if (p[i - 1] == '@') { p += i; end -= i; break; }
+    }
+    size_t n = 0;
+    if (end && p[0] == '[') {  // IPv6 literal: keep the brackets, stop after ']'
+        while (n < end && p[n] != ']') ++n;
+        if (n < end) ++n;
+    } else {
+        while (n < end && p[n] != ':') ++n;
+    }
+    if (n >= cap) n = cap - 1;
+    memcpy(out, p, n);
+    out[n] = 0;
+    return n;
+}
+
 void DevMenu::open() {
     step_ = Step::Root;
+    forgetArmed_ = false;
     ssid_[0] = typed_[0] = 0;
     shift_ = false;
     page_ = Page::Letters;
@@ -94,7 +125,8 @@ Screen DevMenu::screen(const Inputs& in) const {
             s.rows[2].enabled = in.devOn;
 
             set(s.rows[3].label, in.storedSsid && in.storedSsid[0] ? in.storedSsid : "(no network)");
-            set(s.rows[3].value, in.storedSsid && in.storedSsid[0] ? "forget" : "");
+            set(s.rows[3].value, !(in.storedSsid && in.storedSsid[0]) ? ""
+                                 : forgetArmed_ ? "tap again" : "forget");
             s.rows[3].enabled = in.devOn && in.storedSsid && in.storedSsid[0];
 
             set(s.rows[4].label, "Update");  // opens the screen even with dev mode off
@@ -149,8 +181,7 @@ Screen DevMenu::screen(const Inputs& in) const {
             set(s.left, "BACK");
             s.phase = 70 + (int)in.otaState;
 
-            char why[sizeof(Row::value)];
-            const char* blocker = updateBlocker(in, why, sizeof why);
+            const char* blocker = updateBlocker(in);
             set(s.right, updateButton(in, blocker != nullptr));
 
             set(s.rows[0].label, "Running");
@@ -158,12 +189,21 @@ Screen DevMenu::screen(const Inputs& in) const {
             set(s.rows[1].label, "Available");
             set(s.rows[1].value, in.otaAvailable);
             set(s.rows[2].label, "Status");
-            set(s.rows[2].value, blocker ? blocker : otaWord(in.otaState));
+            if (blocker) {
+                set(s.rows[2].value, blocker);
+            } else if (envMismatch(in)) {
+                snprintf(s.rows[2].value, sizeof s.rows[2].value, "image is for %s",
+                         in.otaImageEnv ? in.otaImageEnv : "");
+            } else {
+                set(s.rows[2].value, otaWord(in.otaState));
+            }
             set(s.rows[3].label, in.otaMessage);
             set(s.rows[4].label, "Source");
             set(s.rows[4].value, in.otaHost);
-            // Informational: the buttons act, the rows do not.
-            for (uint8_t i = 0; i < 5; ++i) s.rows[i].enabled = false;
+            // The rows inform and never act (tapRow ignores them), but they
+            // are drawn bright so the version and status can be read; only
+            // the updater's message line is dim, as detail under Status.
+            s.rows[3].enabled = false;
             s.rowCount = 5;
             break;
         }
@@ -173,6 +213,8 @@ Screen DevMenu::screen(const Inputs& in) const {
 
 Action DevMenu::tapRow(uint8_t row, const Inputs& in) {
     const Screen s = screen(in);
+    const bool armed = forgetArmed_;
+    forgetArmed_ = false;  // only a second tap on the forget row keeps it
     if (row >= s.rowCount || !s.rows[row].enabled) return Action::None;
 
     switch (step_) {
@@ -181,7 +223,10 @@ Action DevMenu::tapRow(uint8_t row, const Inputs& in) {
                 case 0: return Action::ToggleDev;
                 case 1: return Action::ToggleUdp;
                 case 2: step_ = Step::WifiScan; return Action::StartScan;
-                case 3: return Action::ForgetWifi;
+                case 3:
+                    if (armed) return Action::ForgetWifi;
+                    forgetArmed_ = true;
+                    return Action::None;
                 case 4: step_ = Step::Update; return Action::OpenUpdate;
                 case 5: return Action::RerunSetup;
                 default: return Action::None;
@@ -204,6 +249,7 @@ Action DevMenu::tapRow(uint8_t row, const Inputs& in) {
 }
 
 Action DevMenu::press(bool right, const Inputs& in) {
+    forgetArmed_ = false;
     switch (step_) {
         case Step::Root:
             return right ? Action::None : Action::Close;

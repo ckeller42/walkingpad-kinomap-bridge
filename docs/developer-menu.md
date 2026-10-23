@@ -19,7 +19,7 @@ menu's "Re-run setup" row is the way back into the setup wizard.
 | **Developer mode** | The master switch. Off means no radio at all, whatever the other settings say. |
 | **UDP log** | The log broadcast itself. Reads `needs dev` and ignores taps while developer mode is off, rather than storing a setting that silently does nothing. |
 | **Wi-Fi** | Scan and pair. Shows the current IP when associated, `connecting...` for up to 15 s after CONNECT, `wrong password?` when the connect failed, `offline` when credentials are stored but not connected, `not set` when there are none. |
-| *(network name)* | Forget the stored credentials. Only offered when something is stored. |
+| *(network name)* | Forget the stored credentials. Only offered when something is stored, and it takes two taps: the first turns the value into `tap again`, the second forgets. Any other tap or press in between disarms it, so a finger that slips off **Wi-Fi** or **Update** (the rows are 25 px apart) cannot erase the network. |
 | **Update** | Opens the [Update screen](#update). Shows the running firmware version. Opens with developer mode off too; the screen then says `needs dev mode`. |
 | **Re-run setup** | Closes the menu and opens the setup wizard. Always available, even with developer mode off. |
 
@@ -70,37 +70,11 @@ never in the repository.
 ## Update
 
 The **Update** row opens a screen that checks the published manifest and
-installs a newer build over Wi-Fi. [Firmware updates](ota.md) has the whole
-story; this is what the screen shows.
-
-![The Update screen with a newer build published](screens/dev-menu-update.png)
-
-| Row | Shows |
-|---|---|
-| **Running** | the version this firmware was built as |
-| **Available** | the manifest's version, once a check has fetched one |
-| **Status** | one of the words below, or why nothing can be done |
-| *(message)* | the updater's last message, such as `manifest http 404` or `downloading 37%`; the row shows up to 39 characters |
-| **Source** | the host of the manifest URL in use |
-
-**BACK** returns to the menu. The right-hand button follows Status:
-
-| Status | Button |
-|---|---|
-| `not checked` | **CHECK** |
-| `checking...` | blank |
-| `up to date` | **CHECK** |
-| `update available` | **INSTALL** |
-| `installing...` | blank; the message row counts `downloading NN%`, and the bridge reboots into the new image when it is verified |
-| `failed` | **CHECK**; the message row says why |
-
-![A failed check: no manifest at the URL](screens/dev-menu-update-failed.png)
-
-Status replaces the word, and the button is blank, when the screen cannot act:
-`needs dev mode` with developer mode off, `needs Wi-Fi` when Wi-Fi is not
-associated, and `image is for <env>` when the published image was built for a
-different PlatformIO environment (CI publishes `cores3`; a `cores3_sim` bench
-board is not offered it).
+installs a newer build over Wi-Fi: what is running, what is on offer, where
+it came from, and one button that does the next sensible thing. The rows,
+the status words, what blanks the button and what the screen does while a
+download runs are all in [Firmware updates](ota.md#updating), with the
+screenshots; they are not repeated here.
 
 ## The same switches over USB
 

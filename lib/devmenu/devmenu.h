@@ -86,7 +86,21 @@ struct Inputs {
     const char* otaHost = "";       ///< Update server host, shown as the source.
     const char* otaImageEnv = "";   ///< Build environment the offered image targets.
     bool otaEnvMismatch = false;    ///< The offered image targets a different build; installing is refused.
+    bool beltRunning = false;       ///< The belt is moving; the Update screen does nothing that blocks.
 };
+
+/**
+ * @brief The host part of a URL, for the Update screen's Source row.
+ *
+ * Skips the scheme and any `user:password@`, keeps a bracketed IPv6 literal
+ * whole, and stops at the port, path, query or fragment.
+ *
+ * @param url Any URL, or a bare host; nullptr reads as "".
+ * @param out Receives the host, always NUL-terminated.
+ * @param cap Size of @p out; the host is cut to fit.
+ * @return The length written, not counting the NUL.
+ */
+size_t urlHost(const char* url, char* out, size_t cap);
 
 /** @brief One line of a list screen. */
 struct Row {
@@ -143,8 +157,19 @@ public:
      * @param row Zero-based row index; out-of-range and disabled rows are ignored.
      * @param in  Current world state.
      * @return The action the host should carry out.
+     *
+     * The forget row needs two taps in a row: the first turns its value into
+     * `tap again`, the second returns devmenu::Action::ForgetWifi. Any other
+     * tap or press in between disarms it. Rows are 25 px apart, and a stored
+     * network should not vanish on a finger that slipped off Wi-Fi or Update.
      */
     Action tapRow(uint8_t row, const Inputs& in);
+
+    /**
+     * @brief Whether the forget row is waiting for its confirming tap.
+     * @return True after one tap on the forget row, until anything else is touched.
+     */
+    bool forgetArmed() const { return forgetArmed_; }
 
     /**
      * @brief Handle a bottom-bar press.
@@ -202,6 +227,7 @@ public:
 
 private:
     Step step_ = Step::Root;
+    bool forgetArmed_ = false;
     char ssid_[kMaxSsid] = {};
     char typed_[kMaxPassword] = {};
     bool shift_ = false;

@@ -8,8 +8,9 @@
 The script pulses RTS to hard-reset the chip (the same way esptool does), so the
 capture starts with the boot log and the scripted tour begins at the first screen.
 A bare open() is not reliable: it sometimes resets and sometimes leaves the port silent.
-Capture long enough for the whole tour (about 4 s per screen) and at least 12 s
-per frame: a frame cut off by the end of the capture is dropped, not guessed.
+Capture long enough for the whole tour (about 4 s per screen) plus a few seconds
+of margin: a frame dumps in well under a second (measured 0.2 s at most), but a
+frame cut off by the end of the capture is dropped, not guessed.
 The raw text goes to --raw (default /tmp/shots-capture.txt; large, do not commit).
 """
 import argparse
