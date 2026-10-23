@@ -1,0 +1,72 @@
+3.248 > status
+3.458 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+3.458 < ok
+3.459 > log udp on
+3.658 < ok
+5.976 > stop
+6.140 < ok
+6.140 > status
+6.350 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+6.350 < ok
+6.350 > stop
+6.558 < ok
+6.558 > start
+6.768 < err not-armed
+6.769 > speed 3
+6.968 < err not-armed
+6.968 > stop
+7.178 < ok
+8.512 > arm
+8.625 < ok
+8.625 > start
+8.828 < notify started (2ADA 04), phone=1
+8.828 < ok
+16.466 > status
+16.500 < status armed=1 running=1 belt_link=1 phone_link=1 belt_state=1 speed=20 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+16.500 < ok
+16.500 > stop
+16.702 < ok
+19.491 > status
+19.612 < status armed=0 running=0 belt_link=1 phone_link=1 belt_state=4 speed=0 target=0 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+19.612 < ok
+19.613 > stop
+19.822 < ok
+20.888 > arm
+21.066 < ok
+21.276 < cp op=0x00 len=1
+21.277 < cp op=0x07 len=1
+21.277 < notify started (2ADA 04), phone=1
+28.550 < cp op=0x02 len=3 payload=fa 00
+29.787 < cp op=0x08 len=2 payload=01
+33.654 > status
+33.737 < status armed=1 running=0 belt_link=1 phone_link=1 belt_state=4 speed=0 target=250 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+33.737 < ok
+33.738 > stop
+33.947 < ok
+33.947 > arm
+34.152 < ok
+34.152 > mode auto
+34.359 < ok
+36.736 > speed 3
+36.852 < err auto-mode
+36.852 > mode manual
+37.062 < ok
+38.769 > stop
+38.935 < ok
+38.935 > stop
+39.138 < ok
+39.138 > wizard
+39.348 < ok
+39.349 > status
+39.555 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=0 speed=0 target=250 wizard=siminfo menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+39.555 < ok
+39.556 > wizard next
+39.764 < ok
+39.765 > wizard next
+39.968 < ok
+39.969 > wizard next
+40.179 < setup: complete
+40.179 < ok
+40.179 > status
+40.389 < status armed=0 running=0 belt_link=1 phone_link=0 belt_state=4 speed=0 target=250 wizard=off menu=off src=sim setup_done=1 rx_join=0 rx_lost=0
+40.389 < ok

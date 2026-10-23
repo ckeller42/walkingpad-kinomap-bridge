@@ -1,0 +1,43 @@
+192.168.178.96  2265 udp log ON
+192.168.178.96  3870 emit ResetPolicy tenths=0
+192.168.178.96  4795 emit Stop tenths=0
+192.168.178.96  4795 emit ResetPolicy tenths=0
+192.168.178.96  5075 belt mode 2 -> 3 raw=2 pending=0 active=0
+192.168.178.96  5153 emit Stop tenths=0
+192.168.178.96  5153 emit ResetPolicy tenths=0
+192.168.178.96  5772 emit Stop tenths=0
+192.168.178.96  5772 emit ResetPolicy tenths=0
+192.168.178.96  6621 emit ResetPolicy tenths=0
+192.168.178.96  7322 emit ResetPolicy tenths=0
+192.168.178.96  7442 emit StartSequence tenths=20
+192.168.178.96  7442 emit NotifyStarted tenths=20
+192.168.178.96  7442 emit ResetPolicy tenths=20
+192.168.178.96  15358 emit Stop tenths=0
+192.168.178.96  15358 emit ResetPolicy tenths=0
+192.168.178.96  16188 belt mode 2 -> 3 raw=2 pending=0 active=0
+192.168.178.96  18413 emit Stop tenths=0
+192.168.178.96  18413 emit ResetPolicy tenths=0
+192.168.178.96  18959 emit ResetPolicy tenths=0
+192.168.178.96  19703 emit ResetPolicy tenths=0
+192.168.178.96  19877 cp 00
+192.168.178.96  19908 cp 07
+192.168.178.96  19925 emit StartSequence tenths=20
+192.168.178.96  19925 emit NotifyStarted tenths=20
+192.168.178.96  20231 belt mode 3 -> 2 raw=1 pending=0 active=0
+192.168.178.96  27347 cp 02 fa 00
+192.168.178.96  27392 emit SetSpeed tenths=25
+192.168.178.96  28487 cp 08 01
+192.168.178.96  28489 emit Stop tenths=0
+192.168.178.96  29341 belt mode 2 -> 3 raw=2 pending=0 active=0
+192.168.178.96  32552 emit Stop tenths=0
+192.168.178.96  32552 emit ResetPolicy tenths=0
+192.168.178.96  32752 emit ResetPolicy tenths=0
+192.168.178.96  32952 emit SetMode mode=1
+192.168.178.96  34386 belt mode 3 -> 1 raw=0 pending=0 active=1
+192.168.178.96  35658 emit SetMode mode=2
+192.168.178.96  36406 emit ResetPolicy tenths=0
+192.168.178.96  36406 belt mode 1 -> 2 raw=1 pending=0 active=0
+192.168.178.96  37581 emit Stop tenths=0
+192.168.178.96  37581 emit ResetPolicy tenths=0
+192.168.178.96  37740 emit Stop tenths=0
+192.168.178.96  37740 emit ResetPolicy tenths=0

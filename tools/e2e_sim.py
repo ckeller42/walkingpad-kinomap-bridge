@@ -1040,11 +1040,76 @@ def _scenarios(*scs: Scenario) -> Dict[str, Scenario]:
     return {sc.name: sc for sc in scs}
 
 
-# Provisional: the full set arrives with the next task. A Status check reads the
-# reply of the step before it, so `status` is sent first.
+# A Status check judges the `status` reply of the control step just before it,
+# so every Status is preceded by Con("status"). That also moves the anchor of
+# later `within` windows, which is why no windowed check follows one directly.
 SCENARIOS: Dict[str, Scenario] = _scenarios(
-    Scenario("boot", [Con("status"),
-                      Status(src="sim", belt_link="1", phone_link="0", armed="0", running="0")]),
+    Scenario("boot", [
+        Con("status"),
+        Status(src="sim", belt_link="1", phone_link="0", armed="0", running="0"),
+    ]),
+    Scenario("refusals", [
+        Con("start", expect="err not-armed"),
+        UdpAbsent("emit StartSequence"),
+        Con("speed 3", expect="err not-armed"),
+    ]),
+    Scenario("ui_start_stop", [
+        FtmsConnect(),
+        Con("arm"),
+        Con("start"),
+        Udp(r"emit StartSequence tenths=20", 3),
+        SpeedAtLeast(1.9, 12),
+        Udp(r"emit NotifyStarted", 12),
+        Con("status"),
+        Status(running="1", belt_state="1", speed="20"),
+        Con("stop"),
+        SpeedZero(8),
+        Con("status"),
+        Status(armed="0", running="0", belt_state="4"),
+        FtmsDisconnect(),
+    ]),
+    Scenario("phone_start", [
+        FtmsConnect(),
+        Con("arm"),
+        FtmsCp("00"),
+        Indication("80 00 01"),
+        FtmsCp("07"),
+        Indication("80 07 01"),
+        Udp(r"emit StartSequence", 3),
+        SpeedAtLeast(1.9, 12),
+        FtmsCp("02 fa 00"),
+        Indication("80 02 01"),
+        Udp(r"emit SetSpeed tenths=25", 3),
+        SpeedAtLeast(2.4, 8),
+        FtmsCp("08 01"),
+        Indication("80 08 01"),
+        SpeedZero(8),
+        Con("status"),
+        Status(running="0"),
+        FtmsDisconnect(),
+    ]),
+    Scenario("auto_mode", [
+        Con("arm"),
+        Con("mode auto"),
+        Udp(r"emit SetMode mode=1", 3),
+        Udp(r"belt mode 3 -> 1 raw=0", 5),
+        Con("speed 3", expect="err auto-mode"),
+        UdpAbsent(r"emit SetSpeed"),
+        Con("mode manual"),
+        Udp(r"belt mode 1 -> 2 raw=1", 5),
+        Udp(r"emit ResetPolicy", 5),
+        Con("stop", expect="*"),
+    ]),
+    Scenario("wizard", [
+        Con("wizard"),
+        Con("status"),
+        Status(wizard="siminfo"),
+        Con("wizard next"),
+        Con("wizard next"),
+        Con("wizard next"),
+        Con("status"),
+        Status(wizard="off"),
+    ]),
 )
 
 
