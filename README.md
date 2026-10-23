@@ -4,7 +4,7 @@
 [![firmware](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/firmware.yml/badge.svg)](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/firmware.yml)
 [![pages](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/pages.yml/badge.svg)](https://ckeller42.github.io/walkingpad-kinomap-bridge/)
 [![docs](https://img.shields.io/badge/docs-site-blue)](https://ckeller42.github.io/walkingpad-kinomap-bridge/)
-[![tests](https://img.shields.io/badge/host%20tests-214-brightgreen)](test)
+[![tests](https://img.shields.io/badge/host%20tests-223-brightgreen)](test)
 [![protocol](https://img.shields.io/badge/protocol-WiLink%20%2B%20FTMS-orange)](https://ckeller42.github.io/walkingpad-kinomap-bridge/protocol/reference.html)
 [![platform](https://img.shields.io/badge/board-M5Stack%20CoreS3-6f42c1)](https://docs.m5stack.com/en/core/CoreS3)
 
@@ -118,7 +118,7 @@ reads), not inferred — see the
 ## Getting started
 
 ```sh
-pio test -e native      # 214 host tests, no hardware needed
+pio test -e native      # 223 host tests, no hardware needed
 pio run -e cores3       # real belt (default)
 pio run -e cores3_sim   # simulated belt, for development without the treadmill
 pio run -e cores3 -t upload --upload-port /dev/cu.usbmodem101
@@ -144,7 +144,7 @@ from the code.
 | [Documentation home](https://ckeller42.github.io/walkingpad-kinomap-bridge/) | architecture, and everything below |
 | [Setup wizard](https://ckeller42.github.io/walkingpad-kinomap-bridge/setup-wizard.html) | first-run pairing, with real screenshots |
 | [Serial console](https://ckeller42.github.io/walkingpad-kinomap-bridge/serial-console.html) | the USB command surface |
-| [Developer menu](https://ckeller42.github.io/walkingpad-kinomap-bridge/developer-menu.html) | on-device Wi-Fi pairing and the radio switches |
+| [Developer menu](https://ckeller42.github.io/walkingpad-kinomap-bridge/developer-menu.html) | on-device Wi-Fi pairing, the radio switches and firmware updates |
 | [Firmware updates](https://ckeller42.github.io/walkingpad-kinomap-bridge/ota.html) | over-the-air updates and their trust model |
 | [Session logging](https://ckeller42.github.io/walkingpad-kinomap-bridge/logging.html) | SD and UDP sinks, and why they exist |
 | [Protocol reference](https://ckeller42.github.io/walkingpad-kinomap-bridge/protocol/reference.html) | generated from `protocol/*.yaml` |
@@ -162,7 +162,7 @@ doxygen Doxyfile && sphinx-build -b html docs build/sphinx
 ## Design
 
 Protocol and policy live in Arduino-free `lib/` modules with host tests; BLE,
-display and Wi-Fi adapters live in `src/`. That split is what makes 214 tests
+display and Wi-Fi adapters live in `src/`. That split is what makes 223 tests
 runnable with no hardware attached, and it is worth preserving: put the
 decision in `lib/` returning a value, and the effect in `src/`.
 

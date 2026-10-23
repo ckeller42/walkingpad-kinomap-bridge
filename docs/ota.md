@@ -25,51 +25,125 @@ Guarded accordingly:
 
 ## Updating
 
+**On the device**: gear → **Update**. The screen shows what is running, what
+the manifest offers and where it came from, and the right-hand button does the
+one thing that makes sense next.
+
+![The Update screen with a newer build published](screens/dev-menu-update.png)
+
+| Row | Shows |
+|---|---|
+| **Running** | the version this firmware was built as |
+| **Available** | the manifest's version, once a check has fetched one |
+| **Status** | `not checked`, `checking...`, `up to date`, `update available`, `installing...` or `failed`; or why nothing can be done (below) |
+| *(message)* | the updater's last message, such as `manifest http 404` or `downloading 37%`; the row shows up to 39 characters |
+| **Source** | the host of the manifest URL in use |
+
+**CHECK** fetches the manifest and compares its `version` with the running
+one. **INSTALL** replaces it when the two differ: it disarms, downloads the
+image into the inactive slot while the message row counts `downloading NN%`,
+verifies the SHA-256 and reboots into the new image. While a check or an
+install runs, the button is blank. After a failure it reads **CHECK** again.
+
+The screen does not respond while a download runs: the download blocks the
+main loop, so taps are not read and a phone's control-point writes wait until
+it finishes or fails. The console's `ota apply` blocks the same way.
+
+![A failed check: no manifest at the URL](screens/dev-menu-update-failed.png)
+
+The button stays blank, and Status says why, when:
+
+- developer mode is off: `needs dev mode`;
+- Wi-Fi is not associated: `needs Wi-Fi`;
+- the published image was built for a different PlatformIO environment:
+  `image is for <env>`. CI publishes only `cores3` (the real belt), so a bench
+  board running `cores3_sim` or `cores3_shot` sees what is published but is
+  not offered INSTALL.
+
+INSTALL is also refused while the belt is running. The menu cannot be opened
+over a moving belt in the first place, so this is a second guard, not the
+first.
+
+**Over USB**, the same steps are console commands:
+
 ```text
 dev on
-ota url https://example.invalid/releases/download/v0.2.0/manifest.json
-ota check
-ota apply
+ota            # ota running=<ver> env=<env> state=<n> url=<url> [(default)] msg=<text>
+ota check      # up to date (<ver>)   or   <ver> available
+ota apply      # download, verify, reboot; prints the failure if there is one
 ```
 
-`ota check` compares the manifest's version with the running one and reports
-`up to date` or `<version> available`. `ota apply` downloads, verifies and
-reboots. `ota` alone shows the current state at any time.
+`state` is the updater's state as a number, in the Status row's order from
+`not checked` (0) to `failed` (5).
 
-The same is reachable from the developer menu on the device.
+With no URL stored, the device reads the project's published manifest,
+`https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json`
+(`OTA_MANIFEST_URL` in `src/config.h`, overridable at build time).
+`ota url <url>` stores a different one; `ota url` with no argument forgets it
+and goes back to the default.
 
 ## What CI publishes
 
-Pushing a tag builds the firmware, stamps it with the tag, runs the host tests
-and publishes two files:
+**Every push to `main`** builds the `cores3` firmware and publishes it with the
+documentation site on GitHub Pages. Every push publishes a new version, so a
+bridge shows "update available" after a docs-only push too:
 
-| File | |
+| URL | |
 |---|---|
-| `firmware.bin` | the image |
-| `manifest.json` | `version`, `url`, `sha256`, `size` |
+| `https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json` | the manifest the device reads by default |
+| `https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/firmware.bin` | the image it describes |
 
-A release step then re-hashes the binary and asserts the manifest describes the
-file beside it. A manifest whose hash does not match its own binary would
-strand every device that tried to update, and it is exactly the kind of mistake
-a release pipeline makes quietly.
+The manifest is one flat JSON object:
 
-## A note on private repositories
+| Field | |
+|---|---|
+| `version` | the build's version (below) |
+| `env` | the PlatformIO environment it was built for, `cores3`; a device built for another one refuses to install it |
+| `url` | where the image is |
+| `sha256` | the image's hash, checked while it streams |
+| `size` | the image's length in bytes |
 
-A **private** repository's release assets require authentication, which the
-device does not have. Either publish the manifest and binary somewhere the
-device can reach, or serve them on the local network:
+**Versions come from `git describe --tags --always`.** An untagged commit is
+its short hash (`bd3819b`), a tagged one is the tag (`v0.2.0`), and a commit
+after a tag is `v0.2.0-3-g<hash>`. Tags are optional: they name a build, they
+do not gate publishing. The comparison is plain string equality, so the device
+offers whatever is published whenever it differs from what is running.
+
+`tools/make_manifest.py` writes the manifest, and its `--check` mode re-hashes
+the binary and fails the job if the manifest does not describe the file beside
+it or a field is missing or empty. A manifest whose hash does not match its own
+binary would strand every device that tried to update, and it is exactly the
+kind of mistake a pipeline makes quietly. The firmware workflow runs the same
+check on pull requests, so a broken pair is caught before merge.
+
+Pushing a `v*` tag also runs `release.yml`: it runs the host tests, builds the
+tagged firmware and attaches `firmware.bin` and a checked `manifest.json` to a
+GitHub release. Those assets are for people, to flash over USB or to keep as a
+record. Devices update from the Pages manifest above: GitHub serves release
+downloads through a redirect, and the OTA client does not follow redirects, by
+design, so a device pointed at a release asset fails the check.
+
+## Serving locally
+
+To try an image before it is published, serve it from your own machine:
 
 ```sh
-python3 -m http.server 8099      # in a directory holding firmware.bin + manifest.json
+pio run -e cores3
+mkdir -p /tmp/ota && cp .pio/build/cores3/firmware.bin /tmp/ota/
+python3 tools/make_manifest.py /tmp/ota/firmware.bin --version test-1 --env cores3 \
+    --url http://<your-ip>:8099/firmware.bin > /tmp/ota/manifest.json
+python3 -m http.server 8099 --directory /tmp/ota
 ```
 
-Then point the device at `http://<your-ip>:8099/manifest.json`. This is also
-how OTA was first verified end to end: the bridge fetched a 1.5 MB image,
-checked its hash, wrote the inactive slot and rebooted into it.
+Then `ota url http://<your-ip>:8099/manifest.json` on the console, and CHECK on
+the Update screen (or `ota check`). `ota url` alone returns to the published
+manifest afterwards. This is also how OTA was first verified end to end: the
+bridge fetched a 1.5 MB image, checked its hash, wrote the inactive slot and
+rebooted into it.
 
 ## Versioning
 
-`FW_VERSION` is stamped by CI from the git tag. A local build has no tag, and
+`FW_VERSION` is stamped by CI from `git describe`. A local build has none, and
 rather than comparing as an empty string — which would match an empty manifest
 field and report itself "up to date" — it reports `dev-local`, a name no
 release can take.

@@ -23,6 +23,8 @@ jobs:
       # recordings replayed (no hardware; the first predates udp-seq), and each
       # synthetic fixture, which must fail a check: exit 1 and a FAIL line.
       - run: python3 -m unittest tools/test_e2e_sim.py
+      # The OTA manifest generator and its --check.
+      - run: python3 -m unittest tools/test_make_manifest.py
       - run: python3 tools/e2e_sim.py --replay docs/captures/e2e-sim-2026-10-23
       - run: python3 tools/e2e_sim.py --replay docs/captures/e2e-sim-2026-10-23-seq
       - name: every failing fixture fails a check

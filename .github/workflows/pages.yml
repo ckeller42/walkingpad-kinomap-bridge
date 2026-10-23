@@ -1,14 +1,7 @@
 name: pages
-# Publishes the Sphinx site to GitHub Pages.
-#
-# NOTE: this repository is private on a free plan, where Pages is not
-# available ("Your current plan does not support GitHub Pages for this
-# repository"). The workflow is kept ready and correct so publishing starts
-# working the moment either the repository is made public or the account is
-# upgraded - no configuration archaeology needed later.
-#
-# Until then the same site is produced by the `docs` job in ci.yml and attached
-# to every run as the `docs-site` artifact.
+# Publishes the Sphinx site to GitHub Pages; the site also carries
+# firmware/manifest.json and firmware/firmware.bin, which the device's Update
+# screen fetches.
 on:
   push:
     branches: [main]
@@ -29,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # Full history and tags, so git describe gives the firmware a real version.
+        with: {fetch-depth: 0}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: {python-version: "3.12"}
       - run: sudo apt-get update && sudo apt-get install -y doxygen
@@ -37,6 +32,21 @@ jobs:
         run: mkdir -p build/doxygen && doxygen Doxyfile
       - name: sphinx, warnings are errors
         run: sphinx-build -b html -W --keep-going docs build/sphinx
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+      - run: pip install platformio
+      # platformio.ini reads FW_VERSION from the environment into the build.
+      - run: echo "FW_VERSION=$(git describe --tags --always)" >> "$GITHUB_ENV"
+      - name: build cores3 (the image the Update screen installs)
+        run: pio run -e cores3
+      - name: manifest, verified against the image it describes
+        run: |
+          python3 tools/make_manifest.py .pio/build/cores3/firmware.bin --version "$FW_VERSION" --env cores3 --url https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/firmware.bin > manifest.json
+          python3 tools/make_manifest.py --check manifest.json .pio/build/cores3/firmware.bin
+      - run: mkdir -p build/sphinx/firmware && cp .pio/build/cores3/firmware.bin manifest.json build/sphinx/firmware/
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:

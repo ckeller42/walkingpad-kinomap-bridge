@@ -52,7 +52,7 @@ Consequences you will hit:
 | `docs/` | Also the Sphinx source directory. |
 | `tools/` | Host-side test and analysis scripts. |
 
-The `lib`/`src` split is what makes 214 tests runnable with no hardware. When
+The `lib`/`src` split is what makes 223 tests runnable with no hardware. When
 adding behaviour, put the decision in `lib/` returning a value, and the effect
 in `src/`. `BridgeState` is the model: every state-changing entry point returns
 a `[[nodiscard]] Outcome` that exactly one `applyOutcome()` drains.
@@ -60,7 +60,7 @@ a `[[nodiscard]] Outcome` that exactly one `applyOutcome()` drains.
 ## Commands
 
 ```sh
-pio test -e native            # 214 host tests - NOT "pio run -e native"
+pio test -e native            # 223 host tests - NOT "pio run -e native"
 pio run -e cores3             # real belt (default)
 pio run -e cores3_sim         # simulated belt
 pio run -e cores3 -t upload --upload-port /dev/cu.usbmodem101

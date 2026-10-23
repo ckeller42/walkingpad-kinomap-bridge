@@ -90,3 +90,14 @@
  * @brief UDP port the session log is broadcast to. Listen with `nc -ul 9999`.
  */
 #define LOG_UDP_PORT 9999
+
+#ifndef OTA_MANIFEST_URL
+/** @def OTA_MANIFEST_URL
+ * @brief Where OTA looks for the manifest when NVS holds no `ota_url`.
+ *
+ * The GitHub Pages deployment CI publishes on every push to main. Override
+ * at build time with `-DOTA_MANIFEST_URL=\"...\"`, or per device with the
+ * console's `ota url <url>`; `ota url` with no argument returns here.
+ */
+#define OTA_MANIFEST_URL "https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json"
+#endif

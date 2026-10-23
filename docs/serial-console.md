@@ -20,6 +20,10 @@ then exactly one terminating line, `ok` or `err <reason>`.
 | `wizard` | re-enter setup (`err belt-running` if the belt is moving); `wizard next` / `wizard back` press the right / left button |
 | `speed up` / `speed down` / `speed <km/h>` | like the speed buttons; `err not-armed`, `err belt-down`, `err wizard-active`, `err bad-value`, `err out-of-range`, `err auto-mode` (the belt sets its own speed in Auto) |
 | `mode auto` / `mode manual` | asks the belt to switch mode, like tapping the badge; `err wizard-active`, `err not-armed`, `err belt-down`, `err belt-moving` (belt not parked or a start in flight), `err refused` |
+| `ota` | one line: `ota running=<version> env=<env> state=<n> url=<url> msg=<text>`; `env` is the PlatformIO environment the firmware was built for (`cores3`, `cores3_sim`, `cores3_shot`) and must match the manifest's `env` before `ota apply` installs; `url` is followed by `(default)` when it is the compiled-in `OTA_MANIFEST_URL` (the project's GitHub Pages manifest) rather than one stored with `ota url` |
+| `ota url <url>` / `ota url` | store a manifest URL in NVS (`err bad-ota-url` if it is not one word); with no argument, forget the stored one and go back to the default, printing `ota url=<default> (default)` |
+| `ota check` | fetch the manifest and report `up to date` or `<version> available`; `err dev-mode-off` |
+| `ota apply` | install the image `ota check` found, then reboot; disarms first; `err dev-mode-off`, `err belt-running`; refused with `image is for <env>` when the manifest's `env` differs from this build's |
 | `shot` | emit one screenshot frame now (`err not-built` outside the `cores3_shot` build) |
 | `help` | list commands |
 
@@ -64,16 +68,16 @@ every screen (4 s each); any console command ends the tour.
 ```sh
 ~/tools/venv-ble/bin/pio run -e cores3_shot -t upload --upload-port /dev/cu.usbmodem101
 ~/tools/venv-ble/bin/python tools/capture_shots.py --port /dev/cu.usbmodem101 \
-    --seconds 62 --outdir docs/screens --names a,b,c
+    --seconds 140 --outdir docs/screens --names a,b,c
 # deterministic single frames instead of the tour:
 ~/tools/venv-ble/bin/python tools/console.py --keep-frames "arm; start; wait 12; shot" > cap.txt
 ~/tools/venv-ble/bin/python tools/decode_shots.py cap.txt -o docs/screens
 ```
 
 `tools/decode_shots.py` writes one PNG per distinct complete frame and reports
-truncated or damaged ones (capture at least 12 s per frame, and the whole tour
-needs about 60 s). The shot build is for documentation only: it never writes
-the `setup_done` flag.
+truncated or damaged ones (capture at least 12 s per frame; the whole tour is
+28 phases of 4 s, 112 s plus boot, hence `--seconds 140`). The shot build is
+for documentation only: it never writes the `setup_done` flag.
 
 ## Status fields for split status frames
 

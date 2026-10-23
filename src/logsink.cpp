@@ -256,23 +256,14 @@ void hex(const char* tag, const uint8_t* data, size_t len) {
     line("%s %s", tag, buf);
 }
 
-void tick(uint32_t nowMs) {
-    if (devMode && wifiTried && WiFi.status() != WL_CONNECTED &&
-        nowMs - lastWifiTry >= kWifiRetryMs) {
-        lastWifiTry = nowMs;
-        WiFi.reconnect();
-    }
-    const bool udpUp = devMode && udpWanted && WiFi.status() == WL_CONNECTED;
-    if (udpUp) {
-        // Bound to LOG_UDP_PORT rather than an ephemeral port, so a listener
-        // can say hello to <bridge ip>:9999. The socket has to exist before
-        // the first send.
-        if (!udpStarted) udpStarted = udp.begin(LOG_UDP_PORT) == 1;
-        if (udpStarted) readHello(nowMs);
-    }
-    if (nowMs - lastFlush < kFlushMs) return;
-    lastFlush = nowMs;
+namespace {
 
+bool udpUpNow() { return devMode && udpWanted && WiFi.status() == WL_CONNECTED; }
+
+// Copy the ring out and send it to every live sink. `heartbeat` says whether
+// an empty ring sends the unicast heartbeat (the periodic flush does; a forced
+// flush has nothing to report that the next periodic one will not).
+void drain(uint32_t nowMs, bool udpUp, bool heartbeat) {
     // Copy out under the lock, then do I/O without it: an SD write can take
     // tens of ms and must not stall a BLE callback trying to log.
     static char out[kRing];
@@ -285,7 +276,7 @@ void tick(uint32_t nowMs) {
         }
     }
     if (n == 0) {
-        if (udpUp && udpStarted) sendHeartbeat(nowMs);
+        if (heartbeat && udpUp && udpStarted) sendHeartbeat(nowMs);
         return;
     }
 
@@ -307,6 +298,35 @@ void tick(uint32_t nowMs) {
             off += chunk;
         }
     }
+}
+
+}  // namespace
+
+void tick(uint32_t nowMs) {
+    if (devMode && wifiTried && WiFi.status() != WL_CONNECTED &&
+        nowMs - lastWifiTry >= kWifiRetryMs) {
+        lastWifiTry = nowMs;
+        WiFi.reconnect();
+    }
+    const bool udpUp = udpUpNow();
+    if (udpUp) {
+        // Bound to LOG_UDP_PORT rather than an ephemeral port, so a listener
+        // can say hello to <bridge ip>:9999. The socket has to exist before
+        // the first send.
+        if (!udpStarted) udpStarted = udp.begin(LOG_UDP_PORT) == 1;
+        if (udpStarted) readHello(nowMs);
+    }
+    if (nowMs - lastFlush < kFlushMs) return;
+    lastFlush = nowMs;
+    drain(nowMs, udpUp, true);
+}
+
+void flush() {
+    const uint32_t nowMs = millis();
+    const bool udpUp = udpUpNow();
+    if (udpUp && !udpStarted) udpStarted = udp.begin(LOG_UDP_PORT) == 1;
+    lastFlush = nowMs;
+    drain(nowMs, udpUp, false);
 }
 
 bool sdOk() { return sdReady; }

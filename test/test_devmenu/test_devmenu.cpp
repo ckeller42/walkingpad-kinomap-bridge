@@ -25,7 +25,7 @@ void test_root_lists_the_switches(void) {
     Inputs in = base(false);
     Screen s = m.screen(in);
     TEST_ASSERT_EQUAL_STRING("DEVELOPER", s.title);
-    TEST_ASSERT_EQUAL(5, s.rowCount);
+    TEST_ASSERT_EQUAL(6, s.rowCount);
     TEST_ASSERT_EQUAL_STRING("Developer mode", s.rows[0].label);
     TEST_ASSERT_EQUAL_STRING("OFF", s.rows[0].value);
 }
@@ -222,15 +222,16 @@ void test_forget_row_only_offered_when_a_network_is_stored(void) {
 }
 
 // Every row the root screen offers must do something. A row that only
-// reported a mode nobody could change used to sit at index 4; the screen is
-// five rows now, and a tap past the end is ignored rather than wrapping.
-void test_root_offers_five_live_rows_and_ignores_taps_past_them(void) {
+// reported a mode nobody could change used to sit on this screen; it has six
+// live rows now (index 4 is Update), and a tap past the end is ignored rather
+// than wrapping.
+void test_root_offers_six_live_rows_and_ignores_taps_past_them(void) {
     DevMenu m;
     m.open();
     Inputs on = base(true);
     Screen s = m.screen(on);
-    TEST_ASSERT_EQUAL(5, s.rowCount);
-    TEST_ASSERT_EQUAL(Action::None, m.tapRow(5, on));
+    TEST_ASSERT_EQUAL(6, s.rowCount);
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(6, on));
     TEST_ASSERT_EQUAL(Step::Root, m.step());
 }
 
@@ -238,10 +239,10 @@ void test_root_offers_rerun_setup_even_with_dev_off(void) {
     DevMenu m; m.open();
     Inputs in = base(false);
     Screen s = m.screen(in);
-    TEST_ASSERT_EQUAL(5, s.rowCount);
-    TEST_ASSERT_EQUAL_STRING("Re-run setup", s.rows[4].label);
-    TEST_ASSERT_TRUE(s.rows[4].enabled);
-    TEST_ASSERT_EQUAL(Action::RerunSetup, m.tapRow(4, in));
+    TEST_ASSERT_EQUAL(6, s.rowCount);
+    TEST_ASSERT_EQUAL_STRING("Re-run setup", s.rows[5].label);
+    TEST_ASSERT_TRUE(s.rows[5].enabled);
+    TEST_ASSERT_EQUAL(Action::RerunSetup, m.tapRow(5, in));
 }
 void test_wifi_row_shows_connecting_then_failed(void) {
     DevMenu m; m.open();
@@ -271,7 +272,16 @@ void test_blank_keys_are_where_the_layout_says_and_shift_is_letters_only(void) {
                 TEST_ASSERT_NOT_EQUAL(Key::Kind::Shift, keyAt((Page)p, false, r, c).kind);
 }
 void test_scan_list_keeps_as_many_networks_as_it_shows(void) {
-    TEST_ASSERT_EQUAL(kMaxRows, kMaxNetworks);
+    TEST_ASSERT_EQUAL(5, kMaxNetworks);
+    // The panel has a sixth row now, but the scan list must not read past
+    // the five networks the Inputs array holds.
+    DevMenu m;
+    m.open();
+    Inputs on = base(true);
+    m.tapRow(2, on);
+    on.networkCount = 6;
+    for (uint8_t i = 0; i < kMaxNetworks; ++i) on.networks[i] = "Insel";
+    TEST_ASSERT_EQUAL(5, m.screen(on).rowCount);
 }
 
 void test_every_screen_has_a_title_and_a_left_button(void) {
@@ -310,6 +320,19 @@ void test_screens_have_distinct_phases(void) {
     const int symbols1 = m.screen(on).phase;
     m.setPage(Page::Symbols2);
     const int symbols2 = m.screen(on).phase;
+    // The Update screen, idle and with an update waiting.
+    DevMenu u;
+    u.open();
+    u.tapRow(4, on);
+    const int updIdle = u.screen(on).phase;
+    on.otaState = OtaState::Available;
+    const int updAvail = u.screen(on).phase;
+    TEST_ASSERT_NOT_EQUAL(updIdle, updAvail);
+    const int others[] = {root, scanning, listed, pass, symbols1, symbols2};
+    for (int o : others) {
+        TEST_ASSERT_NOT_EQUAL(updIdle, o);
+        TEST_ASSERT_NOT_EQUAL(updAvail, o);
+    }
     TEST_ASSERT_NOT_EQUAL(root, scanning);
     TEST_ASSERT_NOT_EQUAL(scanning, listed);
     TEST_ASSERT_NOT_EQUAL(listed, pass);
@@ -318,6 +341,145 @@ void test_screens_have_distinct_phases(void) {
     TEST_ASSERT_NOT_EQUAL(pass, symbols1);
     TEST_ASSERT_NOT_EQUAL(symbols1, symbols2);
     TEST_ASSERT_NOT_EQUAL(pass, symbols2);
+}
+
+static Inputs updateIn(OtaState st) {
+    Inputs in = base(true);
+    in.wifiUp = true;
+    in.otaState = st;
+    return in;
+}
+
+static DevMenu updateMenu(const Inputs& in) {
+    DevMenu m;
+    m.open();
+    m.tapRow(4, in);
+    return m;
+}
+
+void test_root_has_update_row_before_rerun_setup(void) {
+    DevMenu m; m.open();
+    Inputs on = base(true);
+    on.otaVersion = "bd3819b";
+    Screen s = m.screen(on);
+    TEST_ASSERT_EQUAL(6, s.rowCount);
+    TEST_ASSERT_EQUAL_STRING("Update", s.rows[4].label);
+    TEST_ASSERT_EQUAL_STRING("bd3819b", s.rows[4].value);
+    TEST_ASSERT_EQUAL_STRING("Re-run setup", s.rows[5].label);
+    TEST_ASSERT_EQUAL(Action::RerunSetup, m.tapRow(5, on));
+}
+
+void test_update_row_opens_update_screen(void) {
+    DevMenu m; m.open();
+    Inputs on = base(true);
+    on.otaHost = "ckeller42.github.io";
+    TEST_ASSERT_EQUAL(Action::OpenUpdate, m.tapRow(4, on));
+    TEST_ASSERT_EQUAL(Step::Update, m.step());
+    Screen s = m.screen(on);
+    TEST_ASSERT_EQUAL_STRING("UPDATE", s.title);
+    TEST_ASSERT_EQUAL_STRING("BACK", s.left);
+    TEST_ASSERT_EQUAL_STRING("Running", s.rows[0].label);
+    TEST_ASSERT_EQUAL_STRING("Source", s.rows[4].label);
+    TEST_ASSERT_EQUAL_STRING("ckeller42.github.io", s.rows[4].value);
+    TEST_ASSERT_EQUAL(Action::None, m.press(false, on));
+    TEST_ASSERT_EQUAL(Step::Root, m.step());
+}
+
+void test_update_button_follows_state(void) {
+    struct Case { OtaState st; const char* right; Action act; };
+    const Case cases[] = {
+        {OtaState::Idle, "CHECK", Action::CheckOta},
+        {OtaState::Checking, "", Action::None},
+        {OtaState::UpToDate, "CHECK", Action::CheckOta},
+        {OtaState::Available, "INSTALL", Action::InstallOta},
+        {OtaState::Installing, "", Action::None},
+        {OtaState::Failed, "CHECK", Action::CheckOta},
+    };
+    for (const Case& c : cases) {
+        Inputs on = updateIn(c.st);
+        DevMenu m = updateMenu(on);
+        TEST_ASSERT_EQUAL_STRING(c.right, m.screen(on).right);
+        TEST_ASSERT_EQUAL((int)c.act, (int)m.press(true, on));
+    }
+}
+
+void test_update_env_mismatch_disables_install(void) {
+    Inputs on = updateIn(OtaState::Available);
+    on.otaEnvMismatch = true;
+    on.otaImageEnv = "cores3";
+    DevMenu m = updateMenu(on);
+    Screen s = m.screen(on);
+    TEST_ASSERT_EQUAL_STRING("image is for cores3", s.rows[2].value);
+    TEST_ASSERT_EQUAL_STRING("", s.right);
+    TEST_ASSERT_EQUAL(Action::None, m.press(true, on));
+}
+
+void test_update_needs_dev_and_wifi(void) {
+    Inputs off = base(false);
+    off.wifiUp = true;
+    off.otaState = OtaState::Available;
+    DevMenu m = updateMenu(off);
+    TEST_ASSERT_EQUAL(Step::Update, m.step());
+    TEST_ASSERT_EQUAL_STRING("needs dev mode", m.screen(off).rows[2].value);
+    TEST_ASSERT_EQUAL_STRING("", m.screen(off).right);
+    TEST_ASSERT_EQUAL(Action::None, m.press(true, off));
+
+    Inputs nowifi = base(true);
+    nowifi.otaState = OtaState::Available;
+    DevMenu w = updateMenu(nowifi);
+    TEST_ASSERT_EQUAL_STRING("needs Wi-Fi", w.screen(nowifi).rows[2].value);
+    TEST_ASSERT_EQUAL_STRING("", w.screen(nowifi).right);
+    TEST_ASSERT_EQUAL(Action::None, w.press(true, nowifi));
+
+    // Both missing: still nothing, whatever the state claims.
+    Inputs neither = base(false);
+    neither.wifiUp = false;
+    neither.otaState = OtaState::Idle;
+    DevMenu n = updateMenu(neither);
+    TEST_ASSERT_EQUAL_STRING("", n.screen(neither).right);
+    TEST_ASSERT_EQUAL(Action::None, n.press(true, neither));
+}
+
+// The message row holds a whole updater message; at 24 bytes it used to cut
+// "v0.2.0 available (running bd3819b)" mid-word.
+void test_update_message_row_keeps_39_characters(void) {
+    const char* msg = "manifest url https://example.invalid/mf";  // 39 chars
+    TEST_ASSERT_EQUAL_size_t(39, strlen(msg));
+    Inputs on = updateIn(OtaState::Failed);
+    on.otaMessage = msg;
+    DevMenu m = updateMenu(on);
+    TEST_ASSERT_EQUAL_STRING(msg, m.screen(on).rows[3].label);
+}
+
+// open() is how the gear button enters the menu: it must land on the root,
+// not wherever the menu was left.
+void test_open_resets_from_update_to_root(void) {
+    Inputs on = updateIn(OtaState::Idle);
+    DevMenu m = updateMenu(on);
+    TEST_ASSERT_EQUAL(Step::Update, m.step());
+    m.open();
+    TEST_ASSERT_EQUAL(Step::Root, m.step());
+}
+
+void test_update_status_words(void) {
+    struct Case { OtaState st; const char* word; };
+    const Case cases[] = {
+        {OtaState::Idle, "not checked"},
+        {OtaState::Checking, "checking..."},
+        {OtaState::UpToDate, "up to date"},
+        {OtaState::Available, "update available"},
+        {OtaState::Installing, "installing..."},
+        {OtaState::Failed, "failed"},
+    };
+    for (const Case& c : cases) {
+        Inputs on = updateIn(c.st);
+        on.otaMessage = "some detail";
+        DevMenu m = updateMenu(on);
+        Screen s = m.screen(on);
+        TEST_ASSERT_EQUAL_STRING(c.word, s.rows[2].value);
+        TEST_ASSERT_EQUAL_STRING("some detail", s.rows[3].label);
+        TEST_ASSERT_FALSE(s.rows[3].enabled);
+    }
 }
 
 int main(int, char**) {
@@ -338,7 +500,7 @@ int main(int, char**) {
     RUN_TEST(test_set_page_switches_page_and_clears_shift);
     RUN_TEST(test_back_navigates_out_without_connecting);
     RUN_TEST(test_forget_row_only_offered_when_a_network_is_stored);
-    RUN_TEST(test_root_offers_five_live_rows_and_ignores_taps_past_them);
+    RUN_TEST(test_root_offers_six_live_rows_and_ignores_taps_past_them);
     RUN_TEST(test_root_offers_rerun_setup_even_with_dev_off);
     RUN_TEST(test_wifi_row_shows_connecting_then_failed);
     RUN_TEST(test_wifi_up_outranks_a_stale_failed_flag);
@@ -346,5 +508,13 @@ int main(int, char**) {
     RUN_TEST(test_scan_list_keeps_as_many_networks_as_it_shows);
     RUN_TEST(test_every_screen_has_a_title_and_a_left_button);
     RUN_TEST(test_screens_have_distinct_phases);
+    RUN_TEST(test_root_has_update_row_before_rerun_setup);
+    RUN_TEST(test_update_row_opens_update_screen);
+    RUN_TEST(test_update_button_follows_state);
+    RUN_TEST(test_update_env_mismatch_disables_install);
+    RUN_TEST(test_update_needs_dev_and_wifi);
+    RUN_TEST(test_update_status_words);
+    RUN_TEST(test_update_message_row_keeps_39_characters);
+    RUN_TEST(test_open_resets_from_update_to_root);
     return UNITY_END();
 }

@@ -60,6 +60,21 @@ void begin();
 void tick(uint32_t nowMs);
 
 /**
+ * @brief Drain the ring buffer to the active sinks now, ignoring the
+ *        once-a-second cadence of tick().
+ *
+ * For code that blocks loop() long enough that tick() cannot run - an OTA
+ * download, or the last lines before `ESP.restart()` - and whose log lines
+ * would otherwise reach the sinks late or never. Sends exactly what tick()
+ * would (SD, then UDP datagrams split on line boundaries) but no heartbeat
+ * when nothing is pending, and does not read `hello` datagrams.
+ *
+ * @note Call from loop() context only (the same task as tick()): it shares
+ *       tick()'s output buffer and does SD/UDP I/O. Never from a BLE callback.
+ */
+void flush();
+
+/**
  * @brief Write one timestamped line to the sinks.
  * @param fmt printf-style format; a line longer than the internal maximum is
  *        truncated rather than dropped.

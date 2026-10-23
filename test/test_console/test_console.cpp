@@ -165,12 +165,32 @@ void test_ota_url_requires_a_separator_after_url(void) {
     TEST_ASSERT_EQUAL_STRING("https://x/y", u);
 }
 
+// The compiled-in default manifest URL is 76 characters, so `ota url <it>`
+// is 84: it used to overflow the 63-character line and was refused whole.
+void test_ota_url_with_the_default_url_fits_the_line(void) {
+    const char* kDefault =
+        "https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json";
+    TEST_ASSERT_EQUAL_size_t(76, strlen(kDefault));
+    char line[200];
+    snprintf(line, sizeof line, "ota url %s\n", kDefault);
+
+    LineBuffer b;
+    bool done = false;
+    for (const char* p = line; *p; ++p) done = b.feed(*p);
+    TEST_ASSERT_TRUE(done);
+    TEST_ASSERT_FALSE(b.overflowed());
+    TEST_ASSERT_EQUAL(Cmd::OtaUrl, parse(b.line()));
+    char u[160];
+    TEST_ASSERT_TRUE(parseOtaUrlArg(b.line(), u, sizeof u));
+    TEST_ASSERT_EQUAL_STRING(kDefault, u);
+}
 
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_every_documented_command_parses);
     RUN_TEST(test_wifi_arg_preserves_case_and_spaces);
     RUN_TEST(test_ota_url_requires_a_separator_after_url);
+    RUN_TEST(test_ota_url_with_the_default_url_fits_the_line);
     RUN_TEST(test_case_and_whitespace_are_forgiven);
     RUN_TEST(test_unknown_and_prefix_commands_are_unknown_not_silent);
     RUN_TEST(test_blank_line_is_empty);
