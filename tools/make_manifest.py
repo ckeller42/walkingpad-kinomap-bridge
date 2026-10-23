@@ -26,6 +26,17 @@ import pathlib
 import sys
 
 FIELDS = ("env", "sha256", "size", "url", "version")
+# src/ota.cpp holds the version in char availVer[32] and field() truncates
+# silently; a truncated version never equals the running one, so the device
+# would offer the same image forever.
+VERSION_MAX = 31
+
+
+def version_problem(version):
+    """Return a problem string if `version` will not fit the device's buffer, else None."""
+    if isinstance(version, str) and len(version) > VERSION_MAX:
+        return f"version: {len(version)} characters, the device holds at most {VERSION_MAX}"
+    return None
 
 
 def describe(firmware):
@@ -57,6 +68,9 @@ def check(manifest, firmware):
         value = manifest.get(key)
         if value is None or value == "":
             problems.append(f"{key}: missing or empty")
+    too_long = version_problem(manifest.get("version"))
+    if too_long:
+        problems.append(too_long)
     sha256, size = describe(firmware)
     if "sha256" in manifest and manifest["sha256"] not in (None, "") and manifest["sha256"] != sha256:
         problems.append(f"sha256: manifest {manifest['sha256']}, file {sha256}")
@@ -96,6 +110,10 @@ def main(argv=None):
     missing = [opt for opt in ("firmware", "version", "env", "url") if not getattr(args, opt)]
     if missing:
         ap.error("missing " + ", ".join(missing) + " (or use --check MANIFEST FIRMWARE)")
+    too_long = version_problem(args.version)
+    if too_long:
+        print(f"FAIL {too_long}", file=sys.stderr)
+        return 1
     sys.stdout.write(render(make(args.firmware, args.version, args.env, args.url)))
     return 0
 

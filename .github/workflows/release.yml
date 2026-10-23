@@ -51,37 +51,18 @@ jobs:
         env:
           V: ${{ steps.v.outputs.version }}
         run: |
-          BIN=.pio/build/cores3/firmware.bin
-          SHA=$(sha256sum "$BIN" | cut -d' ' -f1)
-          SIZE=$(stat -c%s "$BIN")
           BASE="${{ github.server_url }}/${{ github.repository }}/releases/download/$V"
           mkdir -p dist
-          cp "$BIN" dist/firmware.bin
-          cat > dist/manifest.json <<EOF
-          {
-            "version": "$V",
-            "url": "$BASE/firmware.bin",
-            "sha256": "$SHA",
-            "size": $SIZE
-          }
-          EOF
+          cp .pio/build/cores3/firmware.bin dist/firmware.bin
+          python3 tools/make_manifest.py dist/firmware.bin --version "$V" --env cores3 --url "$BASE/firmware.bin" > dist/manifest.json
           cat dist/manifest.json
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "sha=$(sha256sum dist/firmware.bin | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      # Catches a manifest whose sha does not describe the binary beside it,
-      # which would strand every device that tried to update.
+      # Catches a manifest that does not describe the binary beside it (sha256,
+      # size, or a missing/empty field such as env), which would strand every
+      # device that tried to update.
       - name: verify the manifest describes the binary
-        run: |
-          python3 - <<'PY'
-          import hashlib, json, pathlib, sys
-          m = json.loads(pathlib.Path('dist/manifest.json').read_text())
-          data = pathlib.Path('dist/firmware.bin').read_bytes()
-          got = hashlib.sha256(data).hexdigest()
-          assert got == m['sha256'], f"sha mismatch: {got} != {m['sha256']}"
-          assert len(data) == m['size'], f"size mismatch: {len(data)} != {m['size']}"
-          assert m['version'], "empty version"
-          print(f"manifest ok: {m['version']} {m['size']} bytes")
-          PY
+        run: python3 tools/make_manifest.py --check dist/manifest.json dist/firmware.bin
 
       - uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
