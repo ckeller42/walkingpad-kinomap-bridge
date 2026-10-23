@@ -128,8 +128,9 @@ note that macOS asks once for local-network permission.
 ## An OTA update failed
 
 The running firmware is untouched — the image is written to the inactive slot
-and only committed after its SHA-256 matches the manifest. `ota` shows what
-went wrong:
+and only committed after its SHA-256 matches the manifest. The Update screen's
+message row (its first 23 characters) and `ota` on the console show what went
+wrong:
 
 | Message | Meaning |
 |---|---|
@@ -137,10 +138,13 @@ went wrong:
 | `manifest http 404` | the URL is wrong, or the release has no manifest |
 | `sha256 mismatch` | the download does not match the manifest; nothing installed |
 | `short download` | the connection dropped partway |
+| `image is for <env>` | the published image was built for another PlatformIO environment |
 
-A private repository's release assets need authentication, which the device
-does not have. Serve the manifest and binary from somewhere the device can
-reach.
+A `manifest http 404` on the default URL means nothing has been published to
+GitHub Pages yet, or Pages is not enabled for the repository. A manifest that
+needs authentication, such as a private repository's release asset, fails too:
+the device has no credentials. [Serve it
+locally](ota.md#serving-locally) instead.
 
 ## Recovering a bricked-looking bridge
 

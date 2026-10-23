@@ -10,7 +10,7 @@ and in AUTO ("Leave AUTO first") — the menu can take the radio up and down and
 re-pair Wi-Fi, which is not something to do underfoot. Opening it disarms. The
 menu's "Re-run setup" row is the way back into the setup wizard.
 
-![The developer menu: the radio switches and the stored network](screens/dev-menu-root.png)
+![The developer menu's six rows: the radio switches, the stored network, Update and Re-run setup](screens/dev-menu-root.png)
 
 ## The rows
 
@@ -20,6 +20,7 @@ menu's "Re-run setup" row is the way back into the setup wizard.
 | **UDP log** | The log broadcast itself. Reads `needs dev` and ignores taps while developer mode is off, rather than storing a setting that silently does nothing. |
 | **Wi-Fi** | Scan and pair. Shows the current IP when associated, `connecting...` for up to 15 s after CONNECT, `wrong password?` when the connect failed, `offline` when credentials are stored but not connected, `not set` when there are none. |
 | *(network name)* | Forget the stored credentials. Only offered when something is stored. |
+| **Update** | Opens the [Update screen](#update). Shows the running firmware version. Opens with developer mode off too; the screen then says `needs dev mode`. |
 | **Re-run setup** | Closes the menu and opens the setup wizard. Always available, even with developer mode off. |
 
 There is no protocol row. The bridge is a treadmill and only a treadmill: it
@@ -65,6 +66,41 @@ shown on the title row.
 
 **CONNECT** stores it in NVS and associates. Credentials live on the device and
 never in the repository.
+
+## Update
+
+The **Update** row opens a screen that checks the published manifest and
+installs a newer build over Wi-Fi. [Firmware updates](ota.md) has the whole
+story; this is what the screen shows.
+
+![The Update screen with a newer build published](screens/dev-menu-update.png)
+
+| Row | Shows |
+|---|---|
+| **Running** | the version this firmware was built as |
+| **Available** | the manifest's version, once a check has fetched one |
+| **Status** | one of the words below, or why nothing can be done |
+| *(message)* | the updater's last message, such as `manifest http 404` or `downloading 37%`; only its first 23 characters fit |
+| **Source** | the host of the manifest URL in use |
+
+**BACK** returns to the menu. The right-hand button follows Status:
+
+| Status | Button |
+|---|---|
+| `not checked` | **CHECK** |
+| `checking...` | blank |
+| `up to date` | **CHECK** |
+| `update available` | **INSTALL** |
+| `installing...` | blank; the message row counts `downloading NN%`, and the bridge reboots into the new image when it is verified |
+| `failed` | **CHECK**; the message row says why |
+
+![A failed check: no manifest at the URL](screens/dev-menu-update-failed.png)
+
+Status replaces the word, and the button is blank, when the screen cannot act:
+`needs dev mode` with developer mode off, `needs Wi-Fi` when Wi-Fi is not
+associated, and `image is for <env>` when the published image was built for a
+different PlatformIO environment (CI publishes `cores3`; a `cores3_sim` bench
+board is not offered it).
 
 ## The same switches over USB
 

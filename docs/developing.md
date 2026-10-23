@@ -187,7 +187,7 @@ a turn that leaves the GUI newer than its PNGs.
 
 ```sh
 pio run -e cores3_shot -t upload --upload-port /dev/cu.usbmodem101
-tools/capture_shots.py --port /dev/cu.usbmodem101 --seconds 100 --outdir docs/screens
+tools/capture_shots.py --port /dev/cu.usbmodem101 --seconds 140 --outdir docs/screens
 pio run -e cores3 -t upload --upload-port /dev/cu.usbmodem101   # back to normal
 ```
 
@@ -212,16 +212,36 @@ would simply be switched off.
 Reaching zero for a module needs more than a `@brief` — `WARN_NO_PARAMDOC` also
 wants an explicit `@param` per argument and a `@return`.
 
-## Releasing
+## Publishing firmware
 
-Tag, and CI builds the firmware, publishes it with a manifest, and verifies the
-manifest describes the binary beside it:
+**Every push to `main` publishes.** The Pages workflow builds the `cores3`
+firmware, writes a manifest for it, verifies the pair and ships both with the
+documentation site, at `firmware/manifest.json` and `firmware/firmware.bin`.
+Devices read that manifest by default, so merging is releasing.
+
+The version is `git describe --tags --always`: a short hash until something is
+tagged. Tagging names a build, nothing more is required:
 
 ```sh
 git tag v0.2.0 && git push --tags
 ```
 
-Devices update by pointing at the manifest — see [OTA](ota.md).
+A `v*` tag also runs `release.yml`, which attaches the same pair to a GitHub
+release.
+
+The manifest comes from one tool, used by all three workflows:
+
+```sh
+tools/make_manifest.py .pio/build/cores3/firmware.bin --version "$FW_VERSION" \
+    --env cores3 --url https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/firmware.bin \
+    > manifest.json
+tools/make_manifest.py --check manifest.json .pio/build/cores3/firmware.bin
+```
+
+`--check` re-hashes the binary and fails, naming the field, if the manifest
+does not describe it or a field is missing or empty. It also refuses a version
+longer than the 31 characters the device can hold. See [OTA](ota.md) for the
+device side and serving an image locally.
 
 ## Conventions worth knowing
 

@@ -391,7 +391,7 @@ static void demoAdvance(int i, uint32_t now) {
         case 21:  // a newer build is published
             demoDevIn.otaState = devmenu::OtaState::Available;
             demoDevIn.otaAvailable = "v0.2.0";
-            demoDevIn.otaMessage = "v0.2.0 available (running bd3819b)";
+            demoDevIn.otaMessage = "v0.2.0 available";  // <= 23 chars: Row::label is 24 bytes
             break;
         case 22:  // installing, mid-download
             demoDevIn.otaState = devmenu::OtaState::Installing;

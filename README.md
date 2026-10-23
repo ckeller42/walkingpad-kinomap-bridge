@@ -144,7 +144,7 @@ from the code.
 | [Documentation home](https://ckeller42.github.io/walkingpad-kinomap-bridge/) | architecture, and everything below |
 | [Setup wizard](https://ckeller42.github.io/walkingpad-kinomap-bridge/setup-wizard.html) | first-run pairing, with real screenshots |
 | [Serial console](https://ckeller42.github.io/walkingpad-kinomap-bridge/serial-console.html) | the USB command surface |
-| [Developer menu](https://ckeller42.github.io/walkingpad-kinomap-bridge/developer-menu.html) | on-device Wi-Fi pairing and the radio switches |
+| [Developer menu](https://ckeller42.github.io/walkingpad-kinomap-bridge/developer-menu.html) | on-device Wi-Fi pairing, the radio switches and firmware updates |
 | [Firmware updates](https://ckeller42.github.io/walkingpad-kinomap-bridge/ota.html) | over-the-air updates and their trust model |
 | [Session logging](https://ckeller42.github.io/walkingpad-kinomap-bridge/logging.html) | SD and UDP sinks, and why they exist |
 | [Protocol reference](https://ckeller42.github.io/walkingpad-kinomap-bridge/protocol/reference.html) | generated from `protocol/*.yaml` |

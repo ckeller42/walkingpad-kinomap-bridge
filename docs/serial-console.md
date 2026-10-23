@@ -68,16 +68,16 @@ every screen (4 s each); any console command ends the tour.
 ```sh
 ~/tools/venv-ble/bin/pio run -e cores3_shot -t upload --upload-port /dev/cu.usbmodem101
 ~/tools/venv-ble/bin/python tools/capture_shots.py --port /dev/cu.usbmodem101 \
-    --seconds 62 --outdir docs/screens --names a,b,c
+    --seconds 140 --outdir docs/screens --names a,b,c
 # deterministic single frames instead of the tour:
 ~/tools/venv-ble/bin/python tools/console.py --keep-frames "arm; start; wait 12; shot" > cap.txt
 ~/tools/venv-ble/bin/python tools/decode_shots.py cap.txt -o docs/screens
 ```
 
 `tools/decode_shots.py` writes one PNG per distinct complete frame and reports
-truncated or damaged ones (capture at least 12 s per frame, and the whole tour
-needs about 60 s). The shot build is for documentation only: it never writes
-the `setup_done` flag.
+truncated or damaged ones (capture at least 12 s per frame; the whole tour is
+28 phases of 4 s, 112 s plus boot, hence `--seconds 140`). The shot build is
+for documentation only: it never writes the `setup_done` flag.
 
 ## Status fields for split status frames
 

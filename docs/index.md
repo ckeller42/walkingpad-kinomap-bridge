@@ -79,7 +79,10 @@ ota
   switches.
 - [Session logging](logging.md) — SD and UDP sinks, and why the console cannot
   be used during a live session.
-- [Firmware updates](ota.md) — OTA, its trust model, and what CI publishes.
+- [Firmware updates](ota.md) — OTA from the developer menu, its trust model,
+  and what CI publishes: every push to `main` puts the firmware and its
+  manifest on this site, at
+  `https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json`.
 
 ## For developers
 
@@ -91,7 +94,7 @@ developing
 api
 ```
 
-- [Developing](developing.md) — building, testing, conventions, releasing.
+- [Developing](developing.md) — building, testing, conventions, publishing firmware.
 - [API reference](api.rst) — generated from the headers by Doxygen and Breathe,
   so it cannot drift from the code.
 
