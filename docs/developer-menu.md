@@ -5,7 +5,7 @@ all switched off. The bridge does not bring Wi-Fi up at all until developer
 mode is on.
 
 **To open it: tap the gear in the top-right corner** of the main screen. It is
-refused unless the belt is known to be stopped (the screen says "STOP first"),
+refused while a linked belt is not parked (the screen says "Belt not ready")
 and in AUTO ("Leave AUTO first") — the menu can take the radio up and down and
 re-pair Wi-Fi, which is not something to do underfoot. Opening it disarms. The
 menu's "Re-run setup" row is the way back into the setup wizard.
@@ -47,9 +47,16 @@ shown on the title row.
 ![The on-screen keyboard](screens/dev-menu-keyboard.png)
 
 - `shf` shifts **one** character, like a phone keyboard, so a capital in the
-  middle of a password does not capitalise the rest. Shifted, the digit row
-  becomes `!@#$%^&*()`.
-- `DEL` backspaces, `SP` is a space.
+  middle of a password does not capitalise the rest.
+- `123` opens the digits-and-symbols page, `#+=` the remaining punctuation,
+  `ABC` returns to the letters. Every printable ASCII character is reachable
+  (a host test proves it), so no password is untypeable.
+- `DEL` backspaces, `SP` is a space; both sit in the same place on every page.
+- A slip off the bottom key row lands in a dead band, not on CONNECT.
+
+![The digits and symbols page](screens/dev-menu-keyboard-symbols.png)
+
+![The remaining punctuation](screens/dev-menu-keyboard-symbols2.png)
 - A password too long to store is **refused rather than truncated**. A cut-off
   credential looks accepted and then never connects.
 - The password is shown rather than masked. This is a 320×240 panel in your own

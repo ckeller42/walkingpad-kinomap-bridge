@@ -94,7 +94,7 @@ Screen DevMenu::screen(const Inputs& in) const {
             set(s.title, "PASSWORD");
             set(s.left, "BACK");
             set(s.right, "CONNECT");
-            s.phase = 64;
+            s.phase = 64 + (int)page_;  // one phase per keyboard page: each is its own screen
             s.keyboard = true;
             s.shift = shift_;
             s.page = page_;

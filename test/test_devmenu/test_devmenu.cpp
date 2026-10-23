@@ -306,10 +306,18 @@ void test_screens_have_distinct_phases(void) {
     const int listed = m.screen(on).phase;
     m.tapRow(0, on);
     const int pass = m.screen(on).phase;
+    m.setPage(Page::Symbols1);
+    const int symbols1 = m.screen(on).phase;
+    m.setPage(Page::Symbols2);
+    const int symbols2 = m.screen(on).phase;
     TEST_ASSERT_NOT_EQUAL(root, scanning);
     TEST_ASSERT_NOT_EQUAL(scanning, listed);
     TEST_ASSERT_NOT_EQUAL(listed, pass);
     TEST_ASSERT_NOT_EQUAL(root, pass);
+    // The keyboard pages are three different screens.
+    TEST_ASSERT_NOT_EQUAL(pass, symbols1);
+    TEST_ASSERT_NOT_EQUAL(symbols1, symbols2);
+    TEST_ASSERT_NOT_EQUAL(pass, symbols2);
 }
 
 int main(int, char**) {

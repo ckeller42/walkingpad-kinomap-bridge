@@ -111,7 +111,7 @@ static const char* emitName(policy::Emit e) {
 }
 
 #if UI_SCREENSHOT
-// Tour phase 19 sets this so its SetMode never reaches the (sim) belt; phase 20
+// Tour phase 20 sets this so its SetMode never reaches the (sim) belt; phase 21
 // clears it. Screenshot builds only.
 static bool demoHoldSetMode = false;
 #endif
@@ -142,7 +142,7 @@ static void applyOutcome(const policy::Outcome& o) {
                     break;
                 }
 #if UI_SCREENSHOT
-                if (demoHoldSetMode) {  // tour phase 19: keep the request pending for the A? shot
+                if (demoHoldSetMode) {  // tour phase 20: keep the request pending for the A? shot
                     logsink::line("emit SetMode held (shot tour)");
                     break;
                 }
@@ -255,7 +255,7 @@ static constexpr uint8_t kUiStartTenths = 20;
 // real button presses but SYNTHETIC belt inputs (there is no belt on the
 // bench), then the main screen runs on the real simulated belt.
 static constexpr uint32_t kDemoDwellMs = 4000;
-static constexpr int kDemoLast = 21;
+static constexpr int kDemoLast = 22;
 static uint32_t demoT0 = 0;
 static int demoIdx = -1;
 static wizard::Inputs demoIn;
@@ -374,7 +374,10 @@ static void demoAdvance(int i, uint32_t now) {
         case 17:  // the digits and symbols page
             devMenu.setPage(devmenu::Page::Symbols1);
             break;
-        case 18:
+        case 18:  // the remaining punctuation
+            devMenu.setPage(devmenu::Page::Symbols2);
+            break;
+        case 19:
             // End on the main screen. Leaving the tour inside the menu means a
             // flashed screenshot build answers no touch but CLOSE, which reads
             // as a dead touchscreen. leaveDevMenu() is defined further down, so
@@ -386,7 +389,7 @@ static void demoAdvance(int i, uint32_t now) {
         // The three badge states on the main screen: A? (requested), A, M.
         // The state comes from the sim belt itself, never from a synthetic
         // observe. Gated on simSource: a real belt must not be sent set_mode.
-        case 19:  // request held back, so the sim keeps its old mode: A?
+        case 20:  // request held back, so the sim keeps its old mode: A?
             if (!simSource) break;
             inDevMenu = false;
             ui.setMenuMode(false);
@@ -394,12 +397,12 @@ static void demoAdvance(int i, uint32_t now) {
             demoHoldSetMode = true;
             applyOutcome(state.requestMode(policy::BeltMode::Auto, false));
             break;
-        case 20:  // release: the sim accepts Auto and reports it on its next poll: A
+        case 21:  // release: the sim accepts Auto and reports it on its next poll: A
             if (!simSource) break;
             demoHoldSetMode = false;
             applyOutcome(state.requestMode(policy::BeltMode::Auto, false));
             break;
-        case 21:  // sim reports Manual: M
+        case 22:  // sim reports Manual: M
             if (!simSource) break;
             applyOutcome(state.requestMode(policy::BeltMode::Manual, false));
             break;
