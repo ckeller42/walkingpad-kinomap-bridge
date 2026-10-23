@@ -31,13 +31,18 @@ namespace ota {
 namespace {
 
 State st = State::Idle;
-char msg[96] = "idle";
-char availVer[32] = "";
 char manifestUrl[160] = "";
+// Longest message is setUrl()'s "manifest url <url> (default)": 13 bytes of
+// prefix, at most sizeof manifestUrl - 1 of URL, 10 of suffix, the NUL.
+char msg[192] = "idle";
+static_assert(sizeof msg >= 13 + sizeof manifestUrl + 10,
+              "msg must hold \"manifest url <longest url> (default)\"");
+char availVer[32] = "";
 char imageUrl[200] = "";
 char wantSha[65] = "";
 char imgEnv[24] = "";
 Preferences prefs;
+bool urlStored = false;  // NVS holds a URL; false means "follow OTA_MANIFEST_URL"
 
 void say(State s, const char* fmt, ...) {
     st = s;
@@ -87,7 +92,8 @@ void begin() {
     prefs.begin("bridge", true);
     prefs.getString("ota_url", manifestUrl, sizeof manifestUrl);
     prefs.end();
-    if (!manifestUrl[0]) snprintf(manifestUrl, sizeof manifestUrl, "%s", OTA_MANIFEST_URL);
+    urlStored = manifestUrl[0] != 0;
+    if (!urlStored) snprintf(manifestUrl, sizeof manifestUrl, "%s", OTA_MANIFEST_URL);
     snprintf(msg, sizeof msg, "idle (running %s)", kVersion);
 }
 
@@ -96,7 +102,10 @@ State state() { return st; }
 const char* message() { return msg; }
 const char* availableVersion() { return availVer; }
 const char* url() { return manifestUrl; }
-bool usingDefaultUrl() { return strcmp(manifestUrl, OTA_MANIFEST_URL) == 0; }
+// "Default" means nothing is stored, not that the strings happen to match: a
+// URL stored with `ota url <url>` is pinned even when it equals today's
+// OTA_MANIFEST_URL, and a later build's default would not replace it.
+bool usingDefaultUrl() { return !urlStored; }
 const char* env() { return FW_ENV; }
 const char* imageEnv() { return imgEnv; }
 bool envMatches() { return imgEnv[0] && strcmp(imgEnv, FW_ENV) == 0; }
@@ -107,12 +116,16 @@ void setUrl(const char* u) {
     // effect rather than the old default staying pinned in flash.
     prefs.begin("bridge", false);
     prefs.putString("ota_url", deflt ? "" : u);
+    urlStored = !deflt;
     prefs.end();
     snprintf(manifestUrl, sizeof manifestUrl, "%s", deflt ? OTA_MANIFEST_URL : u);
     say(State::Idle, "manifest url %s%s", manifestUrl, deflt ? " (default)" : "");
 }
 
 void check() {
+    // Forget the last result first: a failed check (404, no network) must not
+    // leave an earlier Available version or image env behind.
+    availVer[0] = imageUrl[0] = wantSha[0] = imgEnv[0] = 0;
     if (WiFi.status() != WL_CONNECTED) { say(State::Failed, "no network"); return; }
     if (!manifestUrl[0]) { say(State::Failed, "no manifest url set"); return; }
 
@@ -131,7 +144,6 @@ void check() {
     const String body = http.getString();
     http.end();
 
-    availVer[0] = imageUrl[0] = wantSha[0] = imgEnv[0] = 0;
     if (!field(body.c_str(), "version", availVer, sizeof availVer) ||
         !field(body.c_str(), "url", imageUrl, sizeof imageUrl) ||
         !field(body.c_str(), "sha256", wantSha, sizeof wantSha)) {
@@ -145,7 +157,9 @@ void check() {
         say(State::UpToDate, "up to date (%s)", kVersion);
         return;
     }
-    say(State::Available, "%s available (running %s)", availVer, kVersion);
+    // The running version has its own row on the Update screen and its own
+    // line in the console's `ota`; repeating it here only overflows the row.
+    say(State::Available, "%s available", availVer);
 }
 
 void apply() { apply(nullptr); }
@@ -208,6 +222,9 @@ void apply(void (*progress)(int percent)) {
         if (millis() - lastLog > 2000) {
             lastLog = millis();
             logsink::line("ota: %d%% (%d bytes left)", (total - left) * 100 / total, left);
+            // loop() is blocked for the whole download, so tick() cannot run:
+            // push the line out now, or it is still in the ring at the reboot.
+            logsink::flush();
         }
     }
     http.end();
@@ -229,7 +246,8 @@ void apply(void (*progress)(int percent)) {
     if (!Update.end(true)) { say(State::Failed, "finalise failed: %s", Update.errorString()); return; }
 
     say(State::Installing, "installed %s, rebooting", availVer);
-    delay(400);  // let the log line reach the sinks before the reset
+    logsink::flush();  // tick() will not run again before the reset
+    delay(400);        // give the last UDP datagram time to leave the radio
     ESP.restart();
 }
 

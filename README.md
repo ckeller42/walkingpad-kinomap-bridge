@@ -4,7 +4,7 @@
 [![firmware](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/firmware.yml/badge.svg)](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/firmware.yml)
 [![pages](https://github.com/ckeller42/walkingpad-kinomap-bridge/actions/workflows/pages.yml/badge.svg)](https://ckeller42.github.io/walkingpad-kinomap-bridge/)
 [![docs](https://img.shields.io/badge/docs-site-blue)](https://ckeller42.github.io/walkingpad-kinomap-bridge/)
-[![tests](https://img.shields.io/badge/host%20tests-220-brightgreen)](test)
+[![tests](https://img.shields.io/badge/host%20tests-223-brightgreen)](test)
 [![protocol](https://img.shields.io/badge/protocol-WiLink%20%2B%20FTMS-orange)](https://ckeller42.github.io/walkingpad-kinomap-bridge/protocol/reference.html)
 [![platform](https://img.shields.io/badge/board-M5Stack%20CoreS3-6f42c1)](https://docs.m5stack.com/en/core/CoreS3)
 
@@ -118,7 +118,7 @@ reads), not inferred — see the
 ## Getting started
 
 ```sh
-pio test -e native      # 220 host tests, no hardware needed
+pio test -e native      # 223 host tests, no hardware needed
 pio run -e cores3       # real belt (default)
 pio run -e cores3_sim   # simulated belt, for development without the treadmill
 pio run -e cores3 -t upload --upload-port /dev/cu.usbmodem101
@@ -162,7 +162,7 @@ doxygen Doxyfile && sphinx-build -b html docs build/sphinx
 ## Design
 
 Protocol and policy live in Arduino-free `lib/` modules with host tests; BLE,
-display and Wi-Fi adapters live in `src/`. That split is what makes 220 tests
+display and Wi-Fi adapters live in `src/`. That split is what makes 223 tests
 runnable with no hardware attached, and it is worth preserving: put the
 decision in `lib/` returning a value, and the effect in `src/`.
 

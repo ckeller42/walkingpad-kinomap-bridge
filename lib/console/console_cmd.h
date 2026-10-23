@@ -170,9 +170,12 @@ bool parseOtaUrlArg(const char* rawLine, char* url, size_t cap);
  */
 class LineBuffer {
 public:
-    /// Longest line kept, excluding the NUL. Sized for the console's own
-    /// commands; a `wifi` or `ota url` line is the practical limit.
-    static constexpr size_t kMax = 63;
+    /// Longest line kept, excluding the NUL. Sized by `ota url <url>`: the
+    /// 8-character prefix plus the longest URL the firmware can store (159
+    /// characters, a 160-byte buffer). At 63 the compiled-in 76-character
+    /// default URL itself was rejected as `err line-too-long`. src/main.cpp
+    /// static_asserts the relationship where the URL buffer is declared.
+    static constexpr size_t kMax = 167;
 
     /**
      * @brief Offer one received byte.

@@ -393,7 +393,7 @@ static void demoAdvance(int i, uint32_t now) {
         case 21:  // a newer build is published
             demoDevIn.otaState = devmenu::OtaState::Available;
             demoDevIn.otaAvailable = "v0.2.0";
-            demoDevIn.otaMessage = "v0.2.0 available";  // <= 23 chars: Row::label is 24 bytes
+            demoDevIn.otaMessage = "v0.2.0 available";  // what ota::check() really says
             break;
         case 22:  // installing, mid-download
             demoDevIn.otaState = devmenu::OtaState::Installing;
@@ -744,7 +744,9 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
                           ota::usingDefaultUrl() ? " (default)" : "", ota::message());
             break;
         case Cmd::OtaUrl: {
-            char u[160];
+            char u[160];  // matches ota.cpp's manifestUrl[160]
+            static_assert(console::LineBuffer::kMax >= 8 + sizeof u - 1,
+                          "the console must accept \"ota url \" + the longest storable URL");
             if (!console::parseOtaUrlArg(line, u, sizeof u)) {
                 Serial.println("err bad-ota-url");
                 return;

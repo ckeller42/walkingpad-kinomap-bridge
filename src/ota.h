@@ -69,7 +69,10 @@ const char* url();
 
 /**
  * @brief Whether url() is the compiled-in default rather than a stored one.
- * @return True when url() equals OTA_MANIFEST_URL.
+ * @return True when no URL is stored in NVS, so url() follows
+ *         OTA_MANIFEST_URL. A stored URL counts as stored even when it equals
+ *         today's default: it is pinned, and a later build's default would not
+ *         replace it.
  */
 bool usingDefaultUrl();
 

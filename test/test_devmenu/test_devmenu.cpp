@@ -222,8 +222,9 @@ void test_forget_row_only_offered_when_a_network_is_stored(void) {
 }
 
 // Every row the root screen offers must do something. A row that only
-// reported a mode nobody could change used to sit at index 4; the screen is
-// five rows now, and a tap past the end is ignored rather than wrapping.
+// reported a mode nobody could change used to sit on this screen; it has six
+// live rows now (index 4 is Update), and a tap past the end is ignored rather
+// than wrapping.
 void test_root_offers_six_live_rows_and_ignores_taps_past_them(void) {
     DevMenu m;
     m.open();
@@ -429,6 +430,35 @@ void test_update_needs_dev_and_wifi(void) {
     TEST_ASSERT_EQUAL_STRING("needs Wi-Fi", w.screen(nowifi).rows[2].value);
     TEST_ASSERT_EQUAL_STRING("", w.screen(nowifi).right);
     TEST_ASSERT_EQUAL(Action::None, w.press(true, nowifi));
+
+    // Both missing: still nothing, whatever the state claims.
+    Inputs neither = base(false);
+    neither.wifiUp = false;
+    neither.otaState = OtaState::Idle;
+    DevMenu n = updateMenu(neither);
+    TEST_ASSERT_EQUAL_STRING("", n.screen(neither).right);
+    TEST_ASSERT_EQUAL(Action::None, n.press(true, neither));
+}
+
+// The message row holds a whole updater message; at 24 bytes it used to cut
+// "v0.2.0 available (running bd3819b)" mid-word.
+void test_update_message_row_keeps_39_characters(void) {
+    const char* msg = "manifest url https://example.invalid/mf";  // 39 chars
+    TEST_ASSERT_EQUAL_size_t(39, strlen(msg));
+    Inputs on = updateIn(OtaState::Failed);
+    on.otaMessage = msg;
+    DevMenu m = updateMenu(on);
+    TEST_ASSERT_EQUAL_STRING(msg, m.screen(on).rows[3].label);
+}
+
+// open() is how the gear button enters the menu: it must land on the root,
+// not wherever the menu was left.
+void test_open_resets_from_update_to_root(void) {
+    Inputs on = updateIn(OtaState::Idle);
+    DevMenu m = updateMenu(on);
+    TEST_ASSERT_EQUAL(Step::Update, m.step());
+    m.open();
+    TEST_ASSERT_EQUAL(Step::Root, m.step());
 }
 
 void test_update_status_words(void) {
@@ -484,5 +514,7 @@ int main(int, char**) {
     RUN_TEST(test_update_env_mismatch_disables_install);
     RUN_TEST(test_update_needs_dev_and_wifi);
     RUN_TEST(test_update_status_words);
+    RUN_TEST(test_update_message_row_keeps_39_characters);
+    RUN_TEST(test_open_resets_from_update_to_root);
     return UNITY_END();
 }

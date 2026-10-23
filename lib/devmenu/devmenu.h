@@ -90,7 +90,7 @@ struct Inputs {
 
 /** @brief One line of a list screen. */
 struct Row {
-    char label[24] = {};  ///< Left-hand text.
+    char label[40] = {};  ///< Left-hand text; 39 characters, enough for the Update screen's message row.
     char value[24] = {};  ///< Right-hand text, often a state.
     bool enabled = true;  ///< A disabled row is drawn dim and ignores taps.
 };
