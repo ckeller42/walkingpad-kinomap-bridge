@@ -162,6 +162,8 @@ public:
 
     /** @brief A tapped developer-menu row. @return Row index, or -1. */
     int tookMenuRow();
+    /** @brief A menu touch that landed on nothing (the title); the menu disarms a pending forget on it. @return True once per such touch. */
+    bool tookMenuMiss();
 
     /** @brief The settings gear. @return True once per tap. */
     bool tookDevTap();
@@ -221,6 +223,7 @@ private:
     bool menuShift_ = false;
     devmenu::Page menuPage_ = devmenu::Page::Letters;
     int menuRow_ = -1;
+    bool menuMiss_ = false;
     bool devTapped_ = false;
     char keyChar_ = 0;
     bool keyShift_ = false;

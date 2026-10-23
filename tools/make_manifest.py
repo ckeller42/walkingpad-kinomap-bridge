@@ -91,7 +91,7 @@ def main(argv=None):
 
     if args.check:
         manifest_path, firmware = args.check
-        stray = [opt for opt in ("firmware", "version", "env", "url") if getattr(args, opt)]
+        stray = [opt for opt in ("firmware", "version", "env", "url") if getattr(args, opt) is not None]
         if stray:
             # A CI step that passes both shapes meant one of them; silently
             # checking and ignoring --version would hide a wrong manifest.

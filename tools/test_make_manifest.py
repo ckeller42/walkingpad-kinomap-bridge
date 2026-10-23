@@ -101,6 +101,10 @@ class MakeManifestTest(unittest.TestCase):
         with self.assertRaises(SystemExit) as cm:
             run(["--check", str(path), str(self.fw), "--version", VERSION])
         self.assertEqual(cm.exception.code, 2)
+        # Presence, not truthiness: an empty --version is still a stray argument.
+        with self.assertRaises(SystemExit) as cm:
+            run(["--check", str(path), str(self.fw), "--version", ""])
+        self.assertEqual(cm.exception.code, 2)
 
     def test_missing_firmware_is_a_named_failure_not_a_traceback(self):
         gone = self.dir / "absent.bin"

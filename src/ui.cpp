@@ -205,6 +205,8 @@ void Ui::poll() {
             pollKeyboard(t.x, t.y);
         } else if (t.y >= ROW_Y0 && t.y < ROW_Y0 + ROW_H * ROW_N) {
             menuRow_ = (t.y - ROW_Y0) / ROW_H;
+        } else {
+            menuMiss_ = true;  // the title: nothing to do, but a touch all the same
         }
         return;
     }
@@ -254,6 +256,7 @@ bool Ui::tookModeTap() { bool r = modeTapped_; modeTapped_ = false; return r; }
 bool Ui::tookWizardLeft() { bool r = wizL_; wizL_ = false; return r; }
 bool Ui::tookWizardRight() { bool r = wizR_; wizR_ = false; return r; }
 int Ui::tookMenuRow() { int r = menuRow_; menuRow_ = -1; return r; }
+bool Ui::tookMenuMiss() { bool m = menuMiss_; menuMiss_ = false; return m; }
 bool Ui::tookDevTap() { bool r = devTapped_; devTapped_ = false; return r; }
 char Ui::tookKeyChar() { char r = keyChar_; keyChar_ = 0; return r; }
 bool Ui::tookKeyShift() { bool r = keyShift_; keyShift_ = false; return r; }

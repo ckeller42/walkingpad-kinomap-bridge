@@ -618,6 +618,7 @@ static void devMenuTick() {
 
     const int row = ui.tookMenuRow();
     if (row >= 0) devMenuAct(devMenu.tapRow((uint8_t)row, in));
+    if (ui.tookMenuMiss()) { devMenu.cancel(); devDirty = true; }
     if (ui.tookWizardLeft()) devMenuAct(devMenu.press(false, in));
     if (ui.tookWizardRight()) devMenuAct(devMenu.press(true, in));
 
@@ -756,7 +757,10 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             break;
         }
         case Cmd::OtaCheck:
+            // The check blocks loop() (and the belt poll) for up to 10 s, which
+            // is as unwelcome under a moving belt as the download is.
             if (!logsink::devOn()) { Serial.println("err dev-mode-off"); return; }
+            if (state.beltRunning()) { Serial.println("err belt-running"); return; }
             ota::check();
             Serial.println(ota::message());
             break;

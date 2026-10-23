@@ -172,6 +172,15 @@ public:
     bool forgetArmed() const { return forgetArmed_; }
 
     /**
+     * @brief A touch the host could not route to a row or a button (the title, a gap).
+     *
+     * Nothing to do, but it is still "anything else": a pending forget is
+     * disarmed, so two forget taps with a stray touch between them do not
+     * forget.
+     */
+    void cancel() { forgetArmed_ = false; }
+
+    /**
      * @brief Handle a bottom-bar press.
      * @param right True for the right button, false for the left.
      * @param in    Current world state.

@@ -247,6 +247,13 @@ void test_forget_row_needs_a_second_tap(void) {
     TEST_ASSERT_FALSE(m.forgetArmed());
     TEST_ASSERT_EQUAL(Action::None, m.tapRow(3, on));
 
+    // A touch the host routed nowhere (the title) disarms as well.
+    m.open();
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(3, on));
+    m.cancel();
+    TEST_ASSERT_FALSE(m.forgetArmed());
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(3, on));
+
     // A bottom-bar press disarms too, and so does re-opening the menu.
     TEST_ASSERT_EQUAL(Action::Close, m.press(false, on));
     TEST_ASSERT_FALSE(m.forgetArmed());
