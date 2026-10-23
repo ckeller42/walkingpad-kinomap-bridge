@@ -32,6 +32,7 @@ Cmd parse(const char* line) {
         {"sim off", Cmd::SimOff},  {"wizard", Cmd::Wizard},   {"wizard next", Cmd::WizardNext},
         {"wizard back", Cmd::WizardBack}, {"cp", Cmd::Cp}, {"shot", Cmd::Shot}, {"help", Cmd::Help},
         {"log", Cmd::Log},         {"wifi", Cmd::Wifi},
+        {"mode auto", Cmd::ModeAuto}, {"mode manual", Cmd::ModeManual},
         {"dev on", Cmd::DevOn},    {"dev off", Cmd::DevOff},
         {"log udp on", Cmd::UdpOn},{"log udp off", Cmd::UdpOff},
         {"log sd on", Cmd::SdOn},  {"log sd off", Cmd::SdOff},

@@ -56,6 +56,8 @@ enum class Cmd {
     SpeedDown,   ///< One 0.5 km/h step down. Does nothing on a stopped belt.
     /// Absolute speed; the value still has to be read with parseSpeedArg().
     SpeedSet,
+    ModeAuto,    ///< Ask the belt for Auto mode, as tapping the badge does.
+    ModeManual,  ///< Ask the belt for Manual mode, as tapping the badge does.
     /// Control Point writes counted since boot. The evidence that settled
     /// whether Kinomap ever commands speed: it sends `0x07` and never `0x02`.
     Cp,
