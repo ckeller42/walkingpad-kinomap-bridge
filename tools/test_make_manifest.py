@@ -94,6 +94,27 @@ class MakeManifestTest(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("env", out + err)
 
+    def test_check_refuses_generate_arguments(self):
+        # Both shapes at once means a CI step meant one of them; refusing beats
+        # checking while silently ignoring --version.
+        path = self.manifest()
+        with self.assertRaises(SystemExit) as cm:
+            run(["--check", str(path), str(self.fw), "--version", VERSION])
+        self.assertEqual(cm.exception.code, 2)
+        # Presence, not truthiness: an empty --version is still a stray argument.
+        with self.assertRaises(SystemExit) as cm:
+            run(["--check", str(path), str(self.fw), "--version", ""])
+        self.assertEqual(cm.exception.code, 2)
+
+    def test_missing_firmware_is_a_named_failure_not_a_traceback(self):
+        gone = self.dir / "absent.bin"
+        rc, out, err = run([str(gone), "--version", VERSION, "--env", "cores3", "--url", URL])
+        self.assertEqual((rc, out), (1, ""))
+        self.assertIn("absent.bin", err)
+        rc, out, _ = run(["--check", str(self.manifest()), str(gone)])
+        self.assertEqual(rc, 1)
+        self.assertRegex(out, r"FAIL .*: cannot read firmware .*absent\.bin")
+
 
 if __name__ == "__main__":
     unittest.main()

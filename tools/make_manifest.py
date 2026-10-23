@@ -91,6 +91,11 @@ def main(argv=None):
 
     if args.check:
         manifest_path, firmware = args.check
+        stray = [opt for opt in ("firmware", "version", "env", "url") if getattr(args, opt) is not None]
+        if stray:
+            # A CI step that passes both shapes meant one of them; silently
+            # checking and ignoring --version would hide a wrong manifest.
+            ap.error("--check takes only MANIFEST FIRMWARE; also given: " + ", ".join(stray))
         try:
             manifest = json.loads(pathlib.Path(manifest_path).read_text())
         except (OSError, ValueError) as exc:
@@ -99,7 +104,11 @@ def main(argv=None):
         if not isinstance(manifest, dict):
             print(f"FAIL {manifest_path}: not a JSON object")
             return 1
-        problems = check(manifest, firmware)
+        try:
+            problems = check(manifest, firmware)
+        except OSError as exc:
+            print(f"FAIL {manifest_path}: cannot read firmware {firmware}: {exc.strerror or exc}")
+            return 1
         for problem in problems:
             print(f"FAIL {manifest_path}: {problem}")
         if problems:
@@ -114,7 +123,12 @@ def main(argv=None):
     if too_long:
         print(f"FAIL {too_long}", file=sys.stderr)
         return 1
-    sys.stdout.write(render(make(args.firmware, args.version, args.env, args.url)))
+    try:
+        manifest = make(args.firmware, args.version, args.env, args.url)
+    except OSError as exc:
+        print(f"FAIL cannot read firmware {args.firmware}: {exc.strerror or exc}", file=sys.stderr)
+        return 1
+    sys.stdout.write(render(manifest))
     return 0
 
 

@@ -27,7 +27,9 @@ Guarded accordingly:
 
 **On the device**: gear → **Update**. The screen shows what is running, what
 the manifest offers and where it came from, and the right-hand button does the
-one thing that makes sense next.
+one thing that makes sense next. The screenshots on this page are observed,
+not drawn: the `cores3_shot` build renders them from scripted state and dumps
+its own framebuffer over USB (see [Developing](developing.md#changing-the-gui)).
 
 ![The Update screen with a newer build published](screens/dev-menu-update.png)
 
@@ -42,27 +44,41 @@ one thing that makes sense next.
 **CHECK** fetches the manifest and compares its `version` with the running
 one. **INSTALL** replaces it when the two differ: it disarms, downloads the
 image into the inactive slot while the message row counts `downloading NN%`,
-verifies the SHA-256 and reboots into the new image. While a check or an
-install runs, the button is blank. After a failure it reads **CHECK** again.
+verifies the SHA-256 and reboots into the new image. **BACK** returns to the
+menu. The right-hand button follows Status:
 
-The screen does not respond while a download runs: the download blocks the
-main loop, so taps are not read and a phone's control-point writes wait until
-it finishes or fails. The console's `ota apply` blocks the same way.
+| Status | Button |
+|---|---|
+| `not checked` | **CHECK** |
+| `checking...` | blank |
+| `up to date` | **CHECK** |
+| `update available` | **INSTALL** |
+| `image is for <env>` | **CHECK**: the image on offer was built for another PlatformIO environment and is never installed, but the site may publish the right one later |
+| `installing...` | blank; the message row counts `downloading NN%`, and the bridge reboots into the new image when it is verified |
+| `failed` | **CHECK**; the message row says why |
+
+CI publishes only `cores3` (the real belt), so a bench board running
+`cores3_sim` or `cores3_shot` sees what is published, reads `image is for
+cores3`, and is never offered INSTALL.
 
 ![A failed check: no manifest at the URL](screens/dev-menu-update-failed.png)
 
-The button stays blank, and Status says why, when:
+The button is blank, whatever the state, and Status says why, when:
 
 - developer mode is off: `needs dev mode`;
 - Wi-Fi is not associated: `needs Wi-Fi`;
-- the published image was built for a different PlatformIO environment:
-  `image is for <env>`. CI publishes only `cores3` (the real belt), so a bench
-  board running `cores3_sim` or `cores3_shot` sees what is published but is
-  not offered INSTALL.
+- the belt is running: `belt running`. The menu cannot be opened over a moving
+  belt in the first place; this covers a belt that starts while the screen is
+  open, and the host refuses the action once more underneath, so a refusal
+  is never silent.
 
-INSTALL is also refused while the belt is running. The menu cannot be opened
-over a moving belt in the first place, so this is a second guard, not the
-first.
+The screen does not respond while a check or a download runs: both block the
+main loop with the bridge's state lock held, so taps are not read, the belt's
+status frames are not decoded, and a phone's control-point writes wait on the
+lock until the call finishes or fails (a check gives up after 10 s, a
+download when the image is complete or the connection drops). The console's
+`ota check` and `ota apply` block the same way. That is why a moving belt
+blanks both buttons.
 
 **Over USB**, the same steps are console commands:
 

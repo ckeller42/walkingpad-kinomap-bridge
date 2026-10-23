@@ -205,6 +205,8 @@ void Ui::poll() {
             pollKeyboard(t.x, t.y);
         } else if (t.y >= ROW_Y0 && t.y < ROW_Y0 + ROW_H * ROW_N) {
             menuRow_ = (t.y - ROW_Y0) / ROW_H;
+        } else {
+            menuMiss_ = true;  // the title: nothing to do, but a touch all the same
         }
         return;
     }
@@ -254,6 +256,7 @@ bool Ui::tookModeTap() { bool r = modeTapped_; modeTapped_ = false; return r; }
 bool Ui::tookWizardLeft() { bool r = wizL_; wizL_ = false; return r; }
 bool Ui::tookWizardRight() { bool r = wizR_; wizR_ = false; return r; }
 int Ui::tookMenuRow() { int r = menuRow_; menuRow_ = -1; return r; }
+bool Ui::tookMenuMiss() { bool m = menuMiss_; menuMiss_ = false; return m; }
 bool Ui::tookDevTap() { bool r = devTapped_; devTapped_ = false; return r; }
 char Ui::tookKeyChar() { char r = keyChar_; keyChar_ = 0; return r; }
 bool Ui::tookKeyShift() { bool r = keyShift_; keyShift_ = false; return r; }
@@ -534,9 +537,19 @@ void Ui::renderDevMenu(const devmenu::Screen& s) {
             const int y = ROW_Y0 + i * ROW_H;
             const bool on = s.rows[i].enabled;
             g.setFont(&fonts::FreeSans9pt7b);
+            // The value keeps its full width; the label gets what is left and
+            // is cut with no ellipsis, so a 39-character updater message or
+            // a long SSID ends at the edge instead of running under the value
+            // or off the panel.
+            const int valueW = s.rows[i].value[0] ? g.textWidth(s.rows[i].value) + 8 : 0;
+            char label[sizeof(s.rows[i].label)];
+            strncpy(label, s.rows[i].label, sizeof label);
+            label[sizeof label - 1] = 0;
+            for (size_t n = strlen(label); n > 0 && g.textWidth(label) > W - 16 - valueW; --n)
+                label[n - 1] = 0;
             g.setTextDatum(middle_left);
             g.setTextColor(on ? TFT_WHITE : DIM, BG);
-            g.drawString(s.rows[i].label, 8, y + ROW_H / 2);
+            g.drawString(label, 8, y + ROW_H / 2);
             if (s.rows[i].value[0]) {
                 g.setTextDatum(middle_right);
                 g.setTextColor(on ? ARM_GO : DIM, BG);

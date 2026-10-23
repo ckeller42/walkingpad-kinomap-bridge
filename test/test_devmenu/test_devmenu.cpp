@@ -218,7 +218,82 @@ void test_forget_row_only_offered_when_a_network_is_stored(void) {
     Screen s = m.screen(on);
     TEST_ASSERT_TRUE(s.rows[3].enabled);
     TEST_ASSERT_EQUAL_STRING("Insel", s.rows[3].label);
+    TEST_ASSERT_EQUAL_STRING("forget", s.rows[3].value);
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(3, on));
     TEST_ASSERT_EQUAL(Action::ForgetWifi, m.tapRow(3, on));
+}
+
+// Rows are 25 px apart and the forget row sits between Wi-Fi and Update, so
+// one slipped finger must not erase the stored network: the first tap arms
+// the row ("tap again"), the second forgets, and anything else in between
+// disarms it.
+void test_forget_row_needs_a_second_tap(void) {
+    Inputs on = base(true);
+    on.storedSsid = "Insel";
+
+    DevMenu m;
+    m.open();
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(3, on));
+    TEST_ASSERT_TRUE(m.forgetArmed());
+    TEST_ASSERT_EQUAL_STRING("tap again", m.screen(on).rows[3].value);
+    TEST_ASSERT_EQUAL(Action::ForgetWifi, m.tapRow(3, on));
+    TEST_ASSERT_FALSE(m.forgetArmed());
+    TEST_ASSERT_EQUAL_STRING("forget", m.screen(on).rows[3].value);
+
+    // Another row in between: the tap does its own thing and disarms forget.
+    m.open();
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(3, on));
+    TEST_ASSERT_EQUAL(Action::ToggleUdp, m.tapRow(1, on));
+    TEST_ASSERT_FALSE(m.forgetArmed());
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(3, on));
+
+    // A touch the host routed nowhere (the title) disarms as well.
+    m.open();
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(3, on));
+    m.cancel();
+    TEST_ASSERT_FALSE(m.forgetArmed());
+    TEST_ASSERT_EQUAL(Action::None, m.tapRow(3, on));
+
+    // A bottom-bar press disarms too, and so does re-opening the menu.
+    TEST_ASSERT_EQUAL(Action::Close, m.press(false, on));
+    TEST_ASSERT_FALSE(m.forgetArmed());
+    m.tapRow(3, on);
+    m.open();
+    TEST_ASSERT_FALSE(m.forgetArmed());
+    TEST_ASSERT_EQUAL_STRING("forget", m.screen(on).rows[3].value);
+
+    // Arming needs the row to be live: with dev mode off it stays inert.
+    Inputs off = base(false);
+    off.storedSsid = "Insel";
+    DevMenu d;
+    d.open();
+    TEST_ASSERT_EQUAL(Action::None, d.tapRow(3, off));
+    TEST_ASSERT_FALSE(d.forgetArmed());
+}
+
+void test_url_host_edges(void) {
+    struct Case { const char* url; const char* host; };
+    const Case cases[] = {
+        {"https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json", "ckeller42.github.io"},
+        {"http://192.168.178.43:8099/manifest.json", "192.168.178.43"},
+        {"http://user:secret@example.invalid/mf", "example.invalid"},
+        {"http://[fe80::1]:8099/manifest.json", "[fe80::1]"},
+        {"http://example.invalid#frag", "example.invalid"},
+        {"http://example.invalid?x=1", "example.invalid"},
+        {"example.invalid/no/scheme", "example.invalid"},
+        {"", ""},
+        {nullptr, ""},
+    };
+    for (const Case& c : cases) {
+        char out[64];
+        const size_t n = urlHost(c.url, out, sizeof out);
+        TEST_ASSERT_EQUAL_STRING(c.host, out);
+        TEST_ASSERT_EQUAL_size_t(strlen(c.host), n);
+    }
+    // Cut to fit, still terminated.
+    char tiny[6];
+    TEST_ASSERT_EQUAL_size_t(5, urlHost("https://ckeller42.github.io/x", tiny, sizeof tiny));
+    TEST_ASSERT_EQUAL_STRING("ckell", tiny);
 }
 
 // Every row the root screen offers must do something. A row that only
@@ -403,6 +478,8 @@ void test_update_button_follows_state(void) {
     }
 }
 
+// An image built for another environment is never installed, but the site may
+// publish the right one later, so the button offers CHECK rather than nothing.
 void test_update_env_mismatch_disables_install(void) {
     Inputs on = updateIn(OtaState::Available);
     on.otaEnvMismatch = true;
@@ -410,8 +487,42 @@ void test_update_env_mismatch_disables_install(void) {
     DevMenu m = updateMenu(on);
     Screen s = m.screen(on);
     TEST_ASSERT_EQUAL_STRING("image is for cores3", s.rows[2].value);
-    TEST_ASSERT_EQUAL_STRING("", s.right);
-    TEST_ASSERT_EQUAL(Action::None, m.press(true, on));
+    TEST_ASSERT_EQUAL_STRING("CHECK", s.right);
+    TEST_ASSERT_EQUAL(Action::CheckOta, m.press(true, on));
+    TEST_ASSERT_NOT_EQUAL(Action::InstallOta, m.press(true, on));
+}
+
+// Both ota:: calls block the main loop for seconds, so a moving belt rules
+// out a check as well as an install, and the screen says so instead of
+// refusing in silence.
+void test_update_belt_running_blocks_check_and_install(void) {
+    const OtaState states[] = {OtaState::Idle, OtaState::Available, OtaState::Failed};
+    for (OtaState st : states) {
+        Inputs on = updateIn(st);
+        on.beltRunning = true;
+        DevMenu m = updateMenu(on);
+        Screen s = m.screen(on);
+        TEST_ASSERT_EQUAL_STRING("belt running", s.rows[2].value);
+        TEST_ASSERT_EQUAL_STRING("", s.right);
+        TEST_ASSERT_EQUAL(Action::None, m.press(true, on));
+    }
+}
+
+// The version, status and source rows are read, not tapped; they used to be
+// drawn dim like disabled switches, which made the one screen whose rows carry
+// the information hard to read. Only the detail line stays dim.
+void test_update_rows_are_bright_except_the_message(void) {
+    Inputs on = updateIn(OtaState::Available);
+    on.otaMessage = "v0.2.0 available";
+    DevMenu m = updateMenu(on);
+    Screen s = m.screen(on);
+    TEST_ASSERT_TRUE(s.rows[0].enabled);
+    TEST_ASSERT_TRUE(s.rows[1].enabled);
+    TEST_ASSERT_TRUE(s.rows[2].enabled);
+    TEST_ASSERT_FALSE(s.rows[3].enabled);
+    TEST_ASSERT_TRUE(s.rows[4].enabled);
+    for (uint8_t i = 0; i < s.rowCount; ++i) TEST_ASSERT_EQUAL(Action::None, m.tapRow(i, on));
+    TEST_ASSERT_EQUAL(Step::Update, m.step());
 }
 
 void test_update_needs_dev_and_wifi(void) {
@@ -512,6 +623,10 @@ int main(int, char**) {
     RUN_TEST(test_update_row_opens_update_screen);
     RUN_TEST(test_update_button_follows_state);
     RUN_TEST(test_update_env_mismatch_disables_install);
+    RUN_TEST(test_update_belt_running_blocks_check_and_install);
+    RUN_TEST(test_update_rows_are_bright_except_the_message);
+    RUN_TEST(test_forget_row_needs_a_second_tap);
+    RUN_TEST(test_url_host_edges);
     RUN_TEST(test_update_needs_dev_and_wifi);
     RUN_TEST(test_update_status_words);
     RUN_TEST(test_update_message_row_keeps_39_characters);
