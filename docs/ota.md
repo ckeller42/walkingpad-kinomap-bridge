@@ -36,7 +36,7 @@ one thing that makes sense next.
 | **Running** | the version this firmware was built as |
 | **Available** | the manifest's version, once a check has fetched one |
 | **Status** | `not checked`, `checking...`, `up to date`, `update available`, `installing...` or `failed`; or why nothing can be done (below) |
-| *(message)* | the updater's last message, such as `manifest http 404` or `downloading 37%`; only its first 23 characters fit |
+| *(message)* | the updater's last message, such as `manifest http 404` or `downloading 37%`; the row shows up to 39 characters |
 | **Source** | the host of the manifest URL in use |
 
 **CHECK** fetches the manifest and compares its `version` with the running
@@ -44,6 +44,10 @@ one. **INSTALL** replaces it when the two differ: it disarms, downloads the
 image into the inactive slot while the message row counts `downloading NN%`,
 verifies the SHA-256 and reboots into the new image. While a check or an
 install runs, the button is blank. After a failure it reads **CHECK** again.
+
+The screen does not respond while a download runs: the download blocks the
+main loop, so taps are not read and a phone's control-point writes wait until
+it finishes or fails. The console's `ota apply` blocks the same way.
 
 ![A failed check: no manifest at the URL](screens/dev-menu-update-failed.png)
 
@@ -65,7 +69,7 @@ first.
 ```text
 dev on
 ota            # ota running=<ver> env=<env> state=<n> url=<url> [(default)] msg=<text>
-ota check      # up to date (<ver>)   or   <ver> available (running <ver>)
+ota check      # up to date (<ver>)   or   <ver> available
 ota apply      # download, verify, reboot; prints the failure if there is one
 ```
 
@@ -81,7 +85,8 @@ and goes back to the default.
 ## What CI publishes
 
 **Every push to `main`** builds the `cores3` firmware and publishes it with the
-documentation site on GitHub Pages:
+documentation site on GitHub Pages. Every push publishes a new version, so a
+bridge shows "update available" after a docs-only push too:
 
 | URL | |
 |---|---|
@@ -113,8 +118,10 @@ check on pull requests, so a broken pair is caught before merge.
 
 Pushing a `v*` tag also runs `release.yml`: it runs the host tests, builds the
 tagged firmware and attaches `firmware.bin` and a checked `manifest.json` to a
-GitHub release. That manifest points at the release asset, so storing its URL
-with `ota url` keeps a device on that release.
+GitHub release. Those assets are for people, to flash over USB or to keep as a
+record. Devices update from the Pages manifest above: GitHub serves release
+downloads through a redirect, and the OTA client does not follow redirects, by
+design, so a device pointed at a release asset fails the check.
 
 ## Serving locally
 

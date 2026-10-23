@@ -226,10 +226,17 @@ tagged. Tagging names a build, nothing more is required:
 git tag v0.2.0 && git push --tags
 ```
 
-A `v*` tag also runs `release.yml`, which attaches the same pair to a GitHub
-release.
+A `v*` tag also runs `release.yml`, which builds the tagged firmware and
+attaches it to a GitHub release with a manifest of its own: version the tag,
+`url` the release asset. Those assets are for people; a device cannot follow
+GitHub's release-download redirect and updates from the Pages manifest only
+(see [Firmware updates](ota.md)). Pull requests get a third pair, the firmware
+workflow's artifact, whose manifest carries the short commit as its version and
+names the Pages URL without that image being published there: it exists to
+prove the tool and the build agree, not to be installed from.
 
-The manifest comes from one tool, used by all three workflows:
+The manifest comes from one tool, used by all three workflows (each with its
+own `--version` and `--url`):
 
 ```sh
 tools/make_manifest.py .pio/build/cores3/firmware.bin --version "$FW_VERSION" \

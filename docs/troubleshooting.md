@@ -129,7 +129,7 @@ note that macOS asks once for local-network permission.
 
 The running firmware is untouched — the image is written to the inactive slot
 and only committed after its SHA-256 matches the manifest. The Update screen's
-message row (its first 23 characters) and `ota` on the console show what went
+message row (up to 39 characters) and `ota` on the console show what went
 wrong:
 
 | Message | Meaning |

@@ -80,7 +80,7 @@ story; this is what the screen shows.
 | **Running** | the version this firmware was built as |
 | **Available** | the manifest's version, once a check has fetched one |
 | **Status** | one of the words below, or why nothing can be done |
-| *(message)* | the updater's last message, such as `manifest http 404` or `downloading 37%`; only its first 23 characters fit |
+| *(message)* | the updater's last message, such as `manifest http 404` or `downloading 37%`; the row shows up to 39 characters |
 | **Source** | the host of the manifest URL in use |
 
 **BACK** returns to the menu. The right-hand button follows Status:
