@@ -44,6 +44,7 @@ import sys
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+REPO = pathlib.Path(__file__).resolve().parent.parent
 POLL_S = 0.1  # how often a windowed check re-reads the timeline while waiting
 EPS = 1e-9
 
@@ -206,7 +207,15 @@ class StepError(Exception):
 
 
 class Session:
-    """The three streams behind one interface; times are host seconds."""
+    """The three streams behind one interface; times are host seconds.
+
+    Console records have `dir` `>` (sent), `<` (received) or `!` (a host
+    note: no `ok`/`err` arrived in time; the reply ends there in replay too).
+    `broken` is set when the bench itself failed (serial port gone): the run
+    then stops and exits 2.
+    """
+
+    broken: Optional[str] = None
 
     def begin_scenario(self, name: str) -> None:
         """Called before a scenario's first step; a live session records a `scenario` marker."""
@@ -244,13 +253,13 @@ def _valid(rec) -> bool:
         return False
     stream = rec.get("stream")
     if stream == "console":
-        return rec.get("dir") in (">", "<") and isinstance(rec.get("line"), str)
+        return rec.get("dir") in (">", "<", "!") and isinstance(rec.get("line"), str)
     if stream == "udp":
         return isinstance(rec.get("line"), str)
     if stream == "scenario":
         return isinstance(rec.get("name"), str)
     if stream == "ftms":
-        if rec.get("kind") not in ("write", "indication", "notify", "connect", "disconnect"):
+        if rec.get("kind") not in ("write", "indication", "notify", "connect", "disconnect", "drop"):
             return False
         try:
             bytes.fromhex(rec.get("hex", ""))
@@ -371,11 +380,14 @@ class ReplaySession(Session):
         self._take(rec, f"'{cmd}'")
         self._ci += 1
         reply = []
-        while (self._ci < len(self._console) and self._console[self._ci]["dir"] == "<"
+        while (self._ci < len(self._console) and self._console[self._ci]["dir"] != ">"
                and self._console[self._ci]["t"] < self._end):
-            reply.append(self._console[self._ci]["line"])
-            self._advance(self._console[self._ci]["t"])
+            r = self._console[self._ci]
+            self._advance(r["t"])
             self._ci += 1
+            if r["dir"] == "!":  # the live run timed out here; what came later is not this reply
+                raise StepError(r["line"])
+            reply.append(r["line"])
         return rec["t"], reply
 
     def _link(self, kind):
@@ -419,6 +431,7 @@ class ReplaySession(Session):
 BRIDGE_NAME = "WalkingPad Bridge"
 UDP_PORT = 9999
 CONSOLE_TIMEOUT_S = 5.0
+UDP_ALIVE_S = 5.0   # precondition 4: `udp log ON` must arrive this soon
 BLE_TIMEOUT_S = 20.0
 # The UUIDs of tools/ftms_client.py, which cannot be imported (it runs at import).
 FTMS_CP = "00002ad9-0000-1000-8000-00805f9b34fb"      # Control Point (indications)
@@ -446,6 +459,7 @@ class LiveSession(Session):
         self.out_dir = pathlib.Path(out_dir)
         self.notes: List[str] = []   # precondition lines and stream events, for the report
         self.udp_unparsed = 0
+        self._udp_raw: List[str] = []  # "<ip>  <line as received>", for udp.log
         self._time = time
         self._t0 = time.monotonic()
         self._lock = threading.Lock()
@@ -502,7 +516,8 @@ class LiveSession(Session):
                 st.buf += self._ser.read(4096)
             except Exception as e:  # port gone (USB reset) or closed by close()
                 if not self._stop.is_set():
-                    self.notes.append(f"serial reader stopped at t={self.now():.3f}: {e}")
+                    self.broken = f"serial reader stopped at t={self.now():.3f}: {type(e).__name__}: {e}"
+                    self.notes.append(self.broken)
                 return
             while b"\n" in st.buf:
                 raw, st.buf = st.buf.split(b"\n", 1)
@@ -519,18 +534,29 @@ class LiveSession(Session):
                 self._replies.get_nowait()
             except queue.Empty:
                 break
+        if self.broken:
+            raise StepError(f"bench broken: {self.broken}")
         t = self._add(stream="console", dir=">", line=cmd)["t"]
-        self._ser.write(cmd.encode() + b"\n")
-        self._ser.flush()
+        try:
+            self._ser.write(cmd.encode() + b"\n")
+            self._ser.flush()
+        except Exception as e:  # pyserial's SerialException is an OSError subclass, but not always
+            self.broken = f"serial write failed at t={self.now():.3f}: {type(e).__name__}: {e}"
+            self.notes.append(self.broken)
+            raise StepError(f"bench broken: {self.broken}")
         reply = []
         deadline = self._time.monotonic() + CONSOLE_TIMEOUT_S
         while True:
             left = deadline - self._time.monotonic()
             if left <= 0:
-                # Made up by the host, so not recorded: the timeline holds what the device said.
-                return t, reply + ["err timeout"]
+                # Recorded as a host note (`!`), so replay ends this reply at the same place.
+                why = f"no ok/err to '{cmd}' within {_secs(CONSOLE_TIMEOUT_S)} s"
+                self._add(stream="console", dir="!", line=why)
+                raise StepError(why)
+            if self.broken:  # the reader died while we waited
+                raise StepError(f"bench broken: {self.broken}")
             try:
-                line = self._replies.get(timeout=left)
+                line = self._replies.get(timeout=min(left, POLL_S))
             except queue.Empty:
                 continue
             reply.append(line)
@@ -564,6 +590,7 @@ class LiveSession(Session):
             for ln in data.decode("utf-8", "replace").splitlines():
                 if not ln:
                     continue
+                self._udp_raw.append(f"{addr[0]}  {ln}")
                 m = _UDP_LINE.match(ln)
                 if m:
                     self._add(stream="udp", ip=addr[0], millis=int(m.group(1)), line=m.group(2))
@@ -579,7 +606,13 @@ class LiveSession(Session):
         if self._loop is None:
             self._loop = asyncio.new_event_loop()
             self._thread(self._loop.run_forever, "bleak")
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout=timeout)
+        import concurrent.futures
+        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        try:
+            return fut.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            fut.cancel()
+            raise
 
     def _on_data(self, short, kind):
         def cb(_char, data):
@@ -587,8 +620,9 @@ class LiveSession(Session):
         return cb
 
     def _on_drop(self, _client):
+        # `drop`, not `disconnect`: replay pairs disconnect records with scenario steps.
         if not self._closing_ble:
-            self.notes.append(f"ftms link dropped by the bridge at t={self.now():.3f}")
+            self._add(stream="ftms", kind="drop", uuid="", hex="")
 
     async def _find(self, scan_seconds):
         from bleak import BleakScanner
@@ -610,8 +644,7 @@ class LiveSession(Session):
     async def _disconnect(self):
         c, self._client = self._client, None
         self._closing_ble = True
-        if c is not None:
-            await c.disconnect()
+        await c.disconnect()
         return self._add(stream="ftms", kind="disconnect", uuid="", hex="")["t"]
 
     async def _write_cp(self, payload):
@@ -632,6 +665,8 @@ class LiveSession(Session):
             raise StepError(f"ftms connect failed: {type(e).__name__}: {e}")
 
     def ftms_disconnect(self):
+        if self._client is None:
+            raise StepError("ftms disconnect without an ftms link")
         try:
             return self._ble(self._disconnect())
         except Exception as e:
@@ -653,15 +688,30 @@ class LiveSession(Session):
         print(line, flush=True)
 
     def _status(self) -> Optional[str]:
-        _, reply = self.console("status")
+        """The `status` line, or None when the console gave none (a timeout included)."""
+        try:
+            _, reply = self.console("status")
+        except StepError:
+            if self.broken:
+                raise
+            return None
         return next((ln for ln in reply if ln.startswith("status ")), None)
 
     def preconditions(self, scan_seconds: float = 15) -> Optional[str]:
         """Bring the bench to a known state: the failure text, or None when every step held."""
+        try:
+            return self._preconditions(scan_seconds)
+        except StepError as e:  # the console broke or stopped answering mid-way
+            text = f"console failed during preconditions: {e}"
+            self._pre(False, text)
+            return text
+
+    def _preconditions(self, scan_seconds):
         import os
 
         def fail(text, detail=""):
-            self._pre(False, text + (f" ({detail})" if detail else ""))
+            text += f" ({detail})" if detail else ""
+            self._pre(False, text)
             return text
 
         # (1) the port
@@ -701,13 +751,13 @@ class LiveSession(Session):
         # (4) the udp log is alive
         t, reply = self.console("log udp on")
         hit = None
-        while hit is None and self.now() < t + 5.0:
+        while hit is None and self.now() < t + UDP_ALIVE_S:
             self.wait(POLL_S)
             hit = next((r for r in self.timeline() if r["stream"] == "udp" and r["t"] >= t - EPS
                         and "udp log ON" in r["line"]), None)
         if hit is None:
             _, log = self.console("log")
-            return fail("no udp line 'udp log ON' within 5 s",
+            return fail(f"no udp line 'udp log ON' within {_secs(UDP_ALIVE_S)} s",
                         f"'log udp on' replied: {' / '.join(reply)}; 'log' replied: {' / '.join(log)}")
         self._pre(True, f"udp alive: {hit.get('ip', '?')} t={hit['t']:.3f} {hit['line']}")
 
@@ -724,6 +774,12 @@ class LiveSession(Session):
 
     def close(self) -> None:
         """Stop every stream, then write console.txt, udp.log, ftms.jsonl, timeline.jsonl."""
+        try:
+            self._shutdown()
+        finally:
+            self._write_files()
+
+    def _shutdown(self) -> None:
         if self._loop is not None:
             if self._client is not None:
                 try:
@@ -737,8 +793,12 @@ class LiveSession(Session):
         for th in self._threads:
             th.join(timeout=2)
         if self._ser is not None:
-            self._ser.close()
+            try:
+                self._ser.close()
+            except Exception as e:  # the port may already be gone
+                self.notes.append(f"closing {self.port}: {e}")
 
+    def _write_files(self) -> None:
         recs = self.timeline()
         self.out_dir.mkdir(parents=True, exist_ok=True)
         with open(self.out_dir / "timeline.jsonl", "w") as f:
@@ -747,11 +807,8 @@ class LiveSession(Session):
             f.writelines(json.dumps(r) + "\n" for r in recs if r["stream"] == "ftms")
         with open(self.out_dir / "console.txt", "w") as f:
             f.writelines(f"{r['t']:.3f} {r['dir']} {r['line']}\n" for r in recs if r["stream"] == "console")
-        with open(self.out_dir / "udp.log", "w") as f:  # logcat.py's format: "<ip>  <millis> <rest>"
-            for r in recs:
-                if r["stream"] == "udp":
-                    rest = f"{r['millis']} {r['line']}" if "millis" in r else r["line"]
-                    f.write(f"{r.get('ip', '?')}  {rest}\n")
+        with open(self.out_dir / "udp.log", "w") as f:  # logcat.py's format: "<ip>  <line>"
+            f.writelines(ln + "\n" for ln in list(self._udp_raw))
 
 
 # --------------------------------------------------------------------------- checks
@@ -943,12 +1000,16 @@ def _cell(text):
     return str(text).replace("|", "\\|")
 
 
+def scenario_ok(results: List[CheckResult]) -> bool:
+    return bool(results) and all(r.ok for r in results)
+
+
 def write_report(results_by_scenario: Dict[str, List[CheckResult]], path) -> bool:
     """Markdown PASS/FAIL table per scenario, with the evidence for each step. Returns all-ok."""
     all_ok = True
     lines = ["# e2e_sim report", ""]
     for name, results in results_by_scenario.items():
-        ok = bool(results) and all(r.ok for r in results)
+        ok = scenario_ok(results)
         all_ok = all_ok and ok
         lines += [f"## {name}: {'PASS' if ok else 'FAIL'}", "",
                   "| step | result | evidence |", "|---|---|---|"]
@@ -995,12 +1056,10 @@ def from_known_state(sc: Scenario) -> Scenario:
 def run_all(names: List[str], s: Session) -> Dict[str, List[CheckResult]]:
     out = {}
     for n in names:
+        if s.broken:  # nothing after this can be carried out
+            break
         out[n] = run_scenario(from_known_state(SCENARIOS[n]), s, lambda r, n=n: print_result(n, r))
     return out
-
-
-def _all_ok(results: Dict[str, List[CheckResult]]) -> bool:
-    return all(bool(rs) and all(r.ok for r in rs) for rs in results.values())
 
 
 def _flash(port: str) -> bool:
@@ -1013,7 +1072,7 @@ def _flash(port: str) -> bool:
     pio = str(venv_pio) if venv_pio.exists() else (shutil.which("pio") or "pio")
     cmd = [pio, "run", "-e", "cores3_sim", "-t", "upload", "--upload-port", port]
     print("flash: " + " ".join(cmd), flush=True)
-    if subprocess.run(cmd, cwd=pathlib.Path(__file__).resolve().parent.parent).returncode != 0:
+    if subprocess.run(cmd, cwd=REPO).returncode != 0:
         return False
     deadline = time.monotonic() + 15  # the USB port re-enumerates after the reset
     while not pathlib.Path(port).exists() and time.monotonic() < deadline:
@@ -1045,15 +1104,23 @@ def run_live(names: List[str], port: Optional[str], out_dir: pathlib.Path,
         failed = s.preconditions()
         if failed is None:
             results = run_all(names, s)
+    except Exception as e:  # anything unforeseen is the bench's fault, not a check's: keep the evidence
+        import traceback
+        traceback.print_exc()
+        failed = f"run aborted: {type(e).__name__}: {e}"
+        s.notes.append(failed)
     finally:
         s.close()
+    if failed is None and s.broken:
+        failed = f"bench broken: {s.broken}"
+        print(f"FAIL  {'bench':<14} {s.broken}", flush=True)
     all_ok = write_report(results, out_dir / "report.md")
     with open(out_dir / "report.md", "a") as f:
-        f.write("\n## preconditions\n\n")
+        f.write("\n## preconditions and bench\n\n")
         f.writelines(f"- {n}\n" for n in s.notes)
         f.write(f"\n{s.udp_unparsed} unparsed udp line(s)\n")
     if s.udp_unparsed:
-        print(f"{s.udp_unparsed} udp line(s) without millis, kept verbatim")
+        print(f"{s.udp_unparsed} udp line(s) without millis, kept verbatim", flush=True)
     print(f"recording: {out_dir}")
     if record_to:
         import shutil
@@ -1071,7 +1138,8 @@ def run_replay(names: List[str], replay_dir: str) -> int:
     print(f"{path}: {len(s.timeline())} records, {len(s.unparsed)} unparsed")
     for u in s.unparsed:
         print(f"   unparsed: {u}")
-    return exit_code(_all_ok(run_all(names, s)), False)
+    results = run_all(names, s)
+    return exit_code(all(scenario_ok(rs) for rs in results.values()), False)
 
 
 def main():
@@ -1101,7 +1169,7 @@ def main():
         return run_replay(names, a.replay)
 
     import time
-    out_dir = pathlib.Path(a.out or f"build/e2e/{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
+    out_dir = pathlib.Path(a.out) if a.out else REPO / "build/e2e" / time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     return run_live(names, a.port or _default_port(), out_dir, a.record_to, a.flash)
 
 

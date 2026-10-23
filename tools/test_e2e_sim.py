@@ -9,9 +9,10 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import e2e_sim  # noqa: E402
 from e2e_sim import (  # noqa: E402
-    Con, FtmsConnect, ReplaySession, Scenario, SpeedAtLeast, Status, Udp,
-    exit_code, ftms_speed_kmh, parse_status, run_scenario, write_report,
+    Con, FtmsConnect, LiveSession, ReplaySession, Scenario, SpeedAtLeast, Status, Udp,
+    exit_code, from_known_state, ftms_speed_kmh, parse_status, run_scenario, write_report,
 )
 
 
@@ -198,6 +199,78 @@ class ReportTest(unittest.TestCase):
             text = path.read_text()
         self.assertIn("| FAIL |", text)
         self.assertIn("recording ended", text)
+
+
+class FakeSerial:
+    """Stands in for the port: records writes, optionally fails them."""
+
+    def __init__(self, fail=False):
+        self.fail, self.written = fail, []
+
+    def write(self, b):
+        if self.fail:
+            raise OSError(6, "Device not configured")
+        self.written.append(b)
+
+    def flush(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class LiveConsoleTest(unittest.TestCase):
+    """LiveSession's console path with a fake port and no reader thread (nothing answers)."""
+
+    def setUp(self):
+        self._timeouts = e2e_sim.CONSOLE_TIMEOUT_S, e2e_sim.UDP_ALIVE_S
+        e2e_sim.CONSOLE_TIMEOUT_S = e2e_sim.UDP_ALIVE_S = 0.2
+        self.dir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        e2e_sim.CONSOLE_TIMEOUT_S, e2e_sim.UDP_ALIVE_S = self._timeouts
+        self.dir.cleanup()
+
+    def live(self, ser):
+        s = LiveSession("/dev/fake", pathlib.Path(self.dir.name))
+        s._ser = ser
+        return s
+
+    def test_timeout_fails_alike_live_and_replay(self):
+        sc = from_known_state(Scenario("t", [Con("status")]))
+        s = self.live(FakeSerial())
+        live = run_scenario(sc, s)
+        s._add(stream="console", dir="<", line="ok")  # a late reply must not rescue the replay
+        s.close()
+        replay = run_scenario(sc, ReplaySession(pathlib.Path(self.dir.name) / "timeline.jsonl"))
+        self.assertEqual([(r.step, r.ok, r.why) for r in live], [(r.step, r.ok, r.why) for r in replay])
+        self.assertEqual([(r.ok, r.why) for r in live], [(False, "no ok/err to 'stop' within 0.2 s")])
+        self.assertIsNone(s.broken)  # a silent console is a failed check, not a broken bench
+        self.assertIn("! no ok/err to 'stop'", (pathlib.Path(self.dir.name) / "console.txt").read_text())
+
+    def test_serial_write_failure_is_a_step_error_and_marks_the_bench_broken(self):
+        s = self.live(FakeSerial(fail=True))
+        r = run_scenario(Scenario("t", [Con("status")]), s)
+        self.assertEqual([x.ok for x in r], [False])
+        self.assertIn("bench broken: serial write failed", r[0].why)
+        self.assertIn("Device not configured", s.broken)
+        self.assertEqual(exit_code(False, bool(s.broken)), 2)
+
+    def test_udp_precondition_failure_text_carries_the_log_reply(self):
+        s = self.live(FakeSerial())
+        replies = {"status": ["status armed=0 wizard=off src=sim", "ok"], "log udp on": ["ok"],
+                   "log": ["log dev=1 udp=1 wifi=0 ip=0.0.0.0", "ok"]}
+        s._open_udp = lambda: None
+        s._open_console = lambda: None
+        s.console = lambda cmd: (s.now(), replies[cmd])
+        s.port = __file__  # exists
+        e2e_sim.print = lambda *a, **k: None
+        try:
+            failed = s.preconditions()
+        finally:
+            del e2e_sim.print
+        self.assertIn("no udp line 'udp log ON' within 0.2 s", failed)
+        self.assertIn("'log' replied: log dev=1 udp=1 wifi=0 ip=0.0.0.0 / ok", failed)
 
 
 if __name__ == "__main__":
