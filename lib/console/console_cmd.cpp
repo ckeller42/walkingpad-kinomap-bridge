@@ -63,7 +63,7 @@ bool parseOtaUrlArg(const char* rawLine, char* url, size_t cap) {
     // as the URL "http://x" - a typo silently stored as a real setting.
     if (*p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') return false;
     while (*p == ' ' || *p == '\t') ++p;
-    if (*p == 0 || *p == '\r' || *p == '\n') return true;  // "ota url" alone: forget
+    if (*p == 0 || *p == '\r' || *p == '\n') return true;  // "ota url" alone: back to the default
     const char* end = p;
     while (*end && *end != '\r' && *end != '\n' && *end != ' ') ++end;
     const size_t n = (size_t)(end - p);

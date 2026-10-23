@@ -8,10 +8,17 @@
 #include <WiFiClientSecure.h>
 #include <mbedtls/sha256.h>
 
+#include "config.h"
 #include "logsink.h"
 
 #ifndef FW_VERSION
 #define FW_VERSION ""
+#endif
+
+// Set per PlatformIO environment in platformio.ini. Empty if a build forgets
+// it, which matches no manifest (envMatches() requires a non-empty env).
+#ifndef FW_ENV
+#define FW_ENV ""
 #endif
 
 // An unset FW_VERSION expands to an empty string rather than being undefined,
@@ -29,6 +36,7 @@ char availVer[32] = "";
 char manifestUrl[160] = "";
 char imageUrl[200] = "";
 char wantSha[65] = "";
+char imgEnv[24] = "";
 Preferences prefs;
 
 void say(State s, const char* fmt, ...) {
@@ -79,6 +87,7 @@ void begin() {
     prefs.begin("bridge", true);
     prefs.getString("ota_url", manifestUrl, sizeof manifestUrl);
     prefs.end();
+    if (!manifestUrl[0]) snprintf(manifestUrl, sizeof manifestUrl, "%s", OTA_MANIFEST_URL);
     snprintf(msg, sizeof msg, "idle (running %s)", kVersion);
 }
 
@@ -87,13 +96,20 @@ State state() { return st; }
 const char* message() { return msg; }
 const char* availableVersion() { return availVer; }
 const char* url() { return manifestUrl; }
+bool usingDefaultUrl() { return strcmp(manifestUrl, OTA_MANIFEST_URL) == 0; }
+const char* env() { return FW_ENV; }
+const char* imageEnv() { return imgEnv; }
+bool envMatches() { return imgEnv[0] && strcmp(imgEnv, FW_ENV) == 0; }
 
 void setUrl(const char* u) {
-    snprintf(manifestUrl, sizeof manifestUrl, "%s", u ? u : "");
+    const bool deflt = !u || !u[0];
+    // NVS holds "" for the default, so a new build's OTA_MANIFEST_URL takes
+    // effect rather than the old default staying pinned in flash.
     prefs.begin("bridge", false);
-    prefs.putString("ota_url", manifestUrl);
+    prefs.putString("ota_url", deflt ? "" : u);
     prefs.end();
-    say(State::Idle, "manifest url %s", manifestUrl[0] ? manifestUrl : "(cleared)");
+    snprintf(manifestUrl, sizeof manifestUrl, "%s", deflt ? OTA_MANIFEST_URL : u);
+    say(State::Idle, "manifest url %s%s", manifestUrl, deflt ? " (default)" : "");
 }
 
 void check() {
@@ -115,13 +131,16 @@ void check() {
     const String body = http.getString();
     http.end();
 
-    availVer[0] = imageUrl[0] = wantSha[0] = 0;
+    availVer[0] = imageUrl[0] = wantSha[0] = imgEnv[0] = 0;
     if (!field(body.c_str(), "version", availVer, sizeof availVer) ||
         !field(body.c_str(), "url", imageUrl, sizeof imageUrl) ||
         !field(body.c_str(), "sha256", wantSha, sizeof wantSha)) {
         say(State::Failed, "manifest missing version/url/sha256");
         return;
     }
+    // Optional: a manifest without it leaves imgEnv "", which never matches.
+    // Still reported as Available, so the screen shows what is published.
+    field(body.c_str(), "env", imgEnv, sizeof imgEnv);
     if (strcmp(availVer, kVersion) == 0) {
         say(State::UpToDate, "up to date (%s)", kVersion);
         return;
@@ -129,8 +148,11 @@ void check() {
     say(State::Available, "%s available (running %s)", availVer, kVersion);
 }
 
-void apply() {
+void apply() { apply(nullptr); }
+
+void apply(void (*progress)(int percent)) {
     if (st != State::Available) { say(State::Failed, "nothing to install; check first"); return; }
+    if (!envMatches()) { say(State::Failed, "image is for %s", imgEnv[0] ? imgEnv : "?"); return; }
     if (WiFi.status() != WL_CONNECTED) { say(State::Failed, "no network"); return; }
 
     say(State::Installing, "downloading %s", availVer);
@@ -163,6 +185,7 @@ void apply() {
     uint8_t buf[1024];
     int left = total;
     uint32_t lastLog = 0;
+    int lastPct = -1;
     while (left > 0 && http.connected()) {
         const size_t avail = stream->available();
         if (!avail) { delay(1); continue; }
@@ -177,6 +200,11 @@ void apply() {
             return;
         }
         left -= n;
+        const int pct = (int)((int64_t)(total - left) * 100 / total);
+        if (progress && pct != lastPct) {
+            lastPct = pct;
+            progress(pct);
+        }
         if (millis() - lastLog > 2000) {
             lastLog = millis();
             logsink::line("ota: %d%% (%d bytes left)", (total - left) * 100 / total, left);

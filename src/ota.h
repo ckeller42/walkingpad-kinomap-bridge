@@ -63,15 +63,43 @@ const char* availableVersion();
 
 /**
  * @brief Where updates are looked for.
- * @return The stored manifest URL, or "" when none is set.
+ * @return The stored manifest URL, or OTA_MANIFEST_URL when none is stored.
  */
 const char* url();
 
 /**
+ * @brief Whether url() is the compiled-in default rather than a stored one.
+ * @return True when url() equals OTA_MANIFEST_URL.
+ */
+bool usingDefaultUrl();
+
+/**
  * @brief Store the manifest URL in NVS.
- * @param u Absolute http:// or https:// URL, or "" to forget it.
+ * @param u Absolute http:// or https:// URL, or "" to go back to the default
+ *          OTA_MANIFEST_URL.
  */
 void setUrl(const char* u);
+
+/**
+ * @brief The PlatformIO environment this firmware was built for.
+ * @return The compiled-in FW_ENV, e.g. "cores3" or "cores3_sim".
+ */
+const char* env();
+
+/**
+ * @brief The environment the last-read manifest's image was built for.
+ * @return The manifest's `env` field, or "" when absent or not yet read.
+ */
+const char* imageEnv();
+
+/**
+ * @brief Whether the offered image was built for this firmware's environment.
+ *
+ * A manifest without `env` never matches, so a bench build cannot be
+ * overwritten by an image of unknown origin.
+ * @return True when imageEnv() is non-empty and equals env().
+ */
+bool envMatches();
 
 /**
  * @brief Fetch the manifest and compare versions.
@@ -87,8 +115,15 @@ void check();
  * Blocks for the whole download, so the caller must ensure the belt is
  * stopped first: the belt link will go stale meanwhile. Verifies SHA-256
  * before committing, and reboots on success. Returns normally on failure,
- * leaving the running firmware untouched.
+ * leaving the running firmware untouched. Refuses an image built for a
+ * different environment (see envMatches()).
+ *
+ * @param progress Called from the download loop, on the calling task, each
+ *                 time the integer percentage changes; may be nullptr.
  */
+void apply(void (*progress)(int percent));
+
+/** @brief apply() without a progress callback, for the serial console. */
 void apply();
 
 }  // namespace ota

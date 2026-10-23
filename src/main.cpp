@@ -111,7 +111,7 @@ static const char* emitName(policy::Emit e) {
 }
 
 #if UI_SCREENSHOT
-// Tour phase 21 sets this so its SetMode never reaches the (sim) belt; phase 22
+// Tour phase 25 sets this so its SetMode never reaches the (sim) belt; phase 26
 // clears it. Screenshot builds only.
 static bool demoHoldSetMode = false;
 #endif
@@ -142,7 +142,7 @@ static void applyOutcome(const policy::Outcome& o) {
                     break;
                 }
 #if UI_SCREENSHOT
-                if (demoHoldSetMode) {  // tour phase 21: keep the request pending for the A? shot
+                if (demoHoldSetMode) {  // tour phase 25: keep the request pending for the A? shot
                     logsink::line("emit SetMode held (shot tour)");
                     break;
                 }
@@ -256,7 +256,7 @@ static constexpr uint8_t kUiStartTenths = 20;
 // real button presses but SYNTHETIC belt inputs (there is no belt on the
 // bench), then the main screen runs on the real simulated belt.
 static constexpr uint32_t kDemoDwellMs = 4000;
-static constexpr int kDemoLast = 23;
+static constexpr int kDemoLast = 27;
 static uint32_t demoT0 = 0;
 static int demoIdx = -1;
 static wizard::Inputs demoIn;
@@ -380,7 +380,28 @@ static void demoAdvance(int i, uint32_t now) {
         case 19:  // the remaining punctuation
             devMenu.setPage(devmenu::Page::Symbols2);
             break;
-        case 20:
+        case 20:  // the Update screen, not checked yet
+            devMenu.open();  // back to the root from the keyboard
+            demoDevIn.otaVersion = "bd3819b";
+            demoDevIn.otaHost = "ckeller42.github.io";
+            demoDevIn.otaState = devmenu::OtaState::Idle;
+            demoDevIn.otaMessage = "idle (running bd3819b)";
+            devMenu.tapRow(4, demoDevIn);
+            break;
+        case 21:  // a newer build is published
+            demoDevIn.otaState = devmenu::OtaState::Available;
+            demoDevIn.otaAvailable = "v0.2.0";
+            demoDevIn.otaMessage = "v0.2.0 available (running bd3819b)";
+            break;
+        case 22:  // installing, mid-download
+            demoDevIn.otaState = devmenu::OtaState::Installing;
+            demoDevIn.otaMessage = "downloading 37%";
+            break;
+        case 23:  // the failure a private repository produces
+            demoDevIn.otaState = devmenu::OtaState::Failed;
+            demoDevIn.otaMessage = "manifest http 404";
+            break;
+        case 24:
             // End on the main screen. Leaving the tour inside the menu means a
             // flashed screenshot build answers no touch but CLOSE, which reads
             // as a dead touchscreen. leaveDevMenu() is defined further down, so
@@ -392,7 +413,7 @@ static void demoAdvance(int i, uint32_t now) {
         // The three badge states on the main screen: A? (requested), A, M.
         // The state comes from the sim belt itself, never from a synthetic
         // observe. Gated on simSource: a real belt must not be sent set_mode.
-        case 21:  // request held back, so the sim keeps its old mode: A?
+        case 25:  // request held back, so the sim keeps its old mode: A?
             if (!simSource) break;
             inDevMenu = false;
             ui.setMenuMode(false);
@@ -400,12 +421,12 @@ static void demoAdvance(int i, uint32_t now) {
             demoHoldSetMode = true;
             applyOutcome(state.requestMode(policy::BeltMode::Auto, false));
             break;
-        case 22:  // release: the sim accepts Auto and reports it on its next poll: A
+        case 26:  // release: the sim accepts Auto and reports it on its next poll: A
             if (!simSource) break;
             demoHoldSetMode = false;
             applyOutcome(state.requestMode(policy::BeltMode::Auto, false));
             break;
-        case 23:  // sim reports Manual: M
+        case 27:  // sim reports Manual: M
             if (!simSource) break;
             applyOutcome(state.requestMode(policy::BeltMode::Manual, false));
             break;
@@ -456,6 +477,35 @@ static const char* manualSpeed(int dir, uint8_t absTenths) {
     return nullptr;
 }
 
+// devmenu::OtaState mirrors ota::State so lib/ need not include ota.h; the
+// cast in devInputs() is only valid while the two stay in the same order.
+static_assert((int)devmenu::OtaState::Idle == (int)ota::State::Idle &&
+                  (int)devmenu::OtaState::Checking == (int)ota::State::Checking &&
+                  (int)devmenu::OtaState::UpToDate == (int)ota::State::UpToDate &&
+                  (int)devmenu::OtaState::Available == (int)ota::State::Available &&
+                  (int)devmenu::OtaState::Installing == (int)ota::State::Installing &&
+                  (int)devmenu::OtaState::Failed == (int)ota::State::Failed,
+              "devmenu::OtaState must mirror ota::State");
+
+// "downloading NN%", written by otaProgress() while ota::apply() blocks; shown
+// in place of ota::message() while the state is Installing.
+static char otaProgressMsg[32] = "";
+
+/// The host part of the manifest URL, for the Update screen's Source row.
+static const char* otaHostText() {
+    static char host[64];
+    const char* u = ota::url();
+    const char* p = strstr(u, "://");
+    p = p ? p + 3 : u;
+    size_t n = 0;
+    while (p[n] && p[n] != '/' && p[n] != ':' && p[n] != '?' && n + 1 < sizeof host) {
+        host[n] = p[n];
+        ++n;
+    }
+    host[n] = 0;
+    return host;
+}
+
 // Builds the menu's view of the world fresh each frame; the menu keeps no copy.
 static devmenu::Inputs devInputs() {
 #if UI_SCREENSHOT
@@ -474,7 +524,37 @@ static devmenu::Inputs devInputs() {
     in.networkCount = n < devmenu::kMaxNetworks ? n : devmenu::kMaxNetworks;
     for (uint8_t i = 0; i < in.networkCount && i < devmenu::kMaxNetworks; ++i)
         in.networks[i] = logsink::scanSsid(i);
+    in.otaVersion = ota::version();
+    in.otaAvailable = ota::availableVersion();
+    in.otaState = static_cast<devmenu::OtaState>(ota::state());
+    in.otaMessage = (ota::state() == ota::State::Installing && otaProgressMsg[0])
+                        ? otaProgressMsg : ota::message();
+    in.otaHost = otaHostText();
+    in.otaImageEnv = ota::imageEnv();
+    in.otaEnvMismatch = ota::state() == ota::State::Available && !ota::envMatches();
     return in;
+}
+
+/// Put the menu as it stands on the glass now.
+static void drawDevMenu() {
+    ui.renderDevMenu(devMenu.screen(devInputs()));
+}
+
+/// Draw the menu as it will look once a blocking ota:: call has started.
+/// ota::check() and ota::apply() block loop() and only set their state from
+/// inside, so without this the glass would show the state from before the tap
+/// for the whole call.
+static void drawDevMenuOta(devmenu::OtaState st, const char* msg) {
+    devmenu::Inputs in = devInputs();
+    in.otaState = st;
+    in.otaMessage = msg;
+    ui.renderDevMenu(devMenu.screen(in));
+}
+
+/// ota::apply()'s progress callback: same task, called from its download loop.
+static void otaProgress(int percent) {
+    snprintf(otaProgressMsg, sizeof otaProgressMsg, "downloading %d%%", percent);
+    drawDevMenu();
 }
 
 static void leaveDevMenu() {
@@ -507,6 +587,23 @@ static void devMenuAct(devmenu::Action a) {
         case A::RerunSetup:
             leaveDevMenu();
             enterWizard(millis());
+            break;
+        case A::OpenUpdate:
+            break;  // the Update screen reads ota:: fresh; the redraw below is enough
+        case A::CheckOta:
+            drawDevMenuOta(devmenu::OtaState::Checking, "fetching manifest");
+            ota::check();
+            break;
+        case A::InstallOta:
+            // Same guards as the console's `ota apply`: the download blocks for
+            // seconds and the belt link goes stale meanwhile. The menu cannot
+            // be open over a moving belt, so this is belt and braces.
+            if (state.beltRunning()) { logsink::line("ota: refused, belt running"); break; }
+            applyOutcome(state.setArmed(false));
+            otaProgressMsg[0] = 0;
+            drawDevMenuOta(devmenu::OtaState::Installing, "connecting");
+            ota::apply(otaProgress);  // reboots on success; returns on failure
+            otaProgressMsg[0] = 0;
             break;
         case A::None:
             break;
@@ -640,9 +737,9 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             break;
         }
         case Cmd::Ota:
-            Serial.printf("ota running=%s state=%d url=%s msg=%s\n", ota::version(),
-                          (int)ota::state(), ota::url()[0] ? ota::url() : "-",
-                          ota::message());
+            Serial.printf("ota running=%s env=%s state=%d url=%s%s msg=%s\n", ota::version(),
+                          ota::env(), (int)ota::state(), ota::url()[0] ? ota::url() : "-",
+                          ota::usingDefaultUrl() ? " (default)" : "", ota::message());
             break;
         case Cmd::OtaUrl: {
             char u[160];
@@ -650,8 +747,8 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
                 Serial.println("err bad-ota-url");
                 return;
             }
-            ota::setUrl(u);
-            Serial.printf("ota url=%s\n", u[0] ? u : "(cleared)");
+            ota::setUrl(u);  // "" restores OTA_MANIFEST_URL
+            Serial.printf("ota url=%s%s\n", ota::url(), u[0] ? "" : " (default)");
             break;
         }
         case Cmd::OtaCheck:
@@ -737,7 +834,7 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             shotPending = true;  // answered once the frame has been drawn and emitted
             return;
         case Cmd::Help:
-            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | menu close | touch | speed up|down|<km/h> | mode auto|manual | cp | log | log udp on|off | log sd on|off | dev on|off | wifi <ssid> <pass> | ota [check|apply|url <u>] | shot | help");
+            Serial.println("commands: status arm disarm start stop | sim on|off | wizard [next|back] | menu close | touch | speed up|down|<km/h> | mode auto|manual | cp | log | log udp on|off | log sd on|off | dev on|off | wifi <ssid> <pass> | ota [check|apply|url [<u>]] | shot | help");
             break;
         case Cmd::Unknown:
         case Cmd::TooLong:

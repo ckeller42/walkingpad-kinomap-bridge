@@ -23,8 +23,12 @@ constexpr int SETUP_HIT_Y = 40;  // top strip: the gear and the mode badge
 constexpr int GEAR_W = 44;       // touch target width, from the right edge
 constexpr int GEAR_CX = W - 16, GEAR_CY = 14, GEAR_R = 9;
 
-// Developer menu list: five rows between the title and the bottom bar.
-constexpr int ROW_Y0 = 30, ROW_H = 30, ROW_N = 5;
+// Developer menu list: six rows between the title and the bottom bar. They end
+// at y 178, inside HIT_Y (180) so a tap on the last row is never read as a bar
+// press, and clear of the bar itself (BAR_Y 184).
+constexpr int ROW_Y0 = 28, ROW_H = 25, ROW_N = 6;
+static_assert(ROW_N == devmenu::kMaxRows, "every row the menu builds must have a place on the glass");
+static_assert(ROW_Y0 + ROW_H * ROW_N <= HIT_Y, "menu rows must end above the bottom bar's touch zone");
 
 // On-screen keyboard. Ten columns of 32 px is exactly the 320 px panel, so the
 // grid needs no centring and every key is the same width.
