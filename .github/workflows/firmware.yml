@@ -16,8 +16,17 @@ jobs:
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
       - run: pip install platformio
+      # platformio.ini reads FW_VERSION into the build; export it first so the
+      # image and its manifest carry the same version (the short commit).
+      - run: echo "FW_VERSION=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
       - name: build cores3 (default, real belt)
         run: pio run -e cores3
+      # The same manifest the Pages site publishes, so a broken pair fails on
+      # the PR rather than on main.
+      - name: manifest, verified against the image it describes
+        run: |
+          python3 tools/make_manifest.py .pio/build/cores3/firmware.bin --version "$FW_VERSION" --env cores3 --url https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/firmware.bin > manifest.json
+          python3 tools/make_manifest.py --check manifest.json .pio/build/cores3/firmware.bin
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: walkingpad-bridge-fw-${{ github.sha }}
@@ -25,6 +34,7 @@ jobs:
           path: |
             .pio/build/cores3/firmware.factory.bin
             .pio/build/cores3/firmware.bin
+            manifest.json
           retention-days: 30
       # Non-default path (USE_SIM_BELT=1). A path that only compiles under the
       # default is invisible until it breaks, so this must build too. A failure
