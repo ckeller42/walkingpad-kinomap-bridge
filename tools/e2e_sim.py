@@ -414,6 +414,346 @@ class ReplaySession(Session):
         return self._records
 
 
+# --------------------------------------------------------------------------- live session
+
+BRIDGE_NAME = "WalkingPad Bridge"
+UDP_PORT = 9999
+CONSOLE_TIMEOUT_S = 5.0
+BLE_TIMEOUT_S = 20.0
+# The UUIDs of tools/ftms_client.py, which cannot be imported (it runs at import).
+FTMS_CP = "00002ad9-0000-1000-8000-00805f9b34fb"      # Control Point (indications)
+FTMS_TD = "00002acd-0000-1000-8000-00805f9b34fb"      # Treadmill Data (notifications)
+FTMS_STATUS = "00002ada-0000-1000-8000-00805f9b34fb"  # Machine Status (notifications)
+_UDP_LINE = re.compile(r"(\d+) (.*)$")
+
+
+class LiveSession(Session):
+    """The bench: serial console, UDP log and bleak, recorded into one timeline.
+
+    Three threads append to the timeline (serial reader, UDP listener, the
+    asyncio loop that runs bleak). `t` is taken under the same lock as the
+    append, so the list stays ordered by `t` without sorting. The port is
+    opened by `preconditions()`, not here, because opening it reboots the board.
+    pyserial and bleak are imported only on these paths, so `--replay` needs neither.
+    """
+
+    def __init__(self, port: str, out_dir: pathlib.Path):
+        import queue
+        import threading
+        import time
+
+        self.port = port
+        self.out_dir = pathlib.Path(out_dir)
+        self.notes: List[str] = []   # precondition lines and stream events, for the report
+        self.udp_unparsed = 0
+        self._time = time
+        self._t0 = time.monotonic()
+        self._lock = threading.Lock()
+        self._records: List[dict] = []
+        self._replies = queue.Queue()  # console lines, consumed by console()
+        self._stop = threading.Event()
+        self._threads = []
+        self._ser = None
+        self._sock = None
+        self._loop = None
+        self._client = None
+        self._closing_ble = False
+
+    # ---- recording
+
+    def _add(self, **fields) -> dict:
+        with self._lock:
+            rec = {"t": round(self._time.monotonic() - self._t0, 6), **fields}
+            self._records.append(rec)
+        return rec
+
+    def now(self):
+        return self._time.monotonic() - self._t0
+
+    def wait(self, seconds):
+        if seconds > 0:
+            self._time.sleep(seconds)
+
+    def timeline(self):
+        with self._lock:
+            return list(self._records)
+
+    def begin_scenario(self, name):
+        self._add(stream="scenario", name=name)
+
+    def _thread(self, target, name):
+        import threading
+        th = threading.Thread(target=target, name=name, daemon=True)
+        th.start()
+        self._threads.append(th)
+
+    # ---- console
+
+    def _open_console(self) -> None:
+        from console import open_port
+        self._ser = open_port(self.port)
+        self._thread(self._read_serial, "serial")
+
+    def _read_serial(self):
+        from console import Reader, keep_line
+        st = Reader()
+        while not self._stop.is_set():
+            try:
+                st.buf += self._ser.read(4096)
+            except Exception as e:  # port gone (USB reset) or closed by close()
+                if not self._stop.is_set():
+                    self.notes.append(f"serial reader stopped at t={self.now():.3f}: {e}")
+                return
+            while b"\n" in st.buf:
+                raw, st.buf = st.buf.split(b"\n", 1)
+                line = raw.decode("utf-8", "replace").strip()
+                if not line or not keep_line(line, st):
+                    continue
+                self._add(stream="console", dir="<", line=line)
+                self._replies.put(line)
+
+    def console(self, cmd):
+        import queue
+        while True:  # unsolicited lines are already recorded; they are not this reply
+            try:
+                self._replies.get_nowait()
+            except queue.Empty:
+                break
+        t = self._add(stream="console", dir=">", line=cmd)["t"]
+        self._ser.write(cmd.encode() + b"\n")
+        self._ser.flush()
+        reply = []
+        deadline = self._time.monotonic() + CONSOLE_TIMEOUT_S
+        while True:
+            left = deadline - self._time.monotonic()
+            if left <= 0:
+                # Made up by the host, so not recorded: the timeline holds what the device said.
+                return t, reply + ["err timeout"]
+            try:
+                line = self._replies.get(timeout=left)
+            except queue.Empty:
+                continue
+            reply.append(line)
+            if _is_terminator(line):
+                return t, reply
+
+    # ---- udp
+
+    def _open_udp(self) -> None:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except (AttributeError, OSError):
+            pass
+        s.bind(("0.0.0.0", UDP_PORT))
+        s.settimeout(0.5)
+        self._sock = s
+        self._thread(self._read_udp, "udp")
+
+    def _read_udp(self):
+        import socket
+        while not self._stop.is_set():
+            try:
+                data, addr = self._sock.recvfrom(2048)
+            except socket.timeout:
+                continue
+            except OSError:
+                return  # closed by close()
+            for ln in data.decode("utf-8", "replace").splitlines():
+                if not ln:
+                    continue
+                m = _UDP_LINE.match(ln)
+                if m:
+                    self._add(stream="udp", ip=addr[0], millis=int(m.group(1)), line=m.group(2))
+                else:  # kept verbatim, without millis, and counted
+                    self.udp_unparsed += 1
+                    self._add(stream="udp", ip=addr[0], line=ln)
+
+    # ---- ftms
+
+    def _ble(self, coro, timeout=BLE_TIMEOUT_S):
+        """Run `coro` on the bleak loop thread and wait for its result."""
+        import asyncio
+        if self._loop is None:
+            self._loop = asyncio.new_event_loop()
+            self._thread(self._loop.run_forever, "bleak")
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout=timeout)
+
+    def _on_data(self, short, kind):
+        def cb(_char, data):
+            self._add(stream="ftms", kind=kind, uuid=short, hex=bytes(data).hex(" "))
+        return cb
+
+    def _on_drop(self, _client):
+        if not self._closing_ble:
+            self.notes.append(f"ftms link dropped by the bridge at t={self.now():.3f}")
+
+    async def _find(self, scan_seconds):
+        from bleak import BleakScanner
+        return await BleakScanner.find_device_by_filter(
+            lambda d, adv: BRIDGE_NAME in (adv.local_name or d.name or ""), timeout=scan_seconds)
+
+    async def _connect(self, dev):
+        from bleak import BleakClient
+        c = BleakClient(dev, disconnected_callback=self._on_drop)
+        await c.connect()
+        self._client = c
+        self._closing_ble = False
+        t = self._add(stream="ftms", kind="connect", uuid="", hex="")["t"]
+        await c.start_notify(FTMS_CP, self._on_data("2ad9", "indication"))
+        await c.start_notify(FTMS_TD, self._on_data("2acd", "notify"))
+        await c.start_notify(FTMS_STATUS, self._on_data("2ada", "notify"))
+        return t
+
+    async def _disconnect(self):
+        c, self._client = self._client, None
+        self._closing_ble = True
+        if c is not None:
+            await c.disconnect()
+        return self._add(stream="ftms", kind="disconnect", uuid="", hex="")["t"]
+
+    async def _write_cp(self, payload):
+        # Recorded before the write: the indication can arrive before the write response.
+        t = self._add(stream="ftms", kind="write", uuid="2ad9", hex=payload.hex(" "))["t"]
+        await self._client.write_gatt_char(FTMS_CP, payload, response=True)
+        return t
+
+    def ftms_connect(self, scan_seconds: float = 15.0):
+        try:
+            dev = self._ble(self._find(scan_seconds), timeout=scan_seconds + 5)
+            if dev is None:
+                raise StepError(f"'{BRIDGE_NAME}' not found in a {_secs(scan_seconds)} s scan")
+            return self._ble(self._connect(dev))
+        except StepError:
+            raise
+        except Exception as e:
+            raise StepError(f"ftms connect failed: {type(e).__name__}: {e}")
+
+    def ftms_disconnect(self):
+        try:
+            return self._ble(self._disconnect())
+        except Exception as e:
+            raise StepError(f"ftms disconnect failed: {type(e).__name__}: {e}")
+
+    def ftms_cp(self, hexs):
+        if self._client is None:
+            raise StepError("ftms cp without an ftms link")
+        try:
+            return self._ble(self._write_cp(bytes.fromhex(hexs)))
+        except Exception as e:
+            raise StepError(f"ftms cp {hexs} failed: {type(e).__name__}: {e}")
+
+    # ---- preconditions
+
+    def _pre(self, ok: bool, what: str) -> None:
+        line = f"{'PASS' if ok else 'FAIL'}  {'precondition':<14} {what}"
+        self.notes.append(line)
+        print(line, flush=True)
+
+    def _status(self) -> Optional[str]:
+        _, reply = self.console("status")
+        return next((ln for ln in reply if ln.startswith("status ")), None)
+
+    def preconditions(self, scan_seconds: float = 15) -> Optional[str]:
+        """Bring the bench to a known state: the failure text, or None when every step held."""
+        import os
+
+        def fail(text, detail=""):
+            self._pre(False, text + (f" ({detail})" if detail else ""))
+            return text
+
+        # (1) the port
+        if not self.port or not os.path.exists(self.port):
+            return fail(f"no serial port: {self.port or 'none found; pass --port'}")
+        self._pre(True, f"port {self.port} exists")
+        try:
+            self._open_udp()  # first, so nothing broadcast after the reset is missed
+        except OSError as e:
+            return fail(f"cannot listen on udp/{UDP_PORT}: {e}")
+        try:
+            self._open_console()
+        except Exception as e:  # pyserial's SerialException, or OSError
+            return fail(f"cannot open {self.port}: {e}")
+
+        # (2) status answers and says src=sim; otherwise nothing else is sent
+        status = self._status()
+        if status is None:
+            return fail("no reply from console (port reset but silent?)")
+        got = parse_status(status)
+        if got.get("src") != "sim":
+            return fail(f"refusing: src={got.get('src', '')} is not the simulated belt")
+        self._pre(True, f"src=sim: {status}")
+
+        # (3) a fresh device starts in the wizard: setup, not a check
+        wizard, presses = got.get("wizard", ""), 0
+        while wizard != "off" and presses < 6:
+            self.console("wizard next")
+            presses += 1
+            status = self._status()
+            wizard = parse_status(status).get("wizard", "") if status else ""
+        if wizard != "off":
+            return fail(f"wizard still '{wizard}' after {presses} presses")
+        if presses:
+            self._pre(True, f"clicked through wizard ({presses} presses)")
+
+        # (4) the udp log is alive
+        t, reply = self.console("log udp on")
+        hit = None
+        while hit is None and self.now() < t + 5.0:
+            self.wait(POLL_S)
+            hit = next((r for r in self.timeline() if r["stream"] == "udp" and r["t"] >= t - EPS
+                        and "udp log ON" in r["line"]), None)
+        if hit is None:
+            _, log = self.console("log")
+            return fail("no udp line 'udp log ON' within 5 s",
+                        f"'log udp on' replied: {' / '.join(reply)}; 'log' replied: {' / '.join(log)}")
+        self._pre(True, f"udp alive: {hit.get('ip', '?')} t={hit['t']:.3f} {hit['line']}")
+
+        # (5) the bridge advertises; scenarios start unconnected
+        try:
+            self.ftms_connect(scan_seconds)
+            self.ftms_disconnect()
+        except StepError as e:
+            return fail("bridge not advertising; is a phone holding the link?", str(e))
+        self._pre(True, f"'{BRIDGE_NAME}' advertises: ftms connect + disconnect")
+        return None
+
+    # ---- shutdown and files
+
+    def close(self) -> None:
+        """Stop every stream, then write console.txt, udp.log, ftms.jsonl, timeline.jsonl."""
+        if self._loop is not None:
+            if self._client is not None:
+                try:
+                    self.ftms_disconnect()
+                except StepError as e:
+                    self.notes.append(str(e))
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        self._stop.set()
+        if self._sock is not None:
+            self._sock.close()
+        for th in self._threads:
+            th.join(timeout=2)
+        if self._ser is not None:
+            self._ser.close()
+
+        recs = self.timeline()
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.out_dir / "timeline.jsonl", "w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in recs)
+        with open(self.out_dir / "ftms.jsonl", "w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in recs if r["stream"] == "ftms")
+        with open(self.out_dir / "console.txt", "w") as f:
+            f.writelines(f"{r['t']:.3f} {r['dir']} {r['line']}\n" for r in recs if r["stream"] == "console")
+        with open(self.out_dir / "udp.log", "w") as f:  # logcat.py's format: "<ip>  <millis> <rest>"
+            for r in recs:
+                if r["stream"] == "udp":
+                    rest = f"{r['millis']} {r['line']}" if "millis" in r else r["line"]
+                    f.write(f"{r.get('ip', '?')}  {rest}\n")
+
+
 # --------------------------------------------------------------------------- checks
 
 def _await(s: Session, anchor: float, within: float, find):
@@ -530,9 +870,17 @@ def _con_ok(expect, reply):
     return ok, end if ok else f"got '{end}', expected '{expect}'"
 
 
-def run_scenario(sc: Scenario, s: Session) -> List[CheckResult]:
-    """Run every step in order. A control step that cannot be carried out ends the scenario."""
+def run_scenario(sc: Scenario, s: Session, on_result=None) -> List[CheckResult]:
+    """Run every step in order. A control step that cannot be carried out ends the scenario.
+
+    `on_result(result)` is called as each step is judged, so a live run reports as it goes.
+    """
     results = []
+
+    def judged(r):
+        results.append(r)
+        if on_result is not None:
+            on_result(r)
     s.begin_scenario(sc.name)
     anchor = s.now()
     last_status = None  # the status line of the most recent control step only
@@ -583,9 +931,9 @@ def run_scenario(sc: Scenario, s: Session) -> List[CheckResult]:
             else:
                 raise TypeError(f"unknown step {step!r}")
         except StepError as e:
-            results.append(CheckResult(label, False, str(e)))
+            judged(CheckResult(label, False, str(e)))
             break
-        results.append(CheckResult(label, ok, why))
+        judged(CheckResult(label, ok, why))
     return results
 
 
@@ -616,19 +964,121 @@ def exit_code(all_ok: bool, precondition_failed: bool) -> int:
     return 0 if all_ok else 1
 
 
+def print_result(name: str, r: CheckResult) -> None:
+    print(f"{'PASS' if r.ok else 'FAIL'}  {name:<14} {r.step:<40} {r.why}", flush=True)
+
+
 def print_results(name: str, results: List[CheckResult]) -> None:
     for r in results:
-        print(f"{'PASS' if r.ok else 'FAIL'}  {name:<14} {r.step:<40} {r.why}")
+        print_result(name, r)
 
 
 # --------------------------------------------------------------------------- scenarios
 
-SCENARIOS: Dict[str, Scenario] = {}  # the built-in scenarios arrive with the live session
+def _scenarios(*scs: Scenario) -> Dict[str, Scenario]:
+    return {sc.name: sc for sc in scs}
+
+
+# Provisional: the full set arrives with the next task. A Status check reads the
+# reply of the step before it, so `status` is sent first.
+SCENARIOS: Dict[str, Scenario] = _scenarios(
+    Scenario("boot", [Con("status"),
+                      Status(src="sim", belt_link="1", phone_link="0", armed="0", running="0")]),
+)
+
+
+def from_known_state(sc: Scenario) -> Scenario:
+    """The scenario as the runner sends it: `stop` first (ok or any err), so it starts from rest."""
+    return Scenario(sc.name, [Con("stop", expect="*")] + list(sc.steps))
+
+
+def run_all(names: List[str], s: Session) -> Dict[str, List[CheckResult]]:
+    out = {}
+    for n in names:
+        out[n] = run_scenario(from_known_state(SCENARIOS[n]), s, lambda r, n=n: print_result(n, r))
+    return out
+
+
+def _all_ok(results: Dict[str, List[CheckResult]]) -> bool:
+    return all(bool(rs) and all(r.ok for r in rs) for rs in results.values())
+
+
+def _flash(port: str) -> bool:
+    """Build and upload cores3_sim to `port`; True when pio succeeded and the port is back."""
+    import shutil
+    import subprocess
+    import time
+
+    venv_pio = pathlib.Path(sys.executable).with_name("pio")
+    pio = str(venv_pio) if venv_pio.exists() else (shutil.which("pio") or "pio")
+    cmd = [pio, "run", "-e", "cores3_sim", "-t", "upload", "--upload-port", port]
+    print("flash: " + " ".join(cmd), flush=True)
+    if subprocess.run(cmd, cwd=pathlib.Path(__file__).resolve().parent.parent).returncode != 0:
+        return False
+    deadline = time.monotonic() + 15  # the USB port re-enumerates after the reset
+    while not pathlib.Path(port).exists() and time.monotonic() < deadline:
+        time.sleep(0.5)
+    return pathlib.Path(port).exists()
+
+
+def _default_port() -> Optional[str]:
+    from console import default_port
+    try:
+        return default_port()
+    except SystemExit:  # no port found; the precondition says so
+        return None
+
+
+def run_live(names: List[str], port: Optional[str], out_dir: pathlib.Path,
+             record_to: Optional[str], flash: bool) -> int:
+    if flash:
+        if not port:
+            print("FAIL  precondition   --flash needs a serial port", flush=True)
+            return 2
+        if not _flash(port):
+            print(f"FAIL  precondition   flashing cores3_sim to {port} failed", flush=True)
+            return 2
+    s = LiveSession(port, out_dir)
+    results: Dict[str, List[CheckResult]] = {}
+    failed = None
+    try:
+        failed = s.preconditions()
+        if failed is None:
+            results = run_all(names, s)
+    finally:
+        s.close()
+    all_ok = write_report(results, out_dir / "report.md")
+    with open(out_dir / "report.md", "a") as f:
+        f.write("\n## preconditions\n\n")
+        f.writelines(f"- {n}\n" for n in s.notes)
+        f.write(f"\n{s.udp_unparsed} unparsed udp line(s)\n")
+    if s.udp_unparsed:
+        print(f"{s.udp_unparsed} udp line(s) without millis, kept verbatim")
+    print(f"recording: {out_dir}")
+    if record_to:
+        import shutil
+        shutil.copytree(out_dir, record_to, dirs_exist_ok=True)
+        print(f"copied to: {record_to}")
+    return exit_code(all_ok, failed is not None)
+
+
+def run_replay(names: List[str], replay_dir: str) -> int:
+    path = pathlib.Path(replay_dir) / "timeline.jsonl"
+    if not path.is_file():
+        print(f"no recording: {path}", file=sys.stderr)
+        return 2
+    s = ReplaySession(path)
+    print(f"{path}: {len(s.timeline())} records, {len(s.unparsed)} unparsed")
+    for u in s.unparsed:
+        print(f"   unparsed: {u}")
+    return exit_code(_all_ok(run_all(names, s)), False)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--port", help="serial port (default: the first /dev/cu.usbmodem* or /dev/ttyACM*)")
     ap.add_argument("--scenario", help="comma-separated scenario names (default: all, in order)")
+    ap.add_argument("--out", metavar="DIR", help="where the run is recorded (default: build/e2e/<UTC stamp>)")
     ap.add_argument("--replay", metavar="DIR", help="re-evaluate DIR/timeline.jsonl, no hardware")
     ap.add_argument("--record-to", metavar="DIR", help="copy the run's recording to DIR")
     ap.add_argument("--flash", action="store_true", help="build and upload cores3_sim first")
@@ -647,24 +1097,12 @@ def main():
     if not names:
         print("no scenarios to run", file=sys.stderr)
         return 2
-    if not a.replay:
-        print("live mode is not implemented yet; use --replay DIR", file=sys.stderr)
-        return 2
+    if a.replay:
+        return run_replay(names, a.replay)
 
-    path = pathlib.Path(a.replay) / "timeline.jsonl"
-    if not path.is_file():
-        print(f"no recording: {path}", file=sys.stderr)
-        return 2
-    s = ReplaySession(path)
-    print(f"{path}: {len(s.timeline())} records, {len(s.unparsed)} unparsed")
-    for u in s.unparsed:
-        print(f"   unparsed: {u}")
-    all_ok = True
-    for n in names:
-        results = run_scenario(SCENARIOS[n], s)
-        print_results(n, results)
-        all_ok = all_ok and bool(results) and all(r.ok for r in results)
-    return exit_code(all_ok, False)
+    import time
+    out_dir = pathlib.Path(a.out or f"build/e2e/{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
+    return run_live(names, a.port or _default_port(), out_dir, a.record_to, a.flash)
 
 
 if __name__ == "__main__":
