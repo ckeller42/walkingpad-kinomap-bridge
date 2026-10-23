@@ -64,10 +64,13 @@ first.
 
 ```text
 dev on
-ota            # running version, env, state, url (with "(default)"), message
-ota check      # "up to date" or "<version> available"
-ota apply      # download, verify, reboot
+ota            # ota running=<ver> env=<env> state=<n> url=<url> [(default)] msg=<text>
+ota check      # up to date (<ver>)   or   <ver> available (running <ver>)
+ota apply      # download, verify, reboot; prints the failure if there is one
 ```
+
+`state` is the updater's state as a number, in the Status row's order from
+`not checked` (0) to `failed` (5).
 
 With no URL stored, the device reads the project's published manifest,
 `https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json`

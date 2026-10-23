@@ -357,6 +357,8 @@ static void demoAdvance(int i, uint32_t now) {
             demoDevIn.wifiUp = true;
             demoDevIn.storedSsid = "Insel";
             demoDevIn.ip = "192.168.178.96";
+            demoDevIn.otaVersion = "bd3819b";  // the root's Update row shows it
+            demoDevIn.otaHost = "ckeller42.github.io";
             devMenu.open();
             inDevMenu = true;
             ui.setMenuMode(true);
