@@ -673,7 +673,7 @@ static void consoleRun(const char* line, bool overflow, uint32_t now) {
             logsink::setSd(console::parse(line) == Cmd::SdOn);
             break;
         case Cmd::Log: {
-            char buf[160];
+            char buf[224];  // describe() runs to ~170 chars; unicast= is last and must not be cut
             logsink::describe(buf, sizeof buf);
             Serial.println(buf);
             break;

@@ -114,6 +114,23 @@ void sendChunk(const char* chunk, size_t len, uint32_t nowMs) {
     }
 }
 
+// A flush with nothing to send still tells a hello sender how far the log has
+// got: a header-only datagram `<now> udp-seq <n>`, unicast only, repeating the
+// last number rather than taking a new one. Without it a quiet log is silent,
+// and a listener cannot tell "nothing was logged" from "the datagram was
+// lost". Repeating n keeps broadcast-only listeners (logcat.py) free of gaps
+// they would otherwise see for every heartbeat they never receive.
+void sendHeartbeat(uint32_t nowMs) {
+    if (udpSeq == 0 || !unicastLive(nowMs)) return;
+    char pkt[40];
+    const int h = snprintf(pkt, sizeof pkt, "%lu udp-seq %lu\n", (unsigned long)nowMs, (unsigned long)udpSeq);
+    if (h <= 0 || (size_t)h >= sizeof pkt) return;
+    if (udp.beginPacket(unicastIp, LOG_UDP_PORT)) {
+        udp.write((const uint8_t*)pkt, (size_t)h);
+        udp.endPacket();
+    }
+}
+
 size_t pending() { return (head + kRing - tail) % kRing; }
 
 // SD.cardType() reaches into the card object, which is only meaningful once
@@ -265,7 +282,10 @@ void tick(uint32_t nowMs) {
             tail = (tail + 1) % kRing;
         }
     }
-    if (n == 0) return;
+    if (n == 0) {
+        if (udpUp && udpStarted) sendHeartbeat(nowMs);
+        return;
+    }
 
     if (sdReady) {
         sdFile.write((const uint8_t*)out, n);
