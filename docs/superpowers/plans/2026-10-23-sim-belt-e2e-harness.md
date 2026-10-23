@@ -152,3 +152,19 @@
 - [ ] **Step 4: Docs** — `docs/developing.md`: new section `## End to end on the bench` after "Useful harnesses" (what it proves; three streams; the `src=sim` gate; flash `cores3_sim`, run, replay, `--record-to`, when to commit a new recording; fixtures are synthetic and live under `tools/`), and the harness line in the "Useful harnesses" block; `AGENTS.md` Commands block gains `~/tools/venv-ble/bin/python tools/e2e_sim.py          # bench E2E on the sim belt (needs the CoreS3)` and `python3 tools/e2e_sim.py --replay docs/captures/e2e-sim-2026-10-23`; `docs/serial-console.md` one sentence under "Console": the console is what `tools/e2e_sim.py` drives. Run markdownlint on the three files. Expected: clean.
 - [ ] **Step 5: Verify everything** — `pio test -e native` (214), the three CI commands from Step 2 locally with `python3` (system), `check_protocol_views.py`, doxygen ratchet. Expected: all green.
 - [ ] **Step 6: Commit** `ci: replay the sim-belt E2E recording and its failing fixtures; docs`.
+
+### Task 6: Log sink reliability for the bench (added by controller ruling after Task 4)
+
+**Files:**
+- Modify: `src/logsink.cpp`, `src/logsink.h`, `docs/logging.md`
+- Modify: `tools/e2e_sim.py`, `tools/test_e2e_sim.py`, `tools/logcat.py` (comment only), `tools/logparse.py` (treat `udp-seq` as an "other" row)
+
+**Interfaces:**
+- Produces (firmware): every UDP datagram the sink sends starts with one header line `<millis> udp-seq <n>` where `n` is a `uint32_t` counter starting at 1 per boot, incremented per datagram (chunks of one flush count separately). The sink's socket binds to `LOG_UDP_PORT` (9999) instead of an ephemeral port and, each `tick()`, reads any pending datagram: a datagram whose payload begins with `hello` makes its source address the unicast target for the next 120 s; while a target is live every datagram is sent twice, broadcast as before and unicast to the target. `logsink::describe()` adds `unicast=<ip or ->`.
+- Produces (harness): `LiveSession` sends `hello` to `<bridge ip>:9999` once the first UDP record arrives (the record carries the bridge's IP) and again every 60 s; `udp-seq` records are kept in the timeline like any udp line. `run_scenario` gives every FAILed `Udp`/`UdpAbsent`/`SpeedAtLeast`… check whose window overlaps a sequence gap the suffix `; udp lost (seq a->b)`, and `UdpAbsent` inside a gap reports `inconclusive: udp lost` as a FAIL. A recording without `udp-seq` lines behaves exactly as before (test pins it).
+
+- [ ] **Step 1: Failing harness tests**: `test_seq_gap_annotates_failed_udp_check` (records seq 3 then 5, a `Udp` that misses → why ends with `udp lost (seq 3->5)`), `test_absent_inside_gap_is_inconclusive`, `test_recording_without_seq_is_unchanged` (the committed `docs/captures/e2e-sim-2026-10-23` replays identically).
+- [ ] **Step 2: Implement** the harness side; run `~/tools/venv-ble/bin/python -m unittest tools/test_e2e_sim.py` (green) and the replay of the committed recording (unchanged table).
+- [ ] **Step 3: Firmware**: the header line and the hello/unicast target in `logsink.cpp` per Produces; `docs/logging.md` gets a short "Sequence numbers and unicast" paragraph (why: a broadcast frame is unacknowledged, so one lost frame loses a second of evidence; with a sequence number a gap is visible, with unicast it is rare). `pio run -e cores3` and `-e cores3_sim` build.
+- [ ] **Step 4: Bench**: flash `cores3_sim`; run the full suite three times; expected: three exit-0 runs, `udp-seq` lines in `udp.log`, no gaps (or gaps annotated, never a bare check failure). Keep `cores3_sim` on the board.
+- [ ] **Step 5: Commit** `feat(logsink): sequence-numbered datagrams and unicast to a hello sender; harness reports udp loss`.
