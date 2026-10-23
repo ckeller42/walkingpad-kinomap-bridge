@@ -766,3 +766,47 @@ equals the compiled-in default: it is pinned in NVS and a later build's default
 would not replace it. The first run on `cores3` showed `(default)` there,
 because `ota::usingDefaultUrl()` compared strings; it now reports whether a URL
 is stored. The board was left on `cores3_sim` with no URL stored.
+
+## Install from GitHub Pages, 2026-10-23
+
+The repository went public and GitHub Pages was enabled (Actions source) on
+2026-10-23; the `pages` workflow run for `93103f7` deployed the site with
+`firmware/manifest.json` and `firmware/firmware.bin`. Everything below was
+driven from the serial console with `tools/logcat.py` capturing the UDP log;
+the screen was not observed.
+
+**Counted, from the Mac:** `curl` of the manifest returned
+`{"env": "cores3", "sha256": "a9e2687f…6236", "size": 1574400, "url": ".../firmware/firmware.bin", "version": "93103f7"}`;
+the image answered `HTTP/2 200` with `content-length: 1574400`.
+
+**Counted, simulated-belt build (`cores3_sim`, running `dev-local`):** with
+the default URL, `ota check` ended in state 3 and the message `93103f7
+available`; the image was not requested (env mismatch, INSTALL stays
+disabled, as designed).
+
+**Counted, real-belt build (`cores3` stamped `pre-pages`):** `ota check` then
+`ota apply` with the default URL, over HTTPS, with NimBLE initialised and no
+belt or phone link up:
+
+```text
+ota: fetching manifest
+ota: 93103f7 available
+ota: downloading 93103f7
+ota: 0% (1573376 bytes left)
+ota: 26% (1153728 bytes left)
+ota: 41% (926400 bytes left)
+ota: 55% (701120 bytes left)
+ota: 70% (465600 bytes left)
+ota: 83% (258752 bytes left)
+ota: 97% (39616 bytes left)
+ota: installed 93103f7, rebooting
+```
+
+Device millis: `downloading` at 27110, `installed` at 42363, so the 1.5 MB
+HTTPS download and flash took about 15 s. After the reboot the console
+reported `ota running=93103f7 env=cores3 … (default)`. The device now runs
+the image CI built from the merge commit on `main`.
+
+**Still not observed:** the same path driven by touch (gear → Update →
+CHECK → INSTALL), and an install with the belt and a phone linked at the
+same time. The heap contingency in the design stays open for that case.
