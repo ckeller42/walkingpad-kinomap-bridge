@@ -546,3 +546,149 @@ So the full precondition for pairing is all three of:
 The setup wizard's last screen now says so directly ("Belt ON, ARM and START
 first: pairing needs it moving"), and the belt-off case still gets its own
 screen before that.
+
+## OTA from the Update screen, 2026-10-23
+
+Bench only: the belt was off and never contacted. Board: the CoreS3 on
+`/dev/cu.usbmodem101`, on the LAN as `192.168.178.96`. A Mac on the same LAN
+served a local manifest and image with `python3 -m http.server 8099`. The image
+was `cores3` built with `FW_VERSION=bench-ota`, and its manifest came from
+`tools/make_manifest.py`:
+
+```text
+"env": "cores3", "sha256": "b9b6aa1638c063a49c135b63a6770c9b82e6c3e878a4aaf69c8a197f67490d25",
+"size": 1573984, "url": "http://192.168.178.43:8099/firmware.bin", "version": "bench-ota"
+```
+
+**How it was driven.** Everything ran from the serial console (`ota url`,
+`ota check`, `ota apply`, `ota`), not from the touch screen, which cannot be
+scripted from the host. The screen itself was **not observed** in this run.
+The Update screen draws from the same `ota::` state that the console's `ota`
+line prints, so the screen texts below are **inferred** from that state.
+Rendering the screen is covered by the menu screenshots. Every line quoted here
+is verbatim from a console reply, the UDP log (`tools/logcat.py`) or the
+HTTP server's access log.
+
+### Env mismatch on the sim build: refused (counted)
+
+On `cores3_sim` (`running=dev-local`), with the local manifest:
+
+```text
+> ota check
+bench-ota available (running dev-local)
+> ota
+ota running=dev-local env=cores3_sim state=3 url=http://192.168.178.43:8099/manifest.json msg=bench-ota available (running dev-local)
+> ota apply
+image is for cores3
+> ota
+ota running=dev-local env=cores3_sim state=5 url=http://192.168.178.43:8099/manifest.json msg=image is for cores3
+```
+
+The check reports Available (3) and names the version. The apply is refused
+before anything is downloaded: the HTTP log shows a `GET /manifest.json` and
+no `GET /firmware.bin` from the board for this session. On screen this means
+`image is for cores3` with INSTALL disabled (inferred, see above).
+
+### Real install over HTTP: before-ota to bench-ota (counted, twice)
+
+Flashed `cores3` built with `FW_VERSION=before-ota`, then in one console run:
+
+```text
+ota running=before-ota env=cores3 state=0 url=http://192.168.178.43:8099/manifest.json msg=idle (running before-ota)
+> ota check
+bench-ota available (running before-ota)
+> ota
+ota running=before-ota env=cores3 state=3 url=http://192.168.178.43:8099/manifest.json msg=bench-ota available (running before-ota)
+> ota apply
+err timeout (no ok/err from device)
+```
+
+The timeout is the board rebooting into the new image. The server logged the
+download:
+
+```text
+::ffff:192.168.178.96 - - [23/Oct/2026 14:54:32] "GET /manifest.json HTTP/1.1" 200 -
+::ffff:192.168.178.96 - - [23/Oct/2026 14:54:33] "GET /firmware.bin HTTP/1.1" 200 -
+```
+
+After the reboot, from a fresh console session:
+
+```text
+ota running=bench-ota env=cores3 state=0 url=http://192.168.178.43:8099/manifest.json msg=idle (running bench-ota)
+```
+
+A second run gave the same result: re-flashed `before-ota`, waited 3 s between
+the check and the apply, then `GET /firmware.bin` 200 at 14:56:33 and
+`running=bench-ota` afterwards.
+
+**Finding: the install's own `ota:` lines never reach the UDP log.** The UDP
+capture of the second run has the check and then nothing more until the new
+image boots:
+
+```text
+14286 ota: fetching manifest
+14452 ota: bench-ota available (running before-ota)
+15126 udp-seq 15
+16133 udp-seq 16
+2103 udp-seq 1
+```
+
+The lines `downloading bench-ota`, `NN% (… bytes left)` and
+`installed bench-ota, rebooting` were all logged, but none of them arrived.
+The cause, read from the code: `logsink` sends only from `tick()` in the main
+loop, `ota::apply()` blocks that loop for the whole download, and
+`ESP.restart()` then wipes the ring buffer. The `delay(400)` before the restart
+does not flush the buffer. So the rising percentages could not be counted over
+UDP. The on-screen `downloading NN%` goes through the progress callback, which
+draws directly and does not depend on the log, but it was not observed here.
+
+### Failure path: missing manifest (counted)
+
+```text
+> ota url http://192.168.178.43:8099/missing.json
+ota url=http://192.168.178.43:8099/missing.json
+> ota check
+manifest http 404
+> ota
+ota running=bench-ota env=cores3 state=5 url=http://192.168.178.43:8099/missing.json msg=manifest http 404
+```
+
+UDP: `14431 ota: manifest http 404`. Server: `"GET /missing.json HTTP/1.1" 404`.
+This is Failed (5) with `manifest http 404`. On screen the right button reads
+CHECK again (inferred).
+
+### HTTPS with BLE up: the TLS handshake fits (counted)
+
+This was on the real-belt `cores3` build, which brings up BLE and keeps trying
+the belt (`tx-nolink f7 a2 00 00 a2 fd` every second in the UDP log). The
+GitHub Pages URL is 86 characters, longer than the console's 63-character line
+limit, so `ota url <that URL>` replied `err line-too-long`. It is the
+compiled-in default, though, so `ota url` with no argument selected it:
+
+```text
+> ota url
+ota url=https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json (default)
+> ota check
+manifest http 404
+> ota
+ota running=bench-ota env=cores3 state=5 url=https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json (default) msg=manifest http 404
+```
+
+UDP: `14269 ota: fetching manifest`, then `14795 ota: manifest http 404`. That
+is 526 ms, with no connection error, `-1` or out-of-memory line. The repository
+is still private, and the same URL returned `404` to `curl` from the Mac. An
+HTTP status can only arrive after the TLS handshake has finished, so
+**TLS works with BLE up** on this build, and the heap contingency in the
+design spec is not needed.
+
+### Restore
+
+The board was re-flashed with `cores3_sim`, built with `FW_VERSION` unset, and
+the URL was reset to the default:
+
+```text
+ota running=dev-local env=cores3_sim state=0 url=https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json (default) msg=manifest url https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/manifest.json (defa
+```
+
+The message is cut at `(defa` because `ota::msg` holds 96 bytes and this
+message is longer than that.
