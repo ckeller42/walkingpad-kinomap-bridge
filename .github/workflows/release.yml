@@ -73,18 +73,11 @@ jobs:
           body: |
             Firmware `${{ steps.v.outputs.version }}` for the M5Stack CoreS3 bridge.
 
-            Point a device at the manifest and update over the air:
-
-            ```text
-            dev on
-            ota url ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.v.outputs.version }}/manifest.json
-            ota check
-            ota apply
-            ```
+            These assets are for people: flash `firmware.bin` over USB, or keep
+            it as a record of this release. A device does not update from here.
+            GitHub serves release downloads through a redirect, and the bridge's
+            OTA client does not follow redirects, by design. Devices update from
+            the manifest published on GitHub Pages (gear, then Update, or
+            `ota check` on the console); see `docs/ota.md`.
 
             `sha256(firmware.bin)` = `${{ steps.m.outputs.sha }}`
-
-            The device verifies this hash while streaming and refuses to install
-            anything that does not match. Note that a **private** repository's
-            release assets need authentication, which the device does not have —
-            serve the manifest and binary from somewhere the device can reach.

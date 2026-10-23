@@ -27,14 +27,17 @@ jobs:
         run: |
           python3 tools/make_manifest.py .pio/build/cores3/firmware.bin --version "$FW_VERSION" --env cores3 --url https://ckeller42.github.io/walkingpad-kinomap-bridge/firmware/firmware.bin > manifest.json
           python3 tools/make_manifest.py --check manifest.json .pio/build/cores3/firmware.bin
+      # Staged flat, so the artifact holds three files at its top level rather
+      # than a .pio/build/cores3/ tree beside a lone manifest.json.
+      - name: stage the artifact
+        run: |
+          mkdir -p dist
+          cp .pio/build/cores3/firmware.bin .pio/build/cores3/firmware.factory.bin manifest.json dist/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: walkingpad-bridge-fw-${{ github.sha }}
           # firmware.factory.bin is the merged bootloader+partitions+app image
-          path: |
-            .pio/build/cores3/firmware.factory.bin
-            .pio/build/cores3/firmware.bin
-            manifest.json
+          path: dist/
           retention-days: 30
       # Non-default path (USE_SIM_BELT=1). A path that only compiles under the
       # default is invisible until it breaks, so this must build too. A failure
