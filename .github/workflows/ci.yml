@@ -17,6 +17,8 @@ jobs:
           path: ~/.platformio
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
+      # The measured protocol facts, re-derived from the committed capture's bytes.
+      - run: python3 tools/assert_capture.py docs/captures/auto-mode-2026-10-22.log
       - run: pip install platformio
       # Pass/fail is the exit code. No test-case count is asserted on purpose.
       - run: pio test -e native

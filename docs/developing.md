@@ -51,12 +51,20 @@ Useful harnesses:
 tools/console.py "wait 12; arm; start; wait 8; status; stop"
 tools/logcat.py run.log          # live UDP log, no serial port
 tools/logparse.py run.log        # decode a capture into a timeline
+tools/assert_capture.py run.log  # re-derive the measured facts from a capture's bytes
 tools/ftms_client.py 2.5         # act as an FTMS client; exercise paths Kinomap will not
 tools/blescan.py scan 12         # who is on the air
 tools/beltcam.py shot name       # photograph the belt's own console
 ```
 
 ## Changing a protocol fact
+
+A fact marked `measured` names a capture as its evidence. The captures that
+back facts live in `docs/captures/` (verbatim `logcat.py` output), and
+`tools/assert_capture.py` turns each such fact into a predicate over the raw
+frames: CI runs it, so the fact is re-derived from the bytes on every push
+instead of being trusted as prose. Promoting a fact to `measured` means adding
+the capture and, where the claim can be stated over frames, a claim there.
 
 `docs/protocol/*.md` is **generated**. Edit the YAML, then:
 

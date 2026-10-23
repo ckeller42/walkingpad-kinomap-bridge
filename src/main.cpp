@@ -40,11 +40,11 @@ static bool hasTarget = false;
 static uint16_t targetCenti = 0;
 static bool stopRequested = false;
 
-// Developer menu. Entered by tapping the PHONE indicator on the main screen,
-// mirroring the BELT indicator that re-opens setup. It owns the screen while
-// open, and is deliberately unreachable while the wizard is running or the
-// belt is moving: it can take the radio up and down, which is not something to
-// do underfoot.
+// Developer menu. Entered by tapping the gear in the top-right corner of the
+// main screen; its "Re-run setup" row re-opens the wizard. It owns the screen
+// while open, opening it disarms, and it is refused while a linked belt is not
+// parked or is in Auto: it can take the radio up and down, which is not
+// something to do underfoot.
 static devmenu::DevMenu devMenu;
 static bool inDevMenu = false;
 static bool devDirty = true;
@@ -111,7 +111,7 @@ static const char* emitName(policy::Emit e) {
 }
 
 #if UI_SCREENSHOT
-// Tour phase 20 sets this so its SetMode never reaches the (sim) belt; phase 21
+// Tour phase 21 sets this so its SetMode never reaches the (sim) belt; phase 22
 // clears it. Screenshot builds only.
 static bool demoHoldSetMode = false;
 #endif
@@ -142,7 +142,7 @@ static void applyOutcome(const policy::Outcome& o) {
                     break;
                 }
 #if UI_SCREENSHOT
-                if (demoHoldSetMode) {  // tour phase 20: keep the request pending for the A? shot
+                if (demoHoldSetMode) {  // tour phase 21: keep the request pending for the A? shot
                     logsink::line("emit SetMode held (shot tour)");
                     break;
                 }
@@ -236,8 +236,9 @@ static void trackBelt() {
 }
 
 // ---- setup wizard -------------------------------------------------------
-// First boot (no stored "setup_done" flag) opens the wizard; tapping the BELT
-// indicator on the main screen re-opens it (only while the belt is stopped).
+// First boot (no stored "setup_done" flag) opens the wizard; the gear menu's
+// "Re-run setup" row re-opens it (the menu itself is refused while the belt
+// moves).
 static Preferences prefs;
 static wizard::Wizard wiz;
 static bool inWizard = false;
@@ -255,7 +256,7 @@ static constexpr uint8_t kUiStartTenths = 20;
 // real button presses but SYNTHETIC belt inputs (there is no belt on the
 // bench), then the main screen runs on the real simulated belt.
 static constexpr uint32_t kDemoDwellMs = 4000;
-static constexpr int kDemoLast = 22;
+static constexpr int kDemoLast = 23;
 static uint32_t demoT0 = 0;
 static int demoIdx = -1;
 static wizard::Inputs demoIn;
@@ -331,6 +332,7 @@ static void demoCancel() {
     if (inWizard) leaveWizard(false);
 }
 
+static void speedTapReason();  // defined with the console; the tour drives the real refusal path
 static void demoAdvance(int i, uint32_t now) {
     switch (i) {
         case 0: demoIn = wizard::Inputs{}; wiz.start(false); inWizard = true; ui.setWizardMode(true); break;
@@ -342,11 +344,12 @@ static void demoAdvance(int i, uint32_t now) {
         case 6: wizPress(wizard::Btn::Right, now); break;
         case 7: demoIn = wizard::Inputs{}; demoIn.sim = true; wiz.start(true); break;
         case 8: leaveWizard(false); break;  // main screen, disarmed
-        case 9: applyOutcome(state.setArmed(true)); break;
-        case 10: applyOutcome(state.startFromUi(kUiStartTenths)); break;  // real START path
-        case 11: case 12: break;  // belt counts down, then ramps: new frames land by themselves
-        case 13: applyOutcome(state.stopFromUi()); break;
-        case 14:  // developer menu, root
+        case 9: speedTapReason(); break;    // a refused + tap: the reason line ("ARM first")
+        case 10: applyOutcome(state.setArmed(true)); break;
+        case 11: applyOutcome(state.startFromUi(kUiStartTenths)); break;  // real START path
+        case 12: case 13: break;  // belt counts down, then ramps: new frames land by themselves
+        case 14: applyOutcome(state.stopFromUi()); break;
+        case 15:  // developer menu, root
             demoDev = true;
             demoDevIn = devmenu::Inputs{};
             demoDevIn.devOn = true;
@@ -358,26 +361,26 @@ static void demoAdvance(int i, uint32_t now) {
             inDevMenu = true;
             ui.setMenuMode(true);
             break;
-        case 15:  // the scan list
+        case 16:  // the scan list
             demoDevIn.networkCount = 3;
             demoDevIn.networks[0] = "Insel";
             demoDevIn.networks[1] = "Nachbar-WLAN";
             demoDevIn.networks[2] = "Gast";
             devMenu.tapRow(2, demoDevIn);
             break;
-        case 16:  // the on-screen keyboard
+        case 17:  // the on-screen keyboard
             devMenu.tapRow(0, demoDevIn);
             devMenu.append('s');
             devMenu.append('e');
             devMenu.append('c');
             break;
-        case 17:  // the digits and symbols page
+        case 18:  // the digits and symbols page
             devMenu.setPage(devmenu::Page::Symbols1);
             break;
-        case 18:  // the remaining punctuation
+        case 19:  // the remaining punctuation
             devMenu.setPage(devmenu::Page::Symbols2);
             break;
-        case 19:
+        case 20:
             // End on the main screen. Leaving the tour inside the menu means a
             // flashed screenshot build answers no touch but CLOSE, which reads
             // as a dead touchscreen. leaveDevMenu() is defined further down, so
@@ -389,7 +392,7 @@ static void demoAdvance(int i, uint32_t now) {
         // The three badge states on the main screen: A? (requested), A, M.
         // The state comes from the sim belt itself, never from a synthetic
         // observe. Gated on simSource: a real belt must not be sent set_mode.
-        case 20:  // request held back, so the sim keeps its old mode: A?
+        case 21:  // request held back, so the sim keeps its old mode: A?
             if (!simSource) break;
             inDevMenu = false;
             ui.setMenuMode(false);
@@ -397,12 +400,12 @@ static void demoAdvance(int i, uint32_t now) {
             demoHoldSetMode = true;
             applyOutcome(state.requestMode(policy::BeltMode::Auto, false));
             break;
-        case 21:  // release: the sim accepts Auto and reports it on its next poll: A
+        case 22:  // release: the sim accepts Auto and reports it on its next poll: A
             if (!simSource) break;
             demoHoldSetMode = false;
             applyOutcome(state.requestMode(policy::BeltMode::Auto, false));
             break;
-        case 22:  // sim reports Manual: M
+        case 23:  // sim reports Manual: M
             if (!simSource) break;
             applyOutcome(state.requestMode(policy::BeltMode::Manual, false));
             break;

@@ -64,6 +64,13 @@ SIM BELT tag, and skips pairing (3 steps: this, ARM, last step).
 
 Disarmed. The left button reads ARM; STOP is always red.
 
+![Main screen, a refused tap](screens/main-reason.png)
+
+A tap the bridge will not act on says why for about a second, in amber where
+the unit normally sits: here `+` was tapped while disarmed. The other reasons
+are "STOP first", "Belt offline", "Starting - wait", "AUTO sets speed",
+"AUTO: step on to start", "Belt not ready" and "Leave AUTO first".
+
 ![Main screen, armed, START available](screens/main-armed-start.png)
 
 Armed with the belt stopped and linked. The left button becomes a bright green

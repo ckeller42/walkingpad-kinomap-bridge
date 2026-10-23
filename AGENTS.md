@@ -101,6 +101,8 @@ inference sit unmarked next to a measurement.
   (issue #3) was only ever visible because the raw bytes were written down.
 - `tools/logparse.py` decodes a captured log into a timeline and prints what it
   could not parse, rather than hiding it.
+- `tools/assert_capture.py` re-derives the measured facts from the frames in
+  `docs/captures/`; CI runs it, so a `measured` fact is a check, not a sentence.
 
 ## Testing against hardware
 
