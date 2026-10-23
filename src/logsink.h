@@ -53,8 +53,9 @@ void begin();
  * call also reads it without blocking: a datagram starting `hello` makes its
  * sender the unicast target for 120 s, and while one is live every datagram
  * is sent twice, broadcast and unicast. A flush with nothing pending sends
- * the live target alone a header-only heartbeat `<now> udp-seq <n>` that
- * repeats the last `n`, so a quiet log and a lost datagram are told apart.
+ * the live target alone a header-only heartbeat `<now> udp-seq <n> idle`:
+ * datagrams up to `n` were sent and nothing since, so a quiet log and a lost
+ * datagram are told apart.
  */
 void tick(uint32_t nowMs);
 

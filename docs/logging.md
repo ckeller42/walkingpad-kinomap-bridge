@@ -102,8 +102,13 @@ because a listener binds 9999 to hear the broadcast anyway. Unicast frames are
 acknowledged and retried by the Wi-Fi MAC. `log` shows the target as
 `unicast=<ip>` (or `unicast=-`). The listener then sees each datagram twice
 and drops the second copy by its header. A flush with nothing to send gives
-the target alone a header-only heartbeat that repeats the last `n`, so a quiet
-log can be told from a lost datagram without broadcast listeners seeing a gap.
+the target alone a header-only heartbeat, `<millis> udp-seq <n> idle`, which
+says datagrams up to `n` were sent and nothing since. A reader that counts only
+data-bearing headers as received then tells a quiet log (heartbeat `n` after
+datagram `n`) from a lost datagram (heartbeat `n`, no datagram `n`). The
+heartbeat repeats `n` instead of taking a new number, so broadcast listeners,
+which never get it, see no gap; `logparse.py` shows it as an `udp-seq` row with
+`idle` in its text.
 `tools/e2e_sim.py` does all of this (hello on the first datagram, then every
 60 s). A check whose window overlaps a gap still fails, and its evidence ends
 in `; udp lost (seq a->b)`, which says why. `tools/logcat.py` only listens, so

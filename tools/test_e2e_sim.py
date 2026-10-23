@@ -278,6 +278,11 @@ def seq(t, n, millis=1000):
     return udp(t, f"udp-seq {n}", millis)
 
 
+def idle(t, n, millis):
+    """The bridge's heartbeat: nothing to send; datagrams up to n were sent."""
+    return udp(t, f"udp-seq {n} idle", millis)
+
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 RECORDING = REPO / "docs/captures/e2e-sim-2026-10-23"
 
@@ -330,7 +335,9 @@ class SeqGapTest(unittest.TestCase):
     def test_recording_with_seq_replays_green(self):
         # The 2026-10-23-seq recording: HEAD firmware, udp-seq headers, the gate.
         s = ReplaySession(RECORDING.with_name(RECORDING.name + "-seq") / "timeline.jsonl")
-        self.assertTrue(e2e_sim._seq_headers(s.timeline()))
+        heads = e2e_sim._seq_headers(s.timeline())
+        self.assertTrue([h for h in heads if not h[3]])  # data-bearing headers
+        self.assertTrue([h for h in heads if h[3]])      # and `idle` heartbeats
         e2e_sim.print = lambda *a, **k: None
         try:
             results = e2e_sim.run_all(list(e2e_sim.SCENARIOS), s)
@@ -382,13 +389,31 @@ class AbsentHoldTest(unittest.TestCase):
         # Logged right after the command, flushed 0.8 s later: the old [anchor, now]
         # window (a few ms) passed over it.
         recs = self.START + [seq(1.8, 2, 1050), udp(1.8, "emit StartSequence tenths=20", 1050),
-                             seq(2.8, 2, 2300)]
+                             idle(2.8, 2, 2300)]
         r = run(recs, self.STEPS)
         self.assertFalse(r[1].ok)
         self.assertIn("matched t=1.800 emit StartSequence", r[1].why)
 
     def test_covered_window_passes_and_judges_lines_in_the_hold(self):
-        recs = self.START + [seq(1.8, 2, 1050), udp(1.8, "emit Stop tenths=0", 1050), seq(2.8, 2, 2300)]
+        recs = self.START + [seq(1.8, 2, 1050), udp(1.8, "emit Stop tenths=0", 1050), idle(2.8, 2, 2300)]
+        r = run(recs, self.STEPS)
+        self.assertTrue(r[1].ok, r[1].why)
+        self.assertEqual(r[1].why, "no match in 1.80 s (3 udp lines)")
+
+    def test_lost_datagram_behind_a_heartbeat_is_a_gap_and_inconclusive(self):
+        # Datagram 2 (carrying the forbidden line) lost on both copies; heartbeat
+        # "2 idle" says it was sent. It must neither hide the loss nor close the hold.
+        recs = self.START + [idle(2.8, 2, 2300)]
+        gaps = e2e_sim.seq_gaps(recs)
+        self.assertEqual([(g.a, g.b, g.t_b) for g in gaps], [(1, 3, 2.8)])
+        r = run(recs, self.STEPS)
+        self.assertFalse(r[1].ok)
+        self.assertTrue(r[1].why.startswith("inconclusive: datagram 2 lost"), r[1].why)
+        self.assertTrue(r[1].why.endswith("; udp lost (seq 1->3)"), r[1].why)
+
+    def test_heartbeat_after_received_datagram_closes_the_hold(self):
+        recs = self.START + [seq(1.8, 2, 1050), udp(1.8, "emit Stop tenths=0", 1050), idle(2.8, 2, 2300)]
+        self.assertEqual(e2e_sim.seq_gaps(recs), [])
         r = run(recs, self.STEPS)
         self.assertTrue(r[1].ok, r[1].why)
         self.assertEqual(r[1].why, "no match in 1.80 s (3 udp lines)")
@@ -420,9 +445,10 @@ class AbsentHoldTest(unittest.TestCase):
                 self._cursor += min(seconds, 0.037)
 
         timelines = [
-            self.START + [seq(1.8, 2, 1050), udp(1.8, "emit Stop tenths=0", 1050), seq(2.8, 2, 2300)],
-            self.START + [seq(1.8, 2, 1050), udp(1.8, "emit StartSequence tenths=20", 1050), seq(2.8, 2, 2300)],
+            self.START + [seq(1.8, 2, 1050), udp(1.8, "emit Stop tenths=0", 1050), idle(2.8, 2, 2300)],
+            self.START + [seq(1.8, 2, 1050), udp(1.8, "emit StartSequence tenths=20", 1050), idle(2.8, 2, 2300)],
             self.START + [seq(1.8, 2, 1500)],
+            self.START + [idle(2.8, 2, 2300)],
             [x for x in self.START if not x["line"].startswith("udp-seq")] + [udp(2.4, "x", 2400)],
         ]
         for recs in timelines:

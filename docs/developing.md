@@ -121,8 +121,11 @@ was fine (the console and FTMS streams agreed). Now:
 - Every datagram opens with a `<millis> udp-seq <n>` header, so a lost one is
   a gap in `n`. The runner says `hello` to the bridge, which then also
   unicasts every datagram to it (acknowledged and retried by the Wi-Fi MAC),
-  and, when it has nothing to send, a header-only heartbeat repeating the
-  last `n`.
+  and, when it has nothing to send, a header-only heartbeat
+  `<millis> udp-seq <n> idle`: datagrams up to `n` were sent, nothing since.
+  The harness counts only data-bearing headers as received, so a datagram
+  `n` lost on both copies is a gap once heartbeat `n` arrives, rather than
+  being hidden by it.
 - A failed check whose window overlaps a gap still **fails**, and its evidence
   ends in `; udp lost (seq a->b)`, which says why: treat it as missing
   evidence and re-run before suspecting the bridge.
@@ -132,14 +135,19 @@ was fine (the console and FTMS streams agreed). Now:
   caused cannot slip past in the second before its flush. A gap inside the
   window makes it FAIL as `inconclusive: udp lost ...`, and no covering header
   within 5 s makes it FAIL as `inconclusive: no datagram covered the window`.
+  A heartbeat `n` closes the window only if datagram `n` itself was received;
+  otherwise the check FAILs as `inconclusive: datagram <n> lost`.
   A recording without `udp-seq` lines holds 2.5 s of host time instead.
 - `report.md` counts the duplicate datagrams (the broadcast and the unicast
   copy, recorded once) and lists every gap.
 
 What `seq_gaps` cannot see, because a gap needs a number on either side: a
-lost datagram 1; lost trailing datagrams at the end of a run; and a reboot
-less than 3 s after the last header whose own datagram 1 is also lost (the new
-boot's numbers then read as late datagrams of the old boot).
+lost datagram 1; lost trailing datagrams after the run's last heartbeat, or
+while no hello sender is live (heartbeats go to it alone); and a reboot less
+than 3 s after the last header whose own datagram 1 is also lost (the new
+boot's numbers then read as late datagrams of the old boot). Trailing loss
+during a run is no longer a blind spot: the next heartbeat names the number
+the bridge got to, and everything above the last received one is a gap.
 
 The failing fixtures under `tools/fixtures/e2e/` are **synthetic**: each is the
 committed recording with exactly one thing removed, and its `README.md` says

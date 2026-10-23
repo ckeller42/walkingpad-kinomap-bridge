@@ -31,7 +31,9 @@ Three streams, one timeline:
   udp      the logsink broadcast on port 9999: evidence, verbatim. Every
            datagram opens with a `udp-seq <n>` line, so a lost one shows
            as a gap; the runner says `hello` to the bridge, which then
-           also unicasts to it (acknowledged on Wi-Fi, so loss is rare).
+           also unicasts to it (acknowledged on Wi-Fi, so loss is rare)
+           and, when it has nothing to send, a heartbeat `udp-seq <n> idle`:
+           datagrams up to n were sent, so a lost n shows as a gap too.
 
 Every record carries host time `t`, so a check like "udp line within 2 s of
 the last command" is a predicate over the recorded timeline. That is what
@@ -97,7 +99,7 @@ def _secs(x: float) -> str:
     return f"{x:g}"
 
 
-_SEQ_LINE = re.compile(r"udp-seq (\d+)$")
+_SEQ_LINE = re.compile(r"udp-seq (\d+)( idle)?$")
 REORDER_MS = 3000  # a header this much older than the newest is a late datagram, not a reboot
 
 
@@ -113,14 +115,18 @@ class SeqGap:
         return f"udp lost (seq {self.a}->{self.b})"
 
 
-def _seq_headers(records) -> List[Tuple[float, Optional[int], int]]:
-    """(t, millis, n) of every `udp-seq <n>` header, in timeline order."""
+def _seq_headers(records) -> List[Tuple[float, Optional[int], int, bool]]:
+    """(t, millis, n, idle) of every `udp-seq <n>` header, in timeline order.
+
+    `idle` marks the bridge's heartbeat `udp-seq <n> idle`: it carries no
+    lines and says datagrams up to n were sent, not that n was received.
+    """
     out = []
     for r in records:
         if r.get("stream") == "udp":
             m = _SEQ_LINE.match(r["line"])
             if m:
-                out.append((r["t"], r.get("millis"), int(m.group(1))))
+                out.append((r["t"], r.get("millis"), int(m.group(1)), bool(m.group(2))))
     return out
 
 
@@ -134,27 +140,39 @@ def seq_gaps(records) -> List[SeqGap]:
     arrived, so a duplicate (the broadcast and the unicast copy) or a
     reordered datagram is not a gap.
 
-    Blind spots, because a gap needs a number seen on either side of it:
-    a lost datagram 1 (nothing below it was seen); lost trailing datagrams
-    (nothing above them arrives before the run ends); and a reboot less
-    than REORDER_MS after the last header whose own datagram 1 is also lost
-    (the new boot's numbers read as late datagrams of the old one).
+    Only data-bearing headers count as received. An `idle` heartbeat n says
+    datagrams up to n were sent, so a data number up to n that never arrived
+    is a gap even with nothing received above it: heartbeat n does not hide
+    a lost datagram n, and lost trailing datagrams show as soon as the next
+    heartbeat arrives. Such a gap ends at b = n + 1, at that heartbeat's t.
+
+    Blind spots, because a gap needs a number on either side of it: a lost
+    datagram 1 (nothing below it was seen); lost trailing datagrams after
+    the run's last heartbeat, or while no hello sender is live (heartbeats
+    go to it alone); and a reboot less than REORDER_MS after the last header
+    whose own datagram 1 is also lost (the new boot's numbers read as late
+    datagrams of the old one).
     """
     boots, top_ms = [], None
-    for t, ms, n in _seq_headers(records):
+    for t, ms, n, idle in _seq_headers(records):
         back = ms is not None and top_ms is not None and ms < top_ms
         if not boots or (back and (n == 1 or ms < top_ms - REORDER_MS)):
-            boots.append({})
+            boots.append(({}, {}))  # (data n -> first t, idle n -> first t)
             top_ms = None
         if ms is not None:
             top_ms = ms if top_ms is None else max(top_ms, ms)
-        boots[-1].setdefault(n, t)
+        boots[-1][1 if idle else 0].setdefault(n, t)
     gaps = []
-    for seen in boots:
-        ns = sorted(seen)
+    for data, idles in boots:
+        ns = sorted(data)
         for a, b in zip(ns, ns[1:]):
             if b > a + 1:
-                gaps.append(SeqGap(a, b, seen[a], seen[b]))
+                gaps.append(SeqGap(a, b, data[a], data[b]))
+        top = ns[-1] if ns else 0
+        above = [n for n in idles if n > top]
+        if above:  # sent up to max(above), received nothing past top
+            t_b = idles[min(above)]
+            gaps.append(SeqGap(top, max(above) + 1, data[top] if ns else t_b, t_b))
     return gaps
 
 
@@ -559,7 +577,7 @@ class LiveSession(Session):
         self.notes: List[str] = []   # precondition lines and stream events, for the report
         self.udp_unparsed = 0
         self.udp_duplicates = 0        # datagrams seen twice (broadcast + unicast copy)
-        self._seen_seq = set()         # (ip, millis, n) of every header recorded
+        self._seen_seq = set()         # (ip, millis, n, idle) of every header recorded
         self._bridge_ip: Optional[str] = None
         self._hello_at: Optional[float] = None
         self._udp_raw: List[str] = []  # "<ip>  <line as received>", for udp.log
@@ -716,7 +734,7 @@ class LiveSession(Session):
             m = _UDP_LINE.match(lines[0])
             h = _SEQ_LINE.match(m.group(2)) if m else None
             if h:
-                key = (addr[0], int(m.group(1)), int(h.group(1)))
+                key = (addr[0], int(m.group(1)), int(h.group(1)), bool(h.group(2)))
                 if key in self._seen_seq:  # the second copy of one datagram
                     self.udp_duplicates += 1
                     return
@@ -1013,16 +1031,20 @@ def _anchor_millis(recs, anchor) -> Optional[float]:
 
     A record arrives after it was logged, so `millis + (anchor - t) * 1000` is
     a lower bound for every one of them; the largest over the last
-    ANCHOR_LOOKBACK_S is the tightest (a heartbeat header, logged as it is
+    ANCHOR_LOOKBACK_S is the tightest (a heartbeat header, stamped as it is
     sent, is nearly exact). With none that recent the nearest record serves,
     and with none at all the first header after the anchor.
+
+    Being a lower bound, the estimate errs short: it lowers the threshold a
+    covering header must reach, so the window can close early, by at most
+    the flush latency of the record that set the bound.
     """
     prior = [r for r in recs if r["stream"] == "udp" and isinstance(r.get("millis"), int)
              and r["t"] <= anchor + EPS]
     if prior:
         recent = [r for r in prior if r["t"] >= anchor - ANCHOR_LOOKBACK_S] or prior[-1:]
         return max(r["millis"] + (anchor - r["t"]) * 1000 for r in recent)
-    return next((ms for t, ms, _ in _seq_headers(recs) if t >= anchor - EPS and ms is not None), None)
+    return next((ms for t, ms, _, _ in _seq_headers(recs) if t >= anchor - EPS and ms is not None), None)
 
 
 def _absent_window(s: Session, anchor: float) -> Tuple[float, Optional[str]]:
@@ -1035,19 +1057,27 @@ def _absent_window(s: Session, anchor: float) -> Tuple[float, Optional[str]]:
     recording predates them and the window is that long. Only records with
     `t` up to the session's `now()` are looked at, and the result depends on
     recorded `t` alone, so a live run and its replay judge the same window.
+
+    An `idle` heartbeat n closes the window only if data-bearing datagram n
+    was received; otherwise datagram n, sent but lost, may have carried the
+    line, and the window ends there as inconclusive.
     """
     while True:
         p = s.now()
         recs = [r for r in s.timeline() if r["t"] <= p + EPS]
         heads = _seq_headers(recs)
         if (p >= anchor + ABSENT_NO_SEQ_S - EPS
-                and not any(t <= anchor + ABSENT_NO_SEQ_S + EPS for t, _, _ in heads)):
+                and not any(t <= anchor + ABSENT_NO_SEQ_S + EPS for t, _, _, _ in heads)):
             return anchor + ABSENT_NO_SEQ_S, None
         a_ms = _anchor_millis(recs, anchor)
         if a_ms is not None:
-            end = next((t for t, ms, _ in heads if anchor - EPS <= t <= anchor + ABSENT_HOLD_S + EPS
-                        and ms is not None and ms >= a_ms + ABSENT_COVER_MS - EPS), None)
-            if end is not None:
+            cover = next(((t, n, idle) for t, ms, n, idle in heads
+                          if anchor - EPS <= t <= anchor + ABSENT_HOLD_S + EPS
+                          and ms is not None and ms >= a_ms + ABSENT_COVER_MS - EPS), None)
+            if cover is not None:
+                end, n, idle = cover
+                if idle and not any(m == n and not i for _, _, m, i in heads):
+                    return end, f"inconclusive: datagram {n} lost"
                 return end, None
         if p >= anchor + ABSENT_HOLD_S - EPS:
             return anchor + ABSENT_HOLD_S, "inconclusive: no datagram covered the window"
@@ -1066,7 +1096,7 @@ def _check_udp_absent(step, s, anchor):
     if hit is not None:
         return False, f"matched {_ev(hit)}", end
     if uncovered:
-        return False, f"{uncovered} ({_secs(ABSENT_HOLD_S)} s, {len(window)} udp lines)", end
+        return False, f"{uncovered} ({end - anchor:.2f} s, {len(window)} udp lines)", end
     return True, f"no match in {end - anchor:.2f} s ({len(window)} udp lines)", end
 
 
@@ -1135,7 +1165,7 @@ def _gap_in(s: Session, lo: float, hi: float) -> Optional[SeqGap]:
     """
     if not _seq_headers(s.timeline()):
         return None
-    while (not any(t >= hi - EPS for t, _, _ in _seq_headers(s.timeline()))
+    while (not any(t >= hi - EPS for t, _, _, _ in _seq_headers(s.timeline()))
            and s.now() < hi + SEQ_SETTLE_S - EPS):
         s.wait(min(POLL_S, hi + SEQ_SETTLE_S - s.now()))
     return next((g for g in seq_gaps(s.timeline()) if g.t_a < hi + EPS and g.t_b > lo - EPS), None)

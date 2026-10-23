@@ -115,15 +115,17 @@ void sendChunk(const char* chunk, size_t len, uint32_t nowMs) {
 }
 
 // A flush with nothing to send still tells a hello sender how far the log has
-// got: a header-only datagram `<now> udp-seq <n>`, unicast only, repeating the
-// last number rather than taking a new one. Without it a quiet log is silent,
-// and a listener cannot tell "nothing was logged" from "the datagram was
-// lost". Repeating n keeps broadcast-only listeners (logcat.py) free of gaps
-// they would otherwise see for every heartbeat they never receive.
+// got: a header-only datagram `<now> udp-seq <n> idle`, unicast only, meaning
+// "datagrams up to n have been sent, nothing since". Without it a quiet log is
+// silent, and a listener cannot tell "nothing was logged" from "the datagram
+// was lost". It repeats n rather than taking a new number, which keeps
+// broadcast-only listeners (logcat.py) free of gaps for heartbeats they never
+// receive, and it says `idle` so a reader never mistakes it for datagram n
+// itself: if datagram n was lost, the heartbeat proves it was sent.
 void sendHeartbeat(uint32_t nowMs) {
     if (udpSeq == 0 || !unicastLive(nowMs)) return;
     char pkt[40];
-    const int h = snprintf(pkt, sizeof pkt, "%lu udp-seq %lu\n", (unsigned long)nowMs, (unsigned long)udpSeq);
+    const int h = snprintf(pkt, sizeof pkt, "%lu udp-seq %lu idle\n", (unsigned long)nowMs, (unsigned long)udpSeq);
     if (h <= 0 || (size_t)h >= sizeof pkt) return;
     if (udp.beginPacket(unicastIp, LOG_UDP_PORT)) {
         udp.write((const uint8_t*)pkt, (size_t)h);
