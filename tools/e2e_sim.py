@@ -16,7 +16,11 @@ bridge's model of it.
 
 The `src=sim` gate: before any other command the runner asks `status` and
 stops (exit 2) unless the answer says `src=sim`. A harness that sends `arm`
-and `start` must never reach firmware wired to a real belt.
+and `start` must never reach firmware wired to a real belt. The gate is
+re-asserted before every scenario (`gate src=sim`), and a boot banner or
+`belt source` line on the console after the preconditions marks the bench
+broken: a reboot mid-run may have come up on the real belt (holding the
+screen at boot flips the source), so nothing further is sent.
 
 Three streams, one timeline:
 
@@ -37,8 +41,10 @@ A check whose stream recorded nothing at all reports `stream silent`, never
 PASS: a dead stream proves nothing. A failed windowed check whose window
 overlaps a `udp-seq` gap ends in `; udp lost (seq a->b)`, and a `udp absent`
 over a gap fails as `inconclusive`: the evidence is missing, which is not
-the same as the bridge misbehaving. A recording without `udp-seq` lines
-(older firmware) has no gaps and is judged as before.
+the same as the bridge misbehaving. A `udp absent` holds its window open
+until a datagram logged at least a flush period after the command has
+arrived (2.5 s of host time for a recording without `udp-seq` lines, which
+has no gaps either), so it judges what the command could have caused.
 
 Exit status: 0 all checks pass, 1 a check failed, 2 a precondition failed
 (no port, not `src=sim`, no recording).
@@ -127,6 +133,12 @@ def seq_gaps(records) -> List[SeqGap]:
     gaps are the numbers between the smallest and largest seen that never
     arrived, so a duplicate (the broadcast and the unicast copy) or a
     reordered datagram is not a gap.
+
+    Blind spots, because a gap needs a number seen on either side of it:
+    a lost datagram 1 (nothing below it was seen); lost trailing datagrams
+    (nothing above them arrives before the run ends); and a reboot less
+    than REORDER_MS after the last header whose own datagram 1 is also lost
+    (the new boot's numbers read as late datagrams of the old one).
     """
     boots, top_ms = [], None
     for t, ms, n in _seq_headers(records):
@@ -156,6 +168,14 @@ class Con:
 
     def __str__(self):
         return f"con {self.cmd}" + ("" if self.expect == "ok" else f" -> {self.expect}")
+
+
+@dataclass
+class SrcSim:
+    """Before each scenario: `status` must still say `src=sim`; anything else breaks the bench."""
+
+    def __str__(self):
+        return "gate src=sim"
 
 
 @dataclass
@@ -273,11 +293,15 @@ class Session:
 
     Console records have `dir` `>` (sent), `<` (received) or `!` (a host
     note: no `ok`/`err` arrived in time; the reply ends there in replay too).
-    `broken` is set when the bench itself failed (serial port gone): the run
-    then stops and exits 2.
+    `broken` is set when the bench itself failed (serial port gone, a reboot,
+    a `src` other than `sim`): the run then stops and exits 2.
     """
 
     broken: Optional[str] = None
+
+    def gate_recorded(self) -> bool:
+        """False only for a replay of a recording made before the per-scenario gate."""
+        return True
 
     def begin_scenario(self, name: str) -> None:
         """Called before a scenario's first step; a live session records a `scenario` marker."""
@@ -452,6 +476,16 @@ class ReplaySession(Session):
             reply.append(r["line"])
         return rec["t"], reply
 
+    def gate_recorded(self):
+        """True when this scenario's next recorded command is the gate's `status`."""
+        i = self._ci
+        while (i < len(self._console) and self._console[i]["dir"] != ">"
+               and self._console[i]["t"] < self._end):
+            i += 1
+        if i >= len(self._console) or self._console[i]["t"] >= self._end:
+            return True  # nothing recorded: console() says "recording ended"
+        return self._console[i]["line"] == "status"
+
     def _link(self, kind):
         if self._li >= len(self._links) or self._links[self._li]["t"] >= self._end:
             raise self._ended(f"ftms {kind}")
@@ -501,6 +535,8 @@ FTMS_CP = "00002ad9-0000-1000-8000-00805f9b34fb"      # Control Point (indicatio
 FTMS_TD = "00002acd-0000-1000-8000-00805f9b34fb"      # Treadmill Data (notifications)
 FTMS_STATUS = "00002ada-0000-1000-8000-00805f9b34fb"  # Machine Status (notifications)
 _UDP_LINE = re.compile(r"(\d+) (.*)$")
+# Lines only a boot prints: the ROM banner and the firmware's belt-source choice.
+_BOOT_LINE = re.compile(r"(ESP-ROM:|rst:0x|belt source: )")
 
 
 class LiveSession(Session):
@@ -539,6 +575,7 @@ class LiveSession(Session):
         self._loop = None
         self._client = None
         self._closing_ble = False
+        self._watch_boot = False       # set once the preconditions hold
 
     # ---- recording
 
@@ -592,6 +629,10 @@ class LiveSession(Session):
                 if not line or not keep_line(line, st):
                     continue
                 self._add(stream="console", dir="<", line=line)
+                if self._watch_boot and not self.broken and _BOOT_LINE.match(line):
+                    self.broken = (f"device rebooted at t={self.now():.3f} ('{line}'): "
+                                   "the belt source may no longer be the simulated one")
+                    self.notes.append(self.broken)
                 self._replies.put(line)
 
     def console(self, cmd):
@@ -862,6 +903,7 @@ class LiveSession(Session):
         except StepError as e:
             return fail("bridge not advertising; is a phone holding the link?", str(e))
         self._pre(True, f"'{BRIDGE_NAME}' advertises: ftms connect + disconnect")
+        self._watch_boot = True  # from here a boot banner is a mid-run reboot
         return None
 
     # ---- shutdown and files
@@ -958,15 +1000,74 @@ def _check_udp(step, s, anchor):
     return False, f"no match in {_secs(step.within)} s"
 
 
+ABSENT_COVER_MS = 1000  # the sink's flush period: a header this much newer than the anchor closes the window
+ABSENT_NO_SEQ_S = 2.5   # without udp-seq headers, how long the window is held open
+ABSENT_HOLD_S = 5.0     # with them, how long to wait for a header that covers the window
+
+
+ANCHOR_LOOKBACK_S = 5.0  # udp records this recent all bound the anchor's millis from below
+
+
+def _anchor_millis(recs, anchor) -> Optional[float]:
+    """The bridge's millis at host time `anchor`, from the udp records at or before it.
+
+    A record arrives after it was logged, so `millis + (anchor - t) * 1000` is
+    a lower bound for every one of them; the largest over the last
+    ANCHOR_LOOKBACK_S is the tightest (a heartbeat header, logged as it is
+    sent, is nearly exact). With none that recent the nearest record serves,
+    and with none at all the first header after the anchor.
+    """
+    prior = [r for r in recs if r["stream"] == "udp" and isinstance(r.get("millis"), int)
+             and r["t"] <= anchor + EPS]
+    if prior:
+        recent = [r for r in prior if r["t"] >= anchor - ANCHOR_LOOKBACK_S] or prior[-1:]
+        return max(r["millis"] + (anchor - r["t"]) * 1000 for r in recent)
+    return next((ms for t, ms, _ in _seq_headers(recs) if t >= anchor - EPS and ms is not None), None)
+
+
+def _absent_window(s: Session, anchor: float) -> Tuple[float, Optional[str]]:
+    """Hold until the evidence for `[anchor, end]` is in: (end, why it is not, or None).
+
+    The sink flushes once a second, so a line the command caused can arrive a
+    second after it. The window closes on the first `udp-seq` header logged at
+    least ABSENT_COVER_MS after the anchor (datagrams go out in order, so every
+    earlier line was sent before it); with no header up to ABSENT_NO_SEQ_S the
+    recording predates them and the window is that long. Only records with
+    `t` up to the session's `now()` are looked at, and the result depends on
+    recorded `t` alone, so a live run and its replay judge the same window.
+    """
+    while True:
+        p = s.now()
+        recs = [r for r in s.timeline() if r["t"] <= p + EPS]
+        heads = _seq_headers(recs)
+        if (p >= anchor + ABSENT_NO_SEQ_S - EPS
+                and not any(t <= anchor + ABSENT_NO_SEQ_S + EPS for t, _, _ in heads)):
+            return anchor + ABSENT_NO_SEQ_S, None
+        a_ms = _anchor_millis(recs, anchor)
+        if a_ms is not None:
+            end = next((t for t, ms, _ in heads if anchor - EPS <= t <= anchor + ABSENT_HOLD_S + EPS
+                        and ms is not None and ms >= a_ms + ABSENT_COVER_MS - EPS), None)
+            if end is not None:
+                return end, None
+        if p >= anchor + ABSENT_HOLD_S - EPS:
+            return anchor + ABSENT_HOLD_S, "inconclusive: no datagram covered the window"
+        s.wait(min(POLL_S, max(anchor + ABSENT_HOLD_S - p, EPS)))
+
+
 def _check_udp_absent(step, s, anchor):
-    if not _udp(s.timeline()):
-        return False, "stream silent: no udp line recorded"
+    """(ok, why, end of the judged window)."""
+    end, uncovered = _absent_window(s, anchor)
+    upto = [r for r in s.timeline() if r["t"] <= end + EPS]
+    if not _udp(upto):
+        return False, "stream silent: no udp line recorded", end
     rx = re.compile(step.regex)
-    window = [r for r in _udp(s.timeline()) if anchor - EPS <= r["t"] <= s.now() + EPS]
+    window = [r for r in _udp(upto) if r["t"] >= anchor - EPS]
     hit = next((r for r in window if rx.search(r["line"])), None)
     if hit is not None:
-        return False, f"matched {_ev(hit)}"
-    return True, f"no match in {s.now() - anchor:.2f} s ({len(window)} udp lines)"
+        return False, f"matched {_ev(hit)}", end
+    if uncovered:
+        return False, f"{uncovered} ({_secs(ABSENT_HOLD_S)} s, {len(window)} udp lines)", end
+    return True, f"no match in {end - anchor:.2f} s ({len(window)} udp lines)", end
 
 
 def _check_speed(s, anchor, within, ok, describe):
@@ -1040,13 +1141,30 @@ def _gap_in(s: Session, lo: float, hi: float) -> Optional[SeqGap]:
     return next((g for g in seq_gaps(s.timeline()) if g.t_a < hi + EPS and g.t_b > lo - EPS), None)
 
 
-def _window(step, s: Session, anchor: float) -> Optional[Tuple[float, float]]:
+def _window(step, anchor: float, absent_end: Optional[float]) -> Optional[Tuple[float, float]]:
     """The host-time window a check judged, or None for checks that are not windowed."""
     if isinstance(step, UdpAbsent):
-        return anchor, s.now()
+        return anchor, absent_end
     if isinstance(step, (Udp, SpeedAtLeast, SpeedZero, Indication)):
         return anchor, anchor + step.within
     return None
+
+
+def _gate(s: Session, scenario: str) -> Tuple[bool, str]:
+    """`status` must say `src=sim`; any other answer marks the bench broken.
+
+    A console that does not answer is a failed step, as anywhere else: the
+    scenario ends there, and the next one asks again before sending anything.
+    """
+    _, reply = s.console("status")
+    status = next((ln for ln in reply if ln.startswith("status ")), None)
+    src = parse_status(status).get("src") if status else None
+    if src == "sim":
+        return True, status
+    s.broken = (f"before scenario '{scenario}': " +
+                (f"src={src or ''} is not the simulated belt" if status else
+                 f"no status line in the reply ({' / '.join(reply) or 'none'})"))
+    return False, f"bench broken: {s.broken}"
 
 
 def run_scenario(sc: Scenario, s: Session, on_result=None) -> List[CheckResult]:
@@ -1065,8 +1183,17 @@ def run_scenario(sc: Scenario, s: Session, on_result=None) -> List[CheckResult]:
     last_status = None  # the status line of the most recent control step only
     for step in sc.steps:
         label = str(step)
+        absent_end = None
         try:
-            if isinstance(step, Con):
+            if isinstance(step, SrcSim):
+                if not s.gate_recorded():
+                    continue  # a replay of a recording made before the per-scenario gate
+                ok, why = _gate(s, sc.name)
+                if not ok:
+                    judged(CheckResult(label, False, why))
+                    break
+                last_status = None
+            elif isinstance(step, Con):
                 last_status = None
                 anchor, reply = s.console(step.cmd)
                 body = []
@@ -1098,7 +1225,7 @@ def run_scenario(sc: Scenario, s: Session, on_result=None) -> List[CheckResult]:
             elif isinstance(step, Udp):
                 ok, why = _check_udp(step, s, anchor)
             elif isinstance(step, UdpAbsent):
-                ok, why = _check_udp_absent(step, s, anchor)
+                ok, why, absent_end = _check_udp_absent(step, s, anchor)
             elif isinstance(step, SpeedAtLeast):
                 ok, why = _check_speed(s, anchor, step.within, lambda v: v >= step.kmh - EPS,
                                        lambda seen: f"max {max(seen):.2f}")
@@ -1112,7 +1239,7 @@ def run_scenario(sc: Scenario, s: Session, on_result=None) -> List[CheckResult]:
         except StepError as e:
             judged(CheckResult(label, False, str(e)))
             break
-        win = _window(step, s, anchor)
+        win = _window(step, anchor, absent_end)
         if win is not None and (not ok or isinstance(step, UdpAbsent)):
             gap = _gap_in(s, *win)
             if gap is not None:
@@ -1228,7 +1355,7 @@ SCENARIOS: Dict[str, Scenario] = _scenarios(
         Con("mode manual"),
         Udp(r"belt mode 1 -> 2 raw=1", 5),
         Udp(r"emit ResetPolicy", 5),
-        Con("stop", expect="*"),
+        Con("stop"),
     ]),
     Scenario("wizard", [
         Con("wizard"),
@@ -1244,8 +1371,8 @@ SCENARIOS: Dict[str, Scenario] = _scenarios(
 
 
 def from_known_state(sc: Scenario) -> Scenario:
-    """The scenario as the runner sends it: `stop` first (ok or any err), so it starts from rest."""
-    return Scenario(sc.name, [Con("stop", expect="*")] + list(sc.steps))
+    """The scenario as the runner sends it: the `src=sim` gate, then `stop` (ok or any err)."""
+    return Scenario(sc.name, [SrcSim(), Con("stop", expect="*")] + list(sc.steps))
 
 
 def run_all(names: List[str], s: Session) -> Dict[str, List[CheckResult]]:
@@ -1339,7 +1466,9 @@ def run_replay(names: List[str], replay_dir: str) -> int:
     for u in s.unparsed:
         print(f"   unparsed: {u}")
     results = run_all(names, s)
-    return exit_code(all(scenario_ok(rs) for rs in results.values()), False)
+    if s.broken:
+        print(f"FAIL  {'bench':<14} {s.broken}", flush=True)
+    return exit_code(all(scenario_ok(rs) for rs in results.values()), s.broken is not None)
 
 
 def main():

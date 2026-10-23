@@ -79,13 +79,18 @@ It watches three streams and writes them into one host-timestamped timeline:
 
 **The `src=sim` gate.** Before anything else the runner asks `status` and stops
 (exit 2) unless the reply says `src=sim`. There is no override: a harness that
-sends `arm` and `start` must never reach firmware wired to a real belt.
+sends `arm` and `start` must never reach firmware wired to a real belt. The
+gate is asked again before every scenario (the `gate src=sim` row), and a boot
+banner or `belt source` line on the console after the preconditions marks the
+bench broken (exit 2, nothing further sent): a board that rebooted mid-run
+may have come up on the real belt, since holding the screen at boot flips the
+source.
 
 ```sh
 pio run -e cores3_sim -t upload --upload-port /dev/cu.usbmodem101
 ~/tools/venv-ble/bin/python tools/e2e_sim.py                  # every scenario
 ~/tools/venv-ble/bin/python tools/e2e_sim.py --scenario phone_start
-python3 tools/e2e_sim.py --replay docs/captures/e2e-sim-2026-10-23
+python3 tools/e2e_sim.py --replay docs/captures/e2e-sim-2026-10-23-seq
 ~/tools/venv-ble/bin/python tools/e2e_sim.py --record-to docs/captures/e2e-sim-<date>
 ```
 
@@ -96,23 +101,45 @@ stored Wi-Fi credentials ([logging](logging.md)). It records into
 status is 0 all green, 1 a check failed, 2 a precondition failed.
 
 `--replay` re-evaluates the same scenarios from `timeline.jsonl` with no
-hardware and no BLE or serial packages; CI replays the committed recording on
-every push, so a change to a check is tested against real bytes. Commit a new
+hardware and no BLE or serial packages; CI replays both committed recordings on
+every push, so a change to a check is tested against real bytes.
+`docs/captures/e2e-sim-2026-10-23` predates sequence numbers and the
+per-scenario gate, and stays as the evidence that such a recording still
+replays (the failing fixtures are derived from it);
+`docs/captures/e2e-sim-2026-10-23-seq` is the same suite on the firmware with
+`udp-seq` headers, unicast and heartbeats. Commit a new
 recording (`--record-to docs/captures/e2e-sim-<date>`) when a scenario or a
 check changes, or when bridge behaviour that a scenario covers changes; never
 edit one by hand.
 
-**Known limitation: the UDP log can lose a second.** The bridge batches about
-one second of log lines into one broadcast datagram, and broadcast frames are
-not acknowledged, so one lost datagram loses a second of evidence. On
-2026-10-23, 2 of 5 live runs failed a `udp` check that way while the bridge
-itself was fine (the console and FTMS streams agreed). Until the log sink
-numbers its datagrams and sends unicast (planned, so that a gap is reported as
-`udp lost` instead of as a check failure), treat a lone red `udp` check with
-green neighbours as a probable loss and re-run before suspecting the bridge.
-The reverse matters more: an absence check (`udp absent ...`) has a window of
-0.1 to 0.2 s and **passes wrongly** if the datagram that would have shown the
-line was lost.
+**Known limitation: the UDP log can still lose a datagram.** The bridge
+batches about one second of log lines into one datagram. Broadcast frames are
+not acknowledged, and on 2026-10-23, before the measures below, 2 of 5 live
+runs failed a `udp` check because a datagram was lost while the bridge itself
+was fine (the console and FTMS streams agreed). Now:
+
+- Every datagram opens with a `<millis> udp-seq <n>` header, so a lost one is
+  a gap in `n`. The runner says `hello` to the bridge, which then also
+  unicasts every datagram to it (acknowledged and retried by the Wi-Fi MAC),
+  and, when it has nothing to send, a header-only heartbeat repeating the
+  last `n`.
+- A failed check whose window overlaps a gap still **fails**, and its evidence
+  ends in `; udp lost (seq a->b)`, which says why: treat it as missing
+  evidence and re-run before suspecting the bridge.
+- An absence check (`udp absent ...`) holds its window open until a header
+  logged at least one flush period (1 s of bridge millis) after the command has
+  arrived, then judges every udp line in that window, so a line the command
+  caused cannot slip past in the second before its flush. A gap inside the
+  window makes it FAIL as `inconclusive: udp lost ...`, and no covering header
+  within 5 s makes it FAIL as `inconclusive: no datagram covered the window`.
+  A recording without `udp-seq` lines holds 2.5 s of host time instead.
+- `report.md` counts the duplicate datagrams (the broadcast and the unicast
+  copy, recorded once) and lists every gap.
+
+What `seq_gaps` cannot see, because a gap needs a number on either side: a
+lost datagram 1; lost trailing datagrams at the end of a run; and a reboot
+less than 3 s after the last header whose own datagram 1 is also lost (the new
+boot's numbers then read as late datagrams of the old boot).
 
 The failing fixtures under `tools/fixtures/e2e/` are **synthetic**: each is the
 committed recording with exactly one thing removed, and its `README.md` says

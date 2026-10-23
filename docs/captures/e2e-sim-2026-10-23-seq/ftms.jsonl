@@ -1,0 +1,40 @@
+{"t": 5.514281, "stream": "ftms", "kind": "connect", "uuid": "", "hex": ""}
+{"t": 5.650132, "stream": "ftms", "kind": "disconnect", "uuid": "", "hex": ""}
+{"t": 11.603693, "stream": "ftms", "kind": "connect", "uuid": "", "hex": ""}
+{"t": 11.798174, "stream": "ftms", "kind": "notify", "uuid": "2ada", "hex": "04"}
+{"t": 12.308226, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 13.313262, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 14.333432, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 15.338421, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 16.328434, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 17.333009, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 3c 00"}
+{"t": 18.338254, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 82 00"}
+{"t": 19.358224, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 c8 00"}
+{"t": 20.363712, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 82 00"}
+{"t": 21.383817, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 32 00"}
+{"t": 22.388973, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 22.566417, "stream": "ftms", "kind": "disconnect", "uuid": "", "hex": ""}
+{"t": 24.954197, "stream": "ftms", "kind": "connect", "uuid": "", "hex": ""}
+{"t": 25.269002, "stream": "ftms", "kind": "write", "uuid": "2ad9", "hex": "00"}
+{"t": 25.299352, "stream": "ftms", "kind": "indication", "uuid": "2ad9", "hex": "80 00 01"}
+{"t": 25.299892, "stream": "ftms", "kind": "write", "uuid": "2ad9", "hex": "07"}
+{"t": 25.329717, "stream": "ftms", "kind": "indication", "uuid": "2ad9", "hex": "80 07 01"}
+{"t": 25.359901, "stream": "ftms", "kind": "notify", "uuid": "2ada", "hex": "04"}
+{"t": 25.403942, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 26.423766, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 27.443905, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 28.478651, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 29.483558, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 30.503108, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 46 00"}
+{"t": 31.479906, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 8c 00"}
+{"t": 32.483634, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 c8 00"}
+{"t": 32.523747, "stream": "ftms", "kind": "write", "uuid": "2ad9", "hex": "02 fa 00"}
+{"t": 32.574125, "stream": "ftms", "kind": "indication", "uuid": "2ad9", "hex": "80 02 01"}
+{"t": 33.488802, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 fa 00"}
+{"t": 33.555171, "stream": "ftms", "kind": "write", "uuid": "2ad9", "hex": "08 01"}
+{"t": 33.594408, "stream": "ftms", "kind": "indication", "uuid": "2ad9", "hex": "80 08 01"}
+{"t": 34.508568, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 b4 00"}
+{"t": 35.513605, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 64 00"}
+{"t": 36.503934, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 14 00"}
+{"t": 37.493502, "stream": "ftms", "kind": "notify", "uuid": "2acd", "hex": "00 00 00 00"}
+{"t": 37.690648, "stream": "ftms", "kind": "disconnect", "uuid": "", "hex": ""}

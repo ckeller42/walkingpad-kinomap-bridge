@@ -19,13 +19,25 @@ jobs:
           restore-keys: pio-${{ runner.os }}-
       # The measured protocol facts, re-derived from the committed capture's bytes.
       - run: python3 tools/assert_capture.py docs/captures/auto-mode-2026-10-22.log
-      # The sim-belt E2E harness: its unit tests, the committed bench recording
-      # replayed (no hardware), and each synthetic fixture, which must fail.
+      # The sim-belt E2E harness: its unit tests, both committed bench
+      # recordings replayed (no hardware; the first predates udp-seq), and each
+      # synthetic fixture, which must fail a check: exit 1 and a FAIL line.
       - run: python3 -m unittest tools/test_e2e_sim.py
       - run: python3 tools/e2e_sim.py --replay docs/captures/e2e-sim-2026-10-23
-      - run: |
-          for f in tools/fixtures/e2e/*/; do
-            if python3 tools/e2e_sim.py --replay "$f" >/dev/null; then echo "fixture $f did not fail"; exit 1; fi
+      - run: python3 tools/e2e_sim.py --replay docs/captures/e2e-sim-2026-10-23-seq
+      - name: every failing fixture fails a check
+        run: |
+          shopt -s nullglob
+          fixtures=(tools/fixtures/e2e/*/)
+          if [ ${#fixtures[@]} -eq 0 ]; then echo "::error::no fixtures in tools/fixtures/e2e/"; exit 1; fi
+          for f in "${fixtures[@]}"; do
+            rc=0
+            out=$(python3 tools/e2e_sim.py --replay "$f") || rc=$?
+            if [ "$rc" -ne 1 ] || ! grep -q '^FAIL' <<<"$out"; then
+              echo "::error::fixture $f: exit $rc, expected 1 with a FAIL line"
+              echo "$out"
+              exit 1
+            fi
           done
       - run: pip install platformio
       # Pass/fail is the exit code. No test-case count is asserted on purpose.

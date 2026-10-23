@@ -244,9 +244,10 @@ class LiveConsoleTest(unittest.TestCase):
         s.close()
         replay = run_scenario(sc, ReplaySession(pathlib.Path(self.dir.name) / "timeline.jsonl"))
         self.assertEqual([(r.step, r.ok, r.why) for r in live], [(r.step, r.ok, r.why) for r in replay])
-        self.assertEqual([(r.ok, r.why) for r in live], [(False, "no ok/err to 'stop' within 0.2 s")])
+        # The gate's `status` is the first thing sent; a silent console fails it as a step.
+        self.assertEqual([(r.ok, r.why) for r in live], [(False, "no ok/err to 'status' within 0.2 s")])
         self.assertIsNone(s.broken)  # a silent console is a failed check, not a broken bench
-        self.assertIn("! no ok/err to 'stop'", (pathlib.Path(self.dir.name) / "console.txt").read_text())
+        self.assertIn("! no ok/err to 'status'", (pathlib.Path(self.dir.name) / "console.txt").read_text())
 
     def test_serial_write_failure_is_a_step_error_and_marks_the_bench_broken(self):
         s = self.live(FakeSerial(fail=True))
@@ -300,8 +301,10 @@ class SeqGapTest(unittest.TestCase):
         self.assertIn("inconclusive: udp lost (seq 3->5)", r[1].why)
 
     def test_recording_without_seq_is_unchanged(self):
-        # The committed recording predates udp-seq: its replay must render the
-        # very tables the live run wrote, and exit 0.
+        # The committed recording predates udp-seq and the per-scenario gate:
+        # its replay renders the tables the live run wrote, except the rows
+        # this fix wave changed on purpose: `udp absent` now holds 2.5 s
+        # (finding 1), and auto_mode's closing stop expects `ok` (finding 7).
         s = ReplaySession(RECORDING / "timeline.jsonl")
         self.assertFalse([r for r in s.timeline() if r["stream"] == "udp" and r["line"].startswith("udp-seq")])
         e2e_sim.print = lambda *a, **k: None
@@ -312,9 +315,31 @@ class SeqGapTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = pathlib.Path(d) / "report.md"
             self.assertTrue(write_report(results, path))
-            replayed = path.read_text()
-        live = (RECORDING / "report.md").read_text().split("\n## preconditions and bench")[0]
-        self.assertEqual(replayed.rstrip("\n"), live.rstrip("\n"))
+            replayed = path.read_text().rstrip("\n").split("\n")
+        live = (RECORDING / "report.md").read_text().split("\n## preconditions and bench")[0].rstrip("\n").split("\n")
+        self.assertEqual(len(replayed), len(live))
+        for new, old in zip(replayed, live):
+            if new.startswith("| `udp absent"):
+                self.assertEqual(new.split("|")[1], old.split("|")[1])
+                self.assertIn("| PASS | no match in 2.50 s (", new)
+            elif new.startswith("| `con stop` |") and old.startswith("| `con stop -> *` |"):
+                self.assertEqual(new.split("|")[2:], old.split("|")[2:])
+            else:
+                self.assertEqual(new, old)
+
+    def test_recording_with_seq_replays_green(self):
+        # The 2026-10-23-seq recording: HEAD firmware, udp-seq headers, the gate.
+        s = ReplaySession(RECORDING.with_name(RECORDING.name + "-seq") / "timeline.jsonl")
+        self.assertTrue(e2e_sim._seq_headers(s.timeline()))
+        e2e_sim.print = lambda *a, **k: None
+        try:
+            results = e2e_sim.run_all(list(e2e_sim.SCENARIOS), s)
+        finally:
+            del e2e_sim.print
+        self.assertEqual(list(results), list(e2e_sim.SCENARIOS))
+        self.assertTrue(all(e2e_sim.scenario_ok(r) for r in results.values()))
+        self.assertTrue(all(r[0].step == "gate src=sim" for r in results.values()))
+        self.assertIsNone(s.broken)
 
     def test_passed_check_in_gap_is_not_annotated(self):
         recs = self.ARMED + [udp(2.0, "emit StartSequence tenths=20", 1500)]
@@ -344,6 +369,151 @@ class SeqGapTest(unittest.TestCase):
         r = run(recs, [Con("arm"), SpeedAtLeast(1.9, within=3)])
         self.assertFalse(r[1].ok)
         self.assertTrue(r[1].why.endswith("; udp lost (seq 3->5)"), r[1].why)
+
+
+class AbsentHoldTest(unittest.TestCase):
+    """`udp absent` holds until a datagram logged a flush period after the command arrives."""
+
+    START = [seq(0.5, 1, 500), udp(0.5, "emit ResetPolicy tenths=0", 500),
+             sent(1.0, "start"), got(1.0, "err not-armed")]
+    STEPS = [Con("start", expect="err not-armed"), UdpAbsent("emit StartSequence")]
+
+    def test_line_arriving_after_the_command_now_fails(self):
+        # Logged right after the command, flushed 0.8 s later: the old [anchor, now]
+        # window (a few ms) passed over it.
+        recs = self.START + [seq(1.8, 2, 1050), udp(1.8, "emit StartSequence tenths=20", 1050),
+                             seq(2.8, 2, 2300)]
+        r = run(recs, self.STEPS)
+        self.assertFalse(r[1].ok)
+        self.assertIn("matched t=1.800 emit StartSequence", r[1].why)
+
+    def test_covered_window_passes_and_judges_lines_in_the_hold(self):
+        recs = self.START + [seq(1.8, 2, 1050), udp(1.8, "emit Stop tenths=0", 1050), seq(2.8, 2, 2300)]
+        r = run(recs, self.STEPS)
+        self.assertTrue(r[1].ok, r[1].why)
+        self.assertEqual(r[1].why, "no match in 1.80 s (3 udp lines)")
+
+    def test_hold_with_no_covering_header_is_inconclusive(self):
+        recs = self.START + [seq(1.8, 2, 1500)]  # 1500 < 1000 + 500 + 1000: not a flush past the anchor
+        r = run(recs, self.STEPS)
+        self.assertFalse(r[1].ok)
+        self.assertTrue(r[1].why.startswith("inconclusive: no datagram covered the window"), r[1].why)
+
+    def test_recording_without_seq_holds_2_5_s(self):
+        recs = [udp(0.5, "emit ResetPolicy tenths=0", 500), sent(1.0, "start"), got(1.0, "err not-armed"),
+                udp(3.4, "emit StartSequence tenths=20", 3400), udp(3.6, "emit StartSequence tenths=20", 3600)]
+        r = run(recs, self.STEPS)
+        self.assertFalse(r[1].ok)
+        self.assertIn("matched t=3.400", r[1].why)
+        r = run([x for x in recs if x["t"] != 3.4], self.STEPS)
+        self.assertTrue(r[1].ok, r[1].why)
+        self.assertEqual(r[1].why, "no match in 2.50 s (0 udp lines)")
+
+    def test_live_and_replay_agree(self):
+        # A clocked session sees records only once its clock has passed them and
+        # polls with odd steps, as a live one does; it must judge the same window.
+        class Clocked(ReplaySession):
+            def timeline(self):
+                return [r for r in self._records if r["t"] <= self._cursor + 1e-9]
+
+            def wait(self, seconds):
+                self._cursor += min(seconds, 0.037)
+
+        timelines = [
+            self.START + [seq(1.8, 2, 1050), udp(1.8, "emit Stop tenths=0", 1050), seq(2.8, 2, 2300)],
+            self.START + [seq(1.8, 2, 1050), udp(1.8, "emit StartSequence tenths=20", 1050), seq(2.8, 2, 2300)],
+            self.START + [seq(1.8, 2, 1500)],
+            [x for x in self.START if not x["line"].startswith("udp-seq")] + [udp(2.4, "x", 2400)],
+        ]
+        for recs in timelines:
+            live = run_scenario(Scenario("t", self.STEPS), Clocked.from_records(recs))
+            replay = run(recs, self.STEPS)
+            self.assertEqual([(x.ok, x.why) for x in live], [(x.ok, x.why) for x in replay])
+
+
+class FakeConsole:
+    """A port that answers like the firmware: `answers` maps a command to the bytes it gets back."""
+
+    def __init__(self, answers):
+        import queue
+        self.answers, self.written, self._out = answers, [], queue.Queue()
+
+    def write(self, b):
+        self.written.append(b)
+        self._out.put(self.answers.get(b.decode().strip(), b"ok\n"))
+
+    def read(self, n):
+        import queue
+        try:
+            return self._out.get(timeout=0.05)
+        except queue.Empty:
+            return b""
+
+    def flush(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class SrcGateTest(unittest.TestCase):
+    """The src=sim gate before every scenario, and a reboot seen on the console."""
+
+    SIM = b"status armed=0 running=0 wizard=off src=sim\nok\n"
+
+    def setUp(self):
+        self._t = e2e_sim.CONSOLE_TIMEOUT_S
+        e2e_sim.CONSOLE_TIMEOUT_S = 1.0
+        self.dir = tempfile.TemporaryDirectory()
+        e2e_sim.print = lambda *a, **k: None
+
+    def tearDown(self):
+        e2e_sim.CONSOLE_TIMEOUT_S = self._t
+        del e2e_sim.print
+        self.dir.cleanup()
+
+    def live(self, answers):
+        s = LiveSession("/dev/fake", pathlib.Path(self.dir.name))
+        s._ser = FakeConsole(answers)
+        s._thread(s._read_serial, "serial")
+        s._watch_boot = True  # as after the preconditions
+        return s
+
+    def test_src_real_sends_only_status_and_exits_2(self):
+        s = self.live({"status": b"status armed=0 running=0 wizard=off src=real\nok\n"})
+        try:
+            results = e2e_sim.run_all(list(e2e_sim.SCENARIOS), s)
+        finally:
+            s.close()
+        self.assertEqual(s._ser.written, [b"status\n"])
+        self.assertIn("src=real is not the simulated belt", s.broken)
+        self.assertEqual(list(results), ["boot"])
+        self.assertEqual(exit_code(all(e2e_sim.scenario_ok(r) for r in results.values()), bool(s.broken)), 2)
+
+    def test_boot_banner_mid_run_breaks_the_bench(self):
+        # `arm` gets no ok: the board resets and prints its banner instead.
+        banner = b"ESP-ROM:esp32s3-20210327\nbelt source: BeltLink\nsetup: already done\n"
+        s = self.live({"status": self.SIM, "arm": banner})
+        sc = Scenario("t", [Con("arm"), Con("start")])
+        try:
+            r = run_scenario(from_known_state(sc), s)
+        finally:
+            s.close()
+        self.assertEqual(s._ser.written, [b"status\n", b"stop\n", b"arm\n"])
+        self.assertEqual([x.ok for x in r], [True, True, False])
+        self.assertIn("bench broken: device rebooted", r[2].why)
+        self.assertIn("ESP-ROM:esp32s3", s.broken)
+        self.assertEqual(exit_code(e2e_sim.scenario_ok(r), bool(s.broken)), 2)
+
+    def test_gate_is_skipped_only_for_recordings_without_it(self):
+        old = [sent(1.0, "stop"), got(1.0, "ok")]
+        r = run_scenario(from_known_state(Scenario("t", [])), ReplaySession.from_records(old))
+        self.assertEqual([x.step for x in r], ["con stop -> *"])
+        new = [sent(1.0, "status"), got(1.0, "status src=real"), got(1.0, "ok"), sent(2.0, "stop"), got(2.0, "ok")]
+        s = ReplaySession.from_records(new)
+        r = run_scenario(from_known_state(Scenario("t", [])), s)
+        self.assertEqual([(x.step, x.ok) for x in r], [("gate src=sim", False)])
+        self.assertIn("src=real", s.broken)
 
 
 class FakeSock:

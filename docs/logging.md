@@ -96,13 +96,21 @@ A jump in `n` is a lost datagram, so a gap is visible instead of silent. To
 make loss rare as well, the sink's socket is bound to port 9999 and listens: a
 host that sends a datagram starting `hello` to `<bridge ip>:9999` becomes the
 unicast target for 120 s, and while it is, every datagram goes out twice,
-broadcast as before and unicast to that host. Unicast frames are acknowledged
-and retried by the Wi-Fi MAC. `log` shows the target as `unicast=<ip>` (or
-`unicast=-`). The listener then sees each datagram twice and drops the second
-copy by its header. `tools/e2e_sim.py` does all of this (hello on the first
-datagram, then every 60 s), and reports a failed check whose window overlaps a
-gap as `udp lost (seq a->b)` rather than as a bridge defect. `tools/logcat.py`
-only listens, so it gets the broadcast and prints the header lines as they are.
+broadcast as before and unicast to that host. The unicast copy goes to the
+sender's IP on port 9999, not to the port it said hello from; that works
+because a listener binds 9999 to hear the broadcast anyway. Unicast frames are
+acknowledged and retried by the Wi-Fi MAC. `log` shows the target as
+`unicast=<ip>` (or `unicast=-`). The listener then sees each datagram twice
+and drops the second copy by its header. A flush with nothing to send gives
+the target alone a header-only heartbeat that repeats the last `n`, so a quiet
+log can be told from a lost datagram without broadcast listeners seeing a gap.
+`tools/e2e_sim.py` does all of this (hello on the first datagram, then every
+60 s). A check whose window overlaps a gap still fails, and its evidence ends
+in `; udp lost (seq a->b)`, which says why. `tools/logcat.py` only listens, so
+it gets the broadcast and prints the header lines as they are. Two listeners
+on one Mac (say `logcat.py` and the harness, both bound to 9999) each get
+every broadcast, but the unicast copy reaches only one of them, so either may
+see only some of the unicast copies.
 
 ## What is recorded
 
