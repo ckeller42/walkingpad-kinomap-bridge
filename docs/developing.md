@@ -52,10 +52,73 @@ tools/console.py "wait 12; arm; start; wait 8; status; stop"
 tools/logcat.py run.log          # live UDP log, no serial port
 tools/logparse.py run.log        # decode a capture into a timeline
 tools/assert_capture.py run.log  # re-derive the measured facts from a capture's bytes
+tools/e2e_sim.py                 # bench E2E on the sim belt; --replay DIR needs no hardware
 tools/ftms_client.py 2.5         # act as an FTMS client; exercise paths Kinomap will not
 tools/blescan.py scan 12         # who is on the air
 tools/beltcam.py shot name       # photograph the belt's own console
 ```
+
+## End to end on the bench
+
+`tools/e2e_sim.py` runs the whole bridge (console, policy, belt link, FTMS
+server, log sink) through scripted scenarios on the real ESP32-S3 and over
+real BLE, with the simulated belt standing in for the treadmill. It proves the
+bridge's own behaviour end to end. It proves nothing about the belt: the
+simulated belt is the bridge's model of it, so a belt fact still needs a
+capture from the real one.
+
+It watches three streams and writes them into one host-timestamped timeline:
+
+- **console** — the serial port, opened **once** per run (that reboots the
+  board, so the run starts from a known state). Control: commands and replies.
+- **ftms** — the Mac connects as an FTMS client in place of Kinomap: `2ACD`
+  speeds, `2AD9` writes and indications.
+- **udp** — the `logcat` broadcast on port 9999: the bridge's own decisions,
+  verbatim. Before any scenario the runner sends `log udp on` and expects to
+  hear its echo, which proves the stream alive rather than assuming it.
+
+**The `src=sim` gate.** Before anything else the runner asks `status` and stops
+(exit 2) unless the reply says `src=sim`. There is no override: a harness that
+sends `arm` and `start` must never reach firmware wired to a real belt.
+
+```sh
+pio run -e cores3_sim -t upload --upload-port /dev/cu.usbmodem101
+~/tools/venv-ble/bin/python tools/e2e_sim.py                  # every scenario
+~/tools/venv-ble/bin/python tools/e2e_sim.py --scenario phone_start
+python3 tools/e2e_sim.py --replay docs/captures/e2e-sim-2026-10-23
+~/tools/venv-ble/bin/python tools/e2e_sim.py --record-to docs/captures/e2e-sim-<date>
+```
+
+The live run needs the CoreS3 on USB, developer mode with the UDP sink on and
+stored Wi-Fi credentials ([logging](logging.md)). It records into
+`build/e2e/<stamp>/`: `timeline.jsonl` (the replay source), `console.txt`,
+`udp.log` (verbatim `logcat.py` format), `ftms.jsonl` and `report.md`. Exit
+status is 0 all green, 1 a check failed, 2 a precondition failed.
+
+`--replay` re-evaluates the same scenarios from `timeline.jsonl` with no
+hardware and no BLE or serial packages; CI replays the committed recording on
+every push, so a change to a check is tested against real bytes. Commit a new
+recording (`--record-to docs/captures/e2e-sim-<date>`) when a scenario or a
+check changes, or when bridge behaviour that a scenario covers changes; never
+edit one by hand.
+
+**Known limitation: the UDP log can lose a second.** The bridge batches about
+one second of log lines into one broadcast datagram, and broadcast frames are
+not acknowledged, so one lost datagram loses a second of evidence. On
+2026-10-23, 2 of 5 live runs failed a `udp` check that way while the bridge
+itself was fine (the console and FTMS streams agreed). Until the log sink
+numbers its datagrams and sends unicast (planned, so that a gap is reported as
+`udp lost` instead of as a check failure), treat a lone red `udp` check with
+green neighbours as a probable loss and re-run before suspecting the bridge.
+The reverse matters more: an absence check (`udp absent ...`) has a window of
+0.1 to 0.2 s and **passes wrongly** if the datagram that would have shown the
+line was lost.
+
+The failing fixtures under `tools/fixtures/e2e/` are **synthetic**: each is the
+committed recording with exactly one thing removed, and its `README.md` says
+what and which check must go red. CI requires every one to fail, which keeps
+the checks from passing on missing evidence. They are not recordings and do
+not belong in `docs/captures/`.
 
 ## Changing a protocol fact
 

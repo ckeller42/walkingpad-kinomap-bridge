@@ -54,6 +54,7 @@ master_doc = "index"
 
 exclude_patterns = [
     "superpowers/**",   # plans and specs: working material, not product docs
+    "captures/**",      # raw evidence (logs, timelines), read by tools, not pages
     "_build",
     "Thumbs.db",
     ".DS_Store",

@@ -77,6 +77,10 @@ the listening side beyond being on the same network. If nothing arrives, check
 `log` on the console for the Wi-Fi state; macOS also asks once for local-network
 permission.
 
+The broadcast is **not lossless**. About one second of lines goes out as one
+datagram, and broadcast frames are not acknowledged, so a dropped datagram is a
+silent one-second gap. When completeness matters, read the SD sink as well.
+
 ## What is recorded
 
 At the choke points, so nothing slips past:

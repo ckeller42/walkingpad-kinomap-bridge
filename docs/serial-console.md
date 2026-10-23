@@ -27,6 +27,10 @@ Anything else is `err unknown-command`. All commands go through the same
 `BridgeState`, `applyOutcome` and `BeltGate` paths as the touch UI, so
 `start` while disarmed is refused exactly as the button is.
 
+This console is also what `tools/e2e_sim.py` drives: the bench end-to-end
+harness ([developing](developing.md#end-to-end-on-the-bench)) sends these
+commands and checks their replies against the FTMS and UDP streams.
+
 ```sh
 ~/tools/venv-ble/bin/python tools/console.py status
 ~/tools/venv-ble/bin/python tools/console.py "arm; start; wait 8; status; stop"
