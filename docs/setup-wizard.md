@@ -71,6 +71,12 @@ the unit normally sits: here `+` was tapped while disarmed. The other reasons
 are "STOP first", "Belt offline", "Starting - wait", "AUTO sets speed",
 "AUTO: step on to start", "Belt not ready" and "Leave AUTO first".
 
+ARM itself is accepted with no belt linked: arming is a standing permission,
+not an action, so a belt link that drops and returns mid-session never disarms
+you. Nothing can move the belt until the link is up and fresh. Tapping ARM
+while the belt is offline says "Armed - belt offline" and the button reads
+DISARM rather than START until the belt is there.
+
 ![Main screen, armed, START available](screens/main-armed-start.png)
 
 Armed with the belt stopped and linked. The left button becomes a bright green
