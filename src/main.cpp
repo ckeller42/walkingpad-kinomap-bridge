@@ -998,7 +998,13 @@ void loop() {
                 switch (policy::leftButton(state.armed(), startPending,
                                            state.startAllowed(beltFresh()))) {
                 case policy::LeftFace::Arm:
+                    // Arming is a standing permission, not an action: it is
+                    // accepted with no belt so a link blink never disarms a
+                    // session, and every belt effect is gated on the link
+                    // further down. Say so, or the tap looks like it did
+                    // nothing but relabel the button.
                     applyOutcome(state.setArmed(true));
+                    if (!(theBelt.linkUp() && beltFresh())) showReason("Armed - belt offline");
                     break;
                 case policy::LeftFace::Wait:
                     showReason("Starting - wait");
