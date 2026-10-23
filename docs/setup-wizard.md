@@ -72,7 +72,32 @@ which is what lets Kinomap begin its session.
 
 ![Main screen, walking](screens/main-walking.png)
 
-Running at 2.0 km/h (simulated belt, 8 s after START). The left button reads
+Walking: the simulated belt ramping up, 1 s after START. The left button reads
 DISARM; the button's faces are ARM, START, STARTING and DISARM, and tapping
 DISARM disarms without stopping the belt. To run setup again, open the gear
 menu and tap its "Re-run setup" row.
+
+![Main screen after STOP, belt still moving](screens/main-stop-wide.png)
+
+Whenever the belt is seen moving, STOP takes two thirds of the bar. Here STOP
+has just been tapped: the bridge is disarmed again (ARM, `+`/`-` dimmed) while
+the belt still reports 2.0 km/h, so the wide STOP stays until it reads 0.
+
+## Belt mode badge
+
+The badge in the middle of the top bar shows the belt's own mode as the belt
+reports it: `M` for Manual (the bridge and Kinomap see commanded speed), `A`
+for Auto (the belt sets its own speed from where you walk on it). Tapping the
+badge while armed and the belt is parked asks the belt to switch.
+
+![Main screen, Auto requested, not yet confirmed](screens/main-auto-pending.png)
+
+`A?` in amber: the request is out and the belt has not confirmed it yet. The
+`+`/`-` buttons are already dimmed, because speed commands are muted from the
+moment Auto is requested.
+
+![Main screen in Auto](screens/main-auto.png)
+
+The belt confirmed Auto: badge `A`, the stripe and tag turn cyan and read AUTO.
+START is not offered; in Auto the belt starts when you step on. STOP works as
+always. Tapping the badge again asks for Manual.
