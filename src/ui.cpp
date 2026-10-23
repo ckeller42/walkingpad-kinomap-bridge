@@ -402,7 +402,8 @@ void Ui::render(uint16_t centiKmh, uint16_t commandedCentiKmh, uint32_t distance
     barDivider(g, barSplit_);
 
     finishFrame(100 + (armed ? 1 : 0) + (canStart ? 2 : 0) + (centiKmh > 0 ? 4 : 0) + (sim_ ? 8 : 0) +
-                (autoMode ? 16 : 0) + (starting ? 64 : 0) + (badge == ModeBadge::AutoPending ? 32 : 0));
+                (autoMode ? 16 : 0) + (starting ? 64 : 0) + (badge == ModeBadge::AutoPending ? 32 : 0) +
+                (reason ? 128 : 0));
 }
 
 void Ui::renderWizard(const wizard::Screen& s, bool sim) {

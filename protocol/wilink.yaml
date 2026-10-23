@@ -134,7 +134,7 @@ commands:
     argument: {name: mode, enum: mode}
     summary: Select the belt mode.
     provenance: measured
-    evidence: "test-log: Stage 2 (modes 1 and 2); UDP capture 2026-10-22: from standby the bridge sent 'f7 a2 02 00 a4 fd' and the belt reported mode 0 within 1 s ('f8 a2 00 00 00 ...'); 'f7 a2 02 02 a6 fd' then returned it to standby"
+    evidence: "test-log: Stage 2 (modes 1 and 2); UDP capture 2026-10-22: from standby the bridge sent 'f7 a2 02 00 a4 fd' and the belt reported mode 0 within 1 s ('f8 a2 00 00 00 ...'); 'f7 a2 02 02 a6 fd' then returned it to standby; re-derived by tools/assert_capture.py claims set_mode_auto_confirmed and stop_leaves_auto on docs/captures/auto-mode-2026-10-22.log."
     notes: Mode 0 (auto) is produced by the bridge only on an explicit user request, and the bridge treats Auto as active only once a status frame reports mode 0.
     examples:
       - {label: manual, argument: 1}
@@ -302,16 +302,16 @@ constraints:
     key: auto_mode_reported_in_status
     value: true
     provenance: measured
-    evidence: "UDP capture 2026-10-22: 'f8 a2 04 00 02 ...' then 'f8 a2 00 00 00 ...'; later 'f8 a2 01 1d 01 ...' (running 2.9 km/h, mode 1); bridge logged 'belt mode 3 -> 1 raw=0' and 'belt mode 1 -> 2 raw=1'"
+    evidence: "UDP capture 2026-10-22: 'f8 a2 04 00 02 ...' then 'f8 a2 00 00 00 ...'; later 'f8 a2 01 1d 01 ...' (running 2.9 km/h, mode 1); bridge logged 'belt mode 3 -> 1 raw=0' and 'belt mode 1 -> 2 raw=1'; re-derived by tools/assert_capture.py claim auto_mode_in_status on docs/captures/auto-mode-2026-10-22.log."
   - id: parked_state_after_stop
     statement: After a STOP (mode 2) from 4.0 km/h the belt decelerated in state 1, then reported state 3 at speed 0 with mode 2 and held it for more than 7 s; a stationary check must accept state 3, not only 0 and 4.
     key: parked_state_after_stop
     value: 3
     provenance: measured
-    evidence: "UDP capture 2026-10-22: 'f8 a2 01 28 02 ...' 0.5 s after the stop, then 'f8 a2 03 00 02 ...' at 4.5, 6.6, 8.6 and 10.6 s; four badge taps in that window were refused by the bridge"
+    evidence: "UDP capture 2026-10-22: 'f8 a2 01 28 02 ...' 0.5 s after the stop, then 'f8 a2 03 00 02 ...' at 4.5, 6.6, 8.6 and 10.6 s; four badge taps in that window were refused by the bridge; re-derived by tools/assert_capture.py claim parked_state_after_stop on docs/captures/auto-mode-2026-10-22.log."
   - id: auto_starts_on_step_on
     statement: In Auto the belt starts with no start command - status went state 6 then state 1 at 0.7 km/h while the bridge sent only status requests - and then followed the walker up to 2.9 km/h; UI speed taps during Auto were muted by the bridge and never reached the wire.
     key: auto_starts_on_step_on
     value: true
     provenance: measured
-    evidence: "UDP capture 2026-10-22: 'f8 a2 06 00 00 ...' then 'f8 a2 01 07 00 ...' with tx limited to 'f7 a2 00 00 a2 fd'; bridge emitted NotifyStarted; two + taps logged with zero SetSpeed emits"
+    evidence: "UDP capture 2026-10-22: 'f8 a2 06 00 00 ...' then 'f8 a2 01 07 00 ...' with tx limited to 'f7 a2 00 00 a2 fd'; bridge emitted NotifyStarted; two + taps logged with zero SetSpeed emits; re-derived by tools/assert_capture.py claim auto_starts_on_step_on on docs/captures/auto-mode-2026-10-22.log."
