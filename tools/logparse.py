@@ -135,6 +135,8 @@ def main():
             rows.append((secs, "phone -> bridge", describe_cp(b)))
         elif kind == "emit":
             rows.append((secs, "policy", rest))
+        elif kind == "udp-seq":  # the sink's per-datagram header; a jump in n is a lost datagram
+            rows.append((secs, kind, rest))
         else:
             rows.append((secs, kind, rest))
 

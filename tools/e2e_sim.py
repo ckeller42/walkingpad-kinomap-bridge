@@ -24,14 +24,21 @@ Three streams, one timeline:
            ESP32-S3). Control: commands and their reply lines.
   ftms     bleak on the host, standing in for Kinomap: 2ACD speeds, 2AD9
            writes and indications, each timestamped.
-  udp      the logsink broadcast on port 9999: evidence, verbatim.
+  udp      the logsink broadcast on port 9999: evidence, verbatim. Every
+           datagram opens with a `udp-seq <n>` line, so a lost one shows
+           as a gap; the runner says `hello` to the bridge, which then
+           also unicasts to it (acknowledged on Wi-Fi, so loss is rare).
 
 Every record carries host time `t`, so a check like "udp line within 2 s of
 the last command" is a predicate over the recorded timeline. That is what
 makes `--replay` possible: the same scenarios re-evaluated from
 `timeline.jsonl` with no hardware, which is how CI keeps a recording honest.
 A check whose stream recorded nothing at all reports `stream silent`, never
-PASS: a dead stream proves nothing.
+PASS: a dead stream proves nothing. A failed windowed check whose window
+overlaps a `udp-seq` gap ends in `; udp lost (seq a->b)`, and a `udp absent`
+over a gap fails as `inconclusive`: the evidence is missing, which is not
+the same as the bridge misbehaving. A recording without `udp-seq` lines
+(older firmware) has no gaps and is judged as before.
 
 Exit status: 0 all checks pass, 1 a check failed, 2 a precondition failed
 (no port, not `src=sim`, no recording).
@@ -82,6 +89,61 @@ def _uuid_is(rec_uuid: str, short: str) -> bool:
 
 def _secs(x: float) -> str:
     return f"{x:g}"
+
+
+_SEQ_LINE = re.compile(r"udp-seq (\d+)$")
+REORDER_MS = 3000  # a header this much older than the newest is a late datagram, not a reboot
+
+
+@dataclass
+class SeqGap:
+    """Datagrams a+1 .. b-1 never arrived; what they carried belongs between t_a and t_b."""
+    a: int
+    b: int
+    t_a: float
+    t_b: float
+
+    def __str__(self):
+        return f"udp lost (seq {self.a}->{self.b})"
+
+
+def _seq_headers(records) -> List[Tuple[float, Optional[int], int]]:
+    """(t, millis, n) of every `udp-seq <n>` header, in timeline order."""
+    out = []
+    for r in records:
+        if r.get("stream") == "udp":
+            m = _SEQ_LINE.match(r["line"])
+            if m:
+                out.append((r["t"], r.get("millis"), int(m.group(1))))
+    return out
+
+
+def seq_gaps(records) -> List[SeqGap]:
+    """Missing sequence numbers in the udp stream, as gaps between the numbers either side.
+
+    The counter restarts at 1 per boot, so a new boot starts where millis go
+    backwards by more than REORDER_MS, or back at all to a header numbered 1;
+    a smaller step back is a datagram that arrived late. Within a boot the
+    gaps are the numbers between the smallest and largest seen that never
+    arrived, so a duplicate (the broadcast and the unicast copy) or a
+    reordered datagram is not a gap.
+    """
+    boots, top_ms = [], None
+    for t, ms, n in _seq_headers(records):
+        back = ms is not None and top_ms is not None and ms < top_ms
+        if not boots or (back and (n == 1 or ms < top_ms - REORDER_MS)):
+            boots.append({})
+            top_ms = None
+        if ms is not None:
+            top_ms = ms if top_ms is None else max(top_ms, ms)
+        boots[-1].setdefault(n, t)
+    gaps = []
+    for seen in boots:
+        ns = sorted(seen)
+        for a, b in zip(ns, ns[1:]):
+            if b > a + 1:
+                gaps.append(SeqGap(a, b, seen[a], seen[b]))
+    return gaps
 
 
 # --------------------------------------------------------------------------- steps
@@ -432,6 +494,7 @@ BRIDGE_NAME = "WalkingPad Bridge"
 UDP_PORT = 9999
 CONSOLE_TIMEOUT_S = 5.0
 UDP_ALIVE_S = 5.0   # precondition 4: `udp log ON` must arrive this soon
+HELLO_EVERY_S = 60.0  # the bridge keeps a hello sender as unicast target for 120 s
 BLE_TIMEOUT_S = 20.0
 # The UUIDs of tools/ftms_client.py, which cannot be imported (it runs at import).
 FTMS_CP = "00002ad9-0000-1000-8000-00805f9b34fb"      # Control Point (indications)
@@ -459,6 +522,10 @@ class LiveSession(Session):
         self.out_dir = pathlib.Path(out_dir)
         self.notes: List[str] = []   # precondition lines and stream events, for the report
         self.udp_unparsed = 0
+        self.udp_duplicates = 0        # datagrams seen twice (broadcast + unicast copy)
+        self._seen_seq = set()         # (ip, millis, n) of every header recorded
+        self._bridge_ip: Optional[str] = None
+        self._hello_at: Optional[float] = None
         self._udp_raw: List[str] = []  # "<ip>  <line as received>", for udp.log
         self._time = time
         self._t0 = time.monotonic()
@@ -581,22 +648,49 @@ class LiveSession(Session):
     def _read_udp(self):
         import socket
         while not self._stop.is_set():
+            self._maybe_hello(self.now())
             try:
                 data, addr = self._sock.recvfrom(2048)
             except socket.timeout:
                 continue
             except OSError:
                 return  # closed by close()
-            for ln in data.decode("utf-8", "replace").splitlines():
-                if not ln:
-                    continue
-                self._udp_raw.append(f"{addr[0]}  {ln}")
-                m = _UDP_LINE.match(ln)
-                if m:
-                    self._add(stream="udp", ip=addr[0], millis=int(m.group(1)), line=m.group(2))
-                else:  # kept verbatim, without millis, and counted
-                    self.udp_unparsed += 1
-                    self._add(stream="udp", ip=addr[0], line=ln)
+            self._on_datagram(data, addr)
+
+    def _maybe_hello(self, now: float) -> None:
+        """Ask the bridge to unicast to us too: once it is known, then every HELLO_EVERY_S."""
+        if self._bridge_ip is None:
+            return
+        if self._hello_at is not None and now - self._hello_at < HELLO_EVERY_S - EPS:
+            return
+        self._hello_at = now
+        try:
+            self._sock.sendto(b"hello", (self._bridge_ip, UDP_PORT))
+        except OSError as e:  # broadcast still works; say so rather than fail the run
+            self.notes.append(f"hello to {self._bridge_ip}:{UDP_PORT} failed at t={now:.3f}: {e}")
+
+    def _on_datagram(self, data: bytes, addr) -> None:
+        lines = [ln for ln in data.decode("utf-8", "replace").splitlines() if ln]
+        if lines:
+            m = _UDP_LINE.match(lines[0])
+            h = _SEQ_LINE.match(m.group(2)) if m else None
+            if h:
+                key = (addr[0], int(m.group(1)), int(h.group(1)))
+                if key in self._seen_seq:  # the second copy of one datagram
+                    self.udp_duplicates += 1
+                    return
+                self._seen_seq.add(key)
+        if self._bridge_ip is None:  # the first datagram tells us where the bridge is
+            self._bridge_ip = addr[0]
+            self._maybe_hello(self.now())
+        for ln in lines:
+            self._udp_raw.append(f"{addr[0]}  {ln}")
+            m = _UDP_LINE.match(ln)
+            if m:
+                self._add(stream="udp", ip=addr[0], millis=int(m.group(1)), line=m.group(2))
+            else:  # kept verbatim, without millis, and counted
+                self.udp_unparsed += 1
+                self._add(stream="udp", ip=addr[0], line=ln)
 
     # ---- ftms
 
@@ -927,6 +1021,34 @@ def _con_ok(expect, reply):
     return ok, end if ok else f"got '{end}', expected '{expect}'"
 
 
+SEQ_SETTLE_S = 2.5  # a gap is only visible once the datagram after it has arrived
+
+
+def _gap_in(s: Session, lo: float, hi: float) -> Optional[SeqGap]:
+    """The first udp-seq gap overlapping [lo, hi], or None.
+
+    With no `udp-seq` header recorded (older firmware) there is nothing to
+    judge and nothing to wait for. Otherwise wait up to SEQ_SETTLE_S for a
+    header after `hi`, because a loss at the end of the window only shows
+    once the next datagram has arrived.
+    """
+    if not _seq_headers(s.timeline()):
+        return None
+    while (not any(t >= hi - EPS for t, _, _ in _seq_headers(s.timeline()))
+           and s.now() < hi + SEQ_SETTLE_S - EPS):
+        s.wait(min(POLL_S, hi + SEQ_SETTLE_S - s.now()))
+    return next((g for g in seq_gaps(s.timeline()) if g.t_a < hi + EPS and g.t_b > lo - EPS), None)
+
+
+def _window(step, s: Session, anchor: float) -> Optional[Tuple[float, float]]:
+    """The host-time window a check judged, or None for checks that are not windowed."""
+    if isinstance(step, UdpAbsent):
+        return anchor, s.now()
+    if isinstance(step, (Udp, SpeedAtLeast, SpeedZero, Indication)):
+        return anchor, anchor + step.within
+    return None
+
+
 def run_scenario(sc: Scenario, s: Session, on_result=None) -> List[CheckResult]:
     """Run every step in order. A control step that cannot be carried out ends the scenario.
 
@@ -990,6 +1112,14 @@ def run_scenario(sc: Scenario, s: Session, on_result=None) -> List[CheckResult]:
         except StepError as e:
             judged(CheckResult(label, False, str(e)))
             break
+        win = _window(step, s, anchor)
+        if win is not None and (not ok or isinstance(step, UdpAbsent)):
+            gap = _gap_in(s, *win)
+            if gap is not None:
+                if ok:  # absent, but the evidence that could have shown it is missing
+                    ok, why = False, f"inconclusive: {gap}; {why}"
+                else:
+                    why = f"{why}; {gap}"
         judged(CheckResult(label, ok, why))
     return results
 
@@ -1184,8 +1314,13 @@ def run_live(names: List[str], port: Optional[str], out_dir: pathlib.Path,
         f.write("\n## preconditions and bench\n\n")
         f.writelines(f"- {n}\n" for n in s.notes)
         f.write(f"\n{s.udp_unparsed} unparsed udp line(s)\n")
+        f.write(f"{s.udp_duplicates} duplicate udp datagram(s) (broadcast + unicast copy), recorded once\n")
+        gaps = seq_gaps(s.timeline())
+        f.write(f"{len(gaps)} udp-seq gap(s)" + "".join(f"\n- {g} t={g.t_a:.3f}..{g.t_b:.3f}" for g in gaps) + "\n")
     if s.udp_unparsed:
         print(f"{s.udp_unparsed} udp line(s) without millis, kept verbatim", flush=True)
+    for g in seq_gaps(s.timeline()):
+        print(f"{g} between t={g.t_a:.3f} and t={g.t_b:.3f}", flush=True)
     print(f"recording: {out_dir}")
     if record_to:
         import shutil

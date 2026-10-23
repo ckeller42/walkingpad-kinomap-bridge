@@ -12,7 +12,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import e2e_sim  # noqa: E402
 from e2e_sim import (  # noqa: E402
     Con, FtmsConnect, LiveSession, ReplaySession, Scenario, SpeedAtLeast, Status, Udp,
-    exit_code, from_known_state, ftms_speed_kmh, parse_status, run_scenario, write_report,
+    UdpAbsent, Wait, exit_code, from_known_state, ftms_speed_kmh, parse_status, run_scenario, write_report,
 )
 
 
@@ -271,6 +271,118 @@ class LiveConsoleTest(unittest.TestCase):
             del e2e_sim.print
         self.assertIn("no udp line 'udp log ON' within 0.2 s", failed)
         self.assertIn("'log' replied: log dev=1 udp=1 wifi=0 ip=0.0.0.0 / ok", failed)
+
+
+def seq(t, n, millis=1000):
+    return udp(t, f"udp-seq {n}", millis)
+
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+RECORDING = REPO / "docs/captures/e2e-sim-2026-10-23"
+
+
+class SeqGapTest(unittest.TestCase):
+    """udp-seq headers make a lost datagram visible; a failed check inside the gap says so."""
+
+    ARMED = [sent(1.0, "arm"), got(1.0, "ok"), seq(1.5, 3, 1000), udp(1.5, "emit SyncPolicy", 1000),
+             seq(3.5, 5, 3000), udp(3.5, "emit SyncPolicy", 3000)]
+
+    def test_seq_gap_annotates_failed_udp_check(self):
+        r = run(self.ARMED, [Con("arm"), Udp("emit StartSequence", within=3)])
+        self.assertFalse(r[1].ok)
+        self.assertTrue(r[1].why.endswith("; udp lost (seq 3->5)"), r[1].why)
+        self.assertTrue(r[1].why.startswith("no match in 3 s"), r[1].why)
+
+    def test_absent_inside_gap_is_inconclusive(self):
+        r = run(self.ARMED, [Con("arm"), Wait(3), UdpAbsent("emit StartSequence")])
+        self.assertEqual(len(r), 2)  # a wait is not judged
+        self.assertFalse(r[1].ok)
+        self.assertIn("inconclusive: udp lost (seq 3->5)", r[1].why)
+
+    def test_recording_without_seq_is_unchanged(self):
+        # The committed recording predates udp-seq: its replay must render the
+        # very tables the live run wrote, and exit 0.
+        s = ReplaySession(RECORDING / "timeline.jsonl")
+        self.assertFalse([r for r in s.timeline() if r["stream"] == "udp" and r["line"].startswith("udp-seq")])
+        e2e_sim.print = lambda *a, **k: None
+        try:
+            results = e2e_sim.run_all(list(e2e_sim.SCENARIOS), s)
+        finally:
+            del e2e_sim.print
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "report.md"
+            self.assertTrue(write_report(results, path))
+            replayed = path.read_text()
+        live = (RECORDING / "report.md").read_text().split("\n## preconditions and bench")[0]
+        self.assertEqual(replayed.rstrip("\n"), live.rstrip("\n"))
+
+    def test_passed_check_in_gap_is_not_annotated(self):
+        recs = self.ARMED + [udp(2.0, "emit StartSequence tenths=20", 1500)]
+        r = run(recs, [Con("arm"), Udp("emit StartSequence", within=3)])
+        self.assertTrue(r[1].ok, r[1].why)
+        self.assertNotIn("udp lost", r[1].why)
+
+    def test_failed_check_outside_gap_is_not_annotated(self):
+        recs = self.ARMED + [sent(10.0, "start"), got(10.0, "ok"), seq(10.5, 6, 4000), seq(11.5, 7, 5000)]
+        r = run(recs, [Con("arm"), Con("start"), Udp("emit StartSequence", within=3)])
+        self.assertFalse(r[2].ok)
+        self.assertNotIn("udp lost", r[2].why)
+
+    def test_reboot_is_not_a_gap(self):
+        # seq restarts at 1 with a smaller millis: a new boot, nothing lost.
+        recs = [sent(1.0, "arm"), got(1.0, "ok"), seq(1.5, 40, 90000), seq(2.5, 1, 500), seq(3.5, 2, 1500)]
+        self.assertEqual(e2e_sim.seq_gaps(recs), [])
+        r = run(recs, [Con("arm"), Udp("emit StartSequence", within=3)])
+        self.assertNotIn("udp lost", r[1].why)
+
+    def test_gaps_tolerate_duplicates_and_reordering(self):
+        recs = [seq(1.0, 3, 1000), seq(1.0, 3, 1000), seq(2.0, 5, 3000), seq(2.1, 4, 2000), seq(3.0, 8, 6000)]
+        self.assertEqual([(g.a, g.b) for g in e2e_sim.seq_gaps(recs)], [(5, 8)])
+
+    def test_speed_check_in_gap_is_annotated(self):
+        recs = self.ARMED + [notify(2.0, "2acd", "00 00 64 00")]
+        r = run(recs, [Con("arm"), SpeedAtLeast(1.9, within=3)])
+        self.assertFalse(r[1].ok)
+        self.assertTrue(r[1].why.endswith("; udp lost (seq 3->5)"), r[1].why)
+
+
+class FakeSock:
+    def __init__(self):
+        self.sent = []
+
+    def sendto(self, data, addr):
+        self.sent.append((data, addr))
+
+
+class LiveUdpTest(unittest.TestCase):
+    """LiveSession's datagram handling with no socket thread."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.s = LiveSession("/dev/fake", pathlib.Path(self.dir.name))
+        self.s._sock = FakeSock()
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_hello_goes_to_the_bridge_on_first_datagram_and_every_60_s(self):
+        ip = ("192.168.178.96", 9999)
+        self.s._on_datagram(b"1000 udp-seq 1\n1000 udp log ON\n", ip)
+        self.assertEqual(self.s._sock.sent, [(b"hello", ("192.168.178.96", 9999))])
+        self.s._maybe_hello(self.s._hello_at + 30)
+        self.assertEqual(len(self.s._sock.sent), 1)
+        self.s._maybe_hello(self.s._hello_at + 60)
+        self.assertEqual(len(self.s._sock.sent), 2)
+
+    def test_duplicate_datagram_is_recorded_once(self):
+        # Broadcast and unicast copies of one datagram both reach the listener.
+        d = b"1000 udp-seq 7\n1000 emit Stop tenths=0\n"
+        self.s._on_datagram(d, ("192.168.178.96", 9999))
+        self.s._on_datagram(d, ("192.168.178.96", 9999))
+        lines = [r["line"] for r in self.s.timeline() if r["stream"] == "udp"]
+        self.assertEqual(lines, ["udp-seq 7", "emit Stop tenths=0"])
+        self.assertEqual(self.s.udp_duplicates, 1)
+        self.assertEqual(len(self.s._udp_raw), 2)
 
 
 if __name__ == "__main__":

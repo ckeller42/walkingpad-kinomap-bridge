@@ -45,6 +45,14 @@ void begin();
  * @note Call from `loop()`. All I/O happens here and never in a BLE callback,
  *       where an SD write of tens of milliseconds would stall the very link it
  *       is trying to observe.
+ *
+ * About once a second the pending lines go out as UDP datagrams of at most
+ * 1200 bytes, each split on a line boundary and opened by a header line
+ * `<millis> udp-seq <n>`: `n` counts datagrams from 1 per boot, so a reader
+ * sees a lost one as a gap. The socket is bound to `LOG_UDP_PORT`, and every
+ * call also reads it without blocking: a datagram starting `hello` makes its
+ * sender the unicast target for 120 s, and while one is live every datagram
+ * is sent twice, broadcast and unicast.
  */
 void tick(uint32_t nowMs);
 
@@ -122,7 +130,7 @@ void setDev(bool on);
 // The UDP log broadcast itself, inside developer mode. Also persisted, also
 // off by default; dev mode off means no broadcast whatever this says.
 /**
- * @brief Whether the UDP log broadcast is enabled.
+ * @brief Whether the UDP log broadcast (and the unicast to a hello sender) is enabled.
  * @return True when it is on; it still needs developer mode to take effect.
  */
 bool udpOn();
@@ -201,8 +209,9 @@ const char* scanSsid(uint8_t i);
  * @param cap Its capacity.
  *
  * Reports developer mode, the UDP flag, SD state and card type, the pins used,
- * the IP and the dropped-line count. `type=0` means no card responded at all,
- * which is a presence failure rather than a filesystem one.
+ * the IP, the dropped-line count and `unicast=` the live hello sender (`-` for
+ * none). `type=0` means no card responded at all, which is a presence failure
+ * rather than a filesystem one.
  */
 void describe(char* out, size_t cap);
 

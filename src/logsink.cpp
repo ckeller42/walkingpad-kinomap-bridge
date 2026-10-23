@@ -8,6 +8,9 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
+#include <stdlib.h>
+#include <string.h>
+
 #include <mutex>
 
 #include "config.h"
@@ -51,6 +54,65 @@ uint32_t sdHz = 0;
 File sdFile;
 WiFiUDP udp;
 Preferences prefs;
+
+// Every datagram opens with "<millis> udp-seq <n>". Broadcast frames are not
+// acknowledged on Wi-Fi, so a lost one silently deletes a second of evidence;
+// with a counter the gap is at least visible to the reader.
+uint32_t udpSeq = 0;
+constexpr size_t kChunk = 1200;  // payload per datagram, below one Ethernet MTU
+// A host that sends "hello" to LOG_UDP_PORT gets every datagram unicast as
+// well, for this long. Unicast frames are acknowledged and retried by the
+// Wi-Fi MAC, so on a quiet network loss becomes rare instead of routine.
+constexpr uint32_t kUnicastMs = 120000;
+IPAddress unicastIp;           // 0.0.0.0 when nobody has said hello
+uint32_t unicastUntilMs = 0;
+
+bool unicastLive(uint32_t nowMs) {
+    return unicastIp != IPAddress((uint32_t)0) && (int32_t)(unicastUntilMs - nowMs) > 0;
+}
+
+// Drains the socket without blocking. Anything but "hello" is ignored.
+void readHello(uint32_t nowMs) {
+    char buf[16];
+    for (int i = 0; i < 8; ++i) {  // bounded: loop() must not stall on a flood
+        if (udp.parsePacket() <= 0) return;
+        const int n = udp.read(buf, sizeof buf);
+        if (n >= 5 && memcmp(buf, "hello", 5) == 0) {
+            const IPAddress from = udp.remoteIP();
+            if (from != unicastIp) line("udp unicast to %s", from.toString().c_str());
+            unicastIp = from;
+            unicastUntilMs = nowMs + kUnicastMs;
+        }
+        udp.clear();  // discard the rest of this datagram
+    }
+}
+
+// One datagram: the header line, then `chunk`. Sent broadcast, and unicast
+// too while a hello sender is live.
+void sendChunk(const char* chunk, size_t len, uint32_t nowMs) {
+    static char pkt[kChunk + 40];
+    // The header carries the first line's own millis rather than now: lines in
+    // the chunk are older than now, and a header newer than the line after it
+    // would read as a reboot to anything that splits a log on millis going
+    // backwards (logparse, assert_capture).
+    char* end = nullptr;
+    const unsigned long first = strtoul(chunk, &end, 10);
+    const unsigned long ms = (end != chunk && end && *end == ' ') ? first : (unsigned long)nowMs;
+    const int h = snprintf(pkt, sizeof pkt, "%lu udp-seq %lu\n", ms, (unsigned long)++udpSeq);
+    if (h <= 0 || (size_t)h + len > sizeof pkt) return;
+    memcpy(pkt + h, chunk, len);
+    const size_t total = (size_t)h + len;
+    // The subnet broadcast address is delivered where the 255.255.255.255
+    // limited broadcast often is not.
+    if (udp.beginPacket(WiFi.broadcastIP(), LOG_UDP_PORT)) {
+        udp.write((const uint8_t*)pkt, total);
+        udp.endPacket();
+    }
+    if (unicastLive(nowMs) && udp.beginPacket(unicastIp, LOG_UDP_PORT)) {
+        udp.write((const uint8_t*)pkt, total);
+        udp.endPacket();
+    }
+}
 
 size_t pending() { return (head + kRing - tail) % kRing; }
 
@@ -181,6 +243,14 @@ void tick(uint32_t nowMs) {
         lastWifiTry = nowMs;
         WiFi.reconnect();
     }
+    const bool udpUp = devMode && udpWanted && WiFi.status() == WL_CONNECTED;
+    if (udpUp) {
+        // Bound to LOG_UDP_PORT rather than an ephemeral port, so a listener
+        // can say hello to <bridge ip>:9999. The socket has to exist before
+        // the first send.
+        if (!udpStarted) udpStarted = udp.begin(LOG_UDP_PORT) == 1;
+        if (udpStarted) readHello(nowMs);
+    }
     if (nowMs - lastFlush < kFlushMs) return;
     lastFlush = nowMs;
 
@@ -201,18 +271,18 @@ void tick(uint32_t nowMs) {
         sdFile.write((const uint8_t*)out, n);
         sdFile.flush();
     }
-    if (devMode && udpWanted && WiFi.status() == WL_CONNECTED) {
-        // The socket has to exist before the first send, and the subnet
-        // broadcast address is delivered where the 255.255.255.255 limited
-        // broadcast often is not.
-        if (!udpStarted) udpStarted = udp.begin(0) == 1;
-        const IPAddress bcast = WiFi.broadcastIP();
-        for (size_t off = 0; off < n; off += 1200) {
-            const size_t chunk = (n - off < 1200) ? n - off : 1200;
-            if (udp.beginPacket(bcast, LOG_UDP_PORT)) {
-                udp.write((const uint8_t*)out + off, chunk);
-                udp.endPacket();
+    if (udpUp && udpStarted) {
+        // Chunks end on a line boundary, so each datagram starts with a whole
+        // line and a lost one takes whole lines with it, never half of one.
+        for (size_t off = 0; off < n;) {
+            size_t chunk = (n - off < kChunk) ? n - off : kChunk;
+            if (off + chunk < n) {
+                size_t cut = chunk;
+                while (cut > 0 && out[off + cut - 1] != '\n') --cut;
+                if (cut > 0) chunk = cut;  // lines are < kMaxLine, so one always fits
             }
+            sendChunk(out + off, chunk, nowMs);
+            off += chunk;
         }
     }
 }
@@ -333,12 +403,14 @@ void describe(char* out, size_t cap) {
         std::lock_guard<std::mutex> g(mu);
         d = dropped;
     }
-    snprintf(out, cap, "log dev=%d udp=%d sd=%d want_sd=%d type=%d hz=%lu pins=%d/%d/%d/%d file=%s wifi=%d ip=%s port=%d dropped=%lu",
+    char uniBuf[20] = "-";
+    if (unicastLive(millis())) snprintf(uniBuf, sizeof uniBuf, "%s", unicastIp.toString().c_str());
+    snprintf(out, cap, "log dev=%d udp=%d sd=%d want_sd=%d type=%d hz=%lu pins=%d/%d/%d/%d file=%s wifi=%d ip=%s port=%d dropped=%lu unicast=%s",
              (int)devMode, (int)udpWanted, (int)sdReady, (int)sdWanted, cardType(),
              (unsigned long)sdHz,
              sdSck, sdMiso, sdMosi, sdCs, sdPath[0] ? sdPath : "-", (int)(WiFi.status() == WL_CONNECTED),
              WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "-",
-             (int)LOG_UDP_PORT, (unsigned long)d);
+             (int)LOG_UDP_PORT, (unsigned long)d, uniBuf);
 }
 
 }  // namespace logsink
