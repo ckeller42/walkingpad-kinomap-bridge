@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from e2e_sim import (  # noqa: E402
-    Con, ReplaySession, Scenario, SpeedAtLeast, Status, Udp,
+    Con, FtmsConnect, ReplaySession, Scenario, SpeedAtLeast, Status, Udp,
     exit_code, ftms_speed_kmh, parse_status, run_scenario, write_report,
 )
 
@@ -82,6 +82,82 @@ class CheckTest(unittest.TestCase):
         self.assertFalse(run(recs, [Con("start")])[0].ok)
         r = run(recs, [Con("start", expect="*")])
         self.assertTrue(r[0].ok, r[0].why)
+
+
+def mark(t, name):
+    return {"t": t, "stream": "scenario", "name": name}
+
+
+def link(t, kind):
+    return {"t": t, "stream": "ftms", "kind": kind, "uuid": "", "hex": ""}
+
+
+class FixRound1Test(unittest.TestCase):
+    def test_con_ignores_lines_after_terminator(self):
+        recs = [sent(1.0, "arm"), got(1.0, "ok"), got(1.2, "belt mode 2 -> 1 raw=0")]
+        r = run(recs, [Con("arm")])
+        self.assertTrue(r[0].ok, r[0].why)
+
+    def test_con_without_terminator_fails(self):
+        r = run([sent(1.0, "arm"), got(1.0, "armed")], [Con("arm")])
+        self.assertFalse(r[0].ok)
+        self.assertIn("no terminating line", r[0].why)
+
+    def test_unparsable_lines_are_counted(self):
+        good = [sent(1.0, "arm"), got(1.1, "ok")]
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "timeline.jsonl"
+            path.write_text("".join(json.dumps(r) + "\n" for r in good)
+                            + '{"t": 2.0, "stream": "udp", "li\n'          # truncated
+                            + '{"stream": "udp", "line": "no t"}\n'         # missing t
+                            + '{"t": 3.0, "line": "no stream"}\n'           # missing stream
+                            + json.dumps(notify(4.0, "2acd", "zz")) + "\n")  # bad hex
+            s = ReplaySession(path)
+        self.assertEqual(len(s.unparsed), 4)
+        r = run_scenario(Scenario("x", [Con("arm")]), s)
+        self.assertTrue(r[0].ok, r[0].why)
+
+    def test_control_record_before_last_anchor_is_refused(self):
+        # Scenario "a" recorded arm, then its connect failed live (nothing recorded);
+        # "b" recorded stop at t=5 and a connect at t=6. Without markers, replaying
+        # "a" takes b's connect, and the console pop that follows goes back in time.
+        recs = [sent(1.0, "arm"), got(1.0, "ok"), sent(5.0, "stop"), got(5.0, "ok"), link(6.0, "connect")]
+        r = run(recs, [Con("arm"), FtmsConnect(), Con("stop")])
+        self.assertFalse(r[2].ok)
+        self.assertIn("before the last step", r[2].why)
+
+    def test_scenario_markers_keep_scenarios_apart(self):
+        recs = [mark(0.5, "a"), sent(1.0, "arm"), got(1.0, "ok"),
+                mark(4.5, "b"), sent(5.0, "stop"), got(5.0, "ok"), link(6.0, "connect")]
+        s = ReplaySession.from_records(recs)
+        a = run_scenario(Scenario("a", [Con("arm"), FtmsConnect(), Con("status")]), s)
+        self.assertEqual([x.ok for x in a], [True, False])
+        self.assertIn("recording ended", a[1].why)
+        b = run_scenario(Scenario("b", [Con("stop"), FtmsConnect()]), s)
+        self.assertEqual([x.ok for x in b], [True, True], [x.why for x in b])
+
+    def test_marker_resyncs_after_mismatch(self):
+        recs = [mark(0.5, "a"), sent(1.0, "arm"), got(1.0, "ok"),
+                mark(4.5, "b"), sent(5.0, "stop"), got(5.0, "ok")]
+        s = ReplaySession.from_records(recs)
+        a = run_scenario(Scenario("a", [Con("status")]), s)
+        self.assertIn("recording sent 'arm'", a[0].why)
+        b = run_scenario(Scenario("b", [Con("stop")]), s)
+        self.assertTrue(b[0].ok, b[0].why)
+
+    def test_ftms_connect_anchor_is_record_time(self):
+        recs = [link(2.0, "connect"), udp(2.5, "ftms connected")]
+        s = ReplaySession.from_records(recs)
+        s.wait(10.0)  # host time well past the record; the anchor must still be t=2.0
+        r = run_scenario(Scenario("x", [FtmsConnect(), Udp("ftms connected", 1)]), s)
+        self.assertEqual([x.ok for x in r], [True, True], [x.why for x in r])
+
+    def test_status_ignores_stale_reply(self):
+        recs = [sent(1.0, "status"), got(1.0, "status running=0"), got(1.0, "ok"),
+                sent(2.0, "start"), got(2.0, "ok")]
+        r = run(recs, [Con("status"), Con("start"), Status(running="0")])
+        self.assertFalse(r[2].ok)
+        self.assertIn("no status reply", r[2].why)
 
 
 class ReplayTest(unittest.TestCase):

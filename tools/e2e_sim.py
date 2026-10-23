@@ -134,9 +134,6 @@ class Status:
     def __str__(self):
         return "status " + " ".join(f"{k}={v}" for k, v in self.kv.items())
 
-    def __eq__(self, other):
-        return isinstance(other, Status) and other.kv == self.kv
-
     def __repr__(self):
         return f"Status({', '.join(f'{k}={v!r}' for k, v in self.kv.items())})"
 
@@ -211,14 +208,19 @@ class StepError(Exception):
 class Session:
     """The three streams behind one interface; times are host seconds."""
 
+    def begin_scenario(self, name: str) -> None:
+        """Called before a scenario's first step; a live session records a `scenario` marker."""
+
     def console(self, cmd: str) -> Tuple[float, List[str]]:
         """Send `cmd`; return the send time and every reply line up to `ok` / `err ...`."""
         raise NotImplementedError
 
-    def ftms_connect(self) -> None:
+    def ftms_connect(self) -> float:
+        """Connect to the bridge as the FTMS client; return the connect time."""
         raise NotImplementedError
 
-    def ftms_disconnect(self) -> None:
+    def ftms_disconnect(self) -> float:
+        """Drop the FTMS link; return the disconnect time."""
         raise NotImplementedError
 
     def ftms_cp(self, hexs: str) -> float:
@@ -236,75 +238,170 @@ class Session:
         raise NotImplementedError
 
 
-def load_timeline(path) -> List[dict]:
+def _valid(rec) -> bool:
+    """True if `rec` has the shape the checks rely on (so a bad record cannot crash a check)."""
+    if not isinstance(rec, dict) or not isinstance(rec.get("t"), (int, float)):
+        return False
+    stream = rec.get("stream")
+    if stream == "console":
+        return rec.get("dir") in (">", "<") and isinstance(rec.get("line"), str)
+    if stream == "udp":
+        return isinstance(rec.get("line"), str)
+    if stream == "scenario":
+        return isinstance(rec.get("name"), str)
+    if stream == "ftms":
+        if rec.get("kind") not in ("write", "indication", "notify", "connect", "disconnect"):
+            return False
+        try:
+            bytes.fromhex(rec.get("hex", ""))
+        except (TypeError, ValueError):
+            return False
+        return isinstance(rec.get("uuid", ""), str)
+    return False
+
+
+def split_records(records) -> Tuple[List[dict], List[str]]:
+    """(usable records, the rest as text) so a bad record is reported, not fatal."""
+    good, bad = [], []
+    for r in records:
+        if _valid(r):
+            good.append(r)
+        else:
+            bad.append(json.dumps(r) if isinstance(r, dict) else str(r))
+    return good, bad
+
+
+def load_timeline(path) -> Tuple[List[dict], List[str]]:
+    """Read `timeline.jsonl`: (usable records, unparsed lines). A truncated last line is unparsed."""
+    parsed, bad = [], []
     with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                parsed.append(json.loads(line))
+            except ValueError:
+                bad.append(line.rstrip("\n"))
+    good, invalid = split_records(parsed)
+    return good, bad + invalid
+
+
+INF = float("inf")
 
 
 class ReplaySession(Session):
-    """A recorded `timeline.jsonl` played back: control steps must match it in order."""
+    """A recorded `timeline.jsonl` played back: control steps must match it in order.
+
+    Cursors (console, ftms write, ftms link) move forward only. A popped control
+    record earlier than the last control step is refused: it belongs to an
+    earlier step the scenario did not ask for, so the replay is misaligned. If
+    the recording carries `scenario` markers (live runs write one per
+    scenario), `begin_scenario` moves every cursor to that scenario's marker
+    and control steps cannot read past the next marker, so a scenario that
+    aborted live (or mismatched in replay) does not shift the ones after it.
+    Hand-built timelines without markers replay as one continuous run.
+    `unparsed` holds the lines that could not be used.
+    """
 
     def __init__(self, path):
-        self._init(load_timeline(path))
+        self._init(*load_timeline(path))
 
     @classmethod
     def from_records(cls, records: List[dict]) -> "ReplaySession":
         s = cls.__new__(cls)
-        s._init(records)
+        s._init(*split_records(records))
         return s
 
-    def _init(self, records):
+    def _init(self, records, unparsed):
+        self.unparsed = unparsed
         self._records = sorted(records, key=lambda r: r["t"])
         self._console = [r for r in self._records if r["stream"] == "console"]
-        self._writes = [r for r in self._records if r["stream"] == "ftms" and r.get("kind") == "write"]
+        self._writes = [r for r in self._records if r["stream"] == "ftms" and r["kind"] == "write"]
         self._links = [r for r in self._records
-                       if r["stream"] == "ftms" and r.get("kind") in ("connect", "disconnect")]
-        self._ci = self._wi = self._li = 0
+                       if r["stream"] == "ftms" and r["kind"] in ("connect", "disconnect")]
+        self._marks = [r for r in self._records if r["stream"] == "scenario"]
+        self._ci = self._wi = self._li = self._mi = 0
         self._cursor = 0.0
+        self._floor = -INF   # t of the last popped control record
+        self._end = INF      # t of the next scenario marker
+        self._scenario = None
 
     def _advance(self, t):
         self._cursor = max(self._cursor, t)
 
+    def begin_scenario(self, name):
+        if not self._marks:
+            return
+        self._scenario = name
+        i = next((i for i in range(self._mi, len(self._marks)) if self._marks[i]["name"] == name), None)
+        if i is None:
+            self._end = -INF  # every control step reports "recording ended"
+            return
+        start = self._marks[i]["t"]
+        self._end = self._marks[i + 1]["t"] if i + 1 < len(self._marks) else INF
+        self._mi = i + 1
+
+        def first_at(recs):
+            return next((k for k, r in enumerate(recs) if r["t"] >= start), len(recs))
+        self._ci, self._wi, self._li = first_at(self._console), first_at(self._writes), first_at(self._links)
+        self._floor = start
+        self._advance(start)
+
+    def _ended(self, what):
+        where = f" in scenario '{self._scenario}'" if self._scenario else ""
+        return StepError(f"recording ended{where} before {what}")
+
+    def _take(self, rec, what):
+        """Accept a popped control record, refusing one that goes back in time."""
+        if rec["t"] < self._floor - EPS:
+            raise StepError(f"recording has {what} at t={rec['t']:.3f}, before the last step "
+                            f"at t={self._floor:.3f}: replay is misaligned")
+        self._floor = rec["t"]
+        self._advance(rec["t"])
+
     def console(self, cmd):
-        while self._ci < len(self._console) and self._console[self._ci]["dir"] != ">":
+        while (self._ci < len(self._console) and self._console[self._ci]["dir"] != ">"
+               and self._console[self._ci]["t"] < self._end):
             self._ci += 1  # reply lines with no command before them (boot noise)
-        if self._ci >= len(self._console):
-            raise StepError(f"recording ended before '{cmd}'")
+        if self._ci >= len(self._console) or self._console[self._ci]["t"] >= self._end:
+            raise self._ended(f"'{cmd}'")
         rec = self._console[self._ci]
         if rec["line"] != cmd:
             raise StepError(f"recording sent '{rec['line']}', scenario expects '{cmd}'")
+        self._take(rec, f"'{cmd}'")
         self._ci += 1
         reply = []
-        self._advance(rec["t"])
-        while self._ci < len(self._console) and self._console[self._ci]["dir"] == "<":
+        while (self._ci < len(self._console) and self._console[self._ci]["dir"] == "<"
+               and self._console[self._ci]["t"] < self._end):
             reply.append(self._console[self._ci]["line"])
             self._advance(self._console[self._ci]["t"])
             self._ci += 1
         return rec["t"], reply
 
     def _link(self, kind):
-        if self._li >= len(self._links):
-            raise StepError(f"recording ended before ftms {kind}")
+        if self._li >= len(self._links) or self._links[self._li]["t"] >= self._end:
+            raise self._ended(f"ftms {kind}")
         rec = self._links[self._li]
         if rec["kind"] != kind:
             raise StepError(f"recording sent 'ftms {rec['kind']}', scenario expects 'ftms {kind}'")
+        self._take(rec, f"ftms {kind}")
         self._li += 1
-        self._advance(rec["t"])
+        return rec["t"]
 
     def ftms_connect(self):
-        self._link("connect")
+        return self._link("connect")
 
     def ftms_disconnect(self):
-        self._link("disconnect")
+        return self._link("disconnect")
 
     def ftms_cp(self, hexs):
-        if self._wi >= len(self._writes):
-            raise StepError(f"recording ended before cp {hexs}")
+        if self._wi >= len(self._writes) or self._writes[self._wi]["t"] >= self._end:
+            raise self._ended(f"cp {hexs}")
         rec = self._writes[self._wi]
         if _norm_hex(rec["hex"]) != _norm_hex(hexs):
             raise StepError(f"recording sent '{rec['hex']}', scenario expects '{hexs}'")
+        self._take(rec, f"cp {hexs}")
         self._wi += 1
-        self._advance(rec["t"])
         return rec["t"]
 
     def wait(self, seconds):
@@ -420,28 +517,37 @@ def _check_status(step, last_status):
     return (not bad), ("; ".join(bad) if bad else last_status)
 
 
+def _is_terminator(line):
+    return line == "ok" or line.startswith("err ")
+
+
 def _con_ok(expect, reply):
-    if not reply:
-        return False, "no reply"
-    last = reply[-1]
-    if expect == "*":
-        ok = last == "ok" or last.startswith("err ")
-    else:
-        ok = last == expect
-    return ok, last if ok else f"got '{last}', expected '{expect}'"
+    """Compare the first `ok` / `err ...` line with `expect`; later lines are log noise."""
+    end = next((ln for ln in reply if _is_terminator(ln)), None)
+    if end is None:
+        return False, f"no terminating line (got {len(reply)} line(s): {' / '.join(reply) or 'none'})"
+    ok = expect == "*" or end == expect
+    return ok, end if ok else f"got '{end}', expected '{expect}'"
 
 
 def run_scenario(sc: Scenario, s: Session) -> List[CheckResult]:
     """Run every step in order. A control step that cannot be carried out ends the scenario."""
     results = []
+    s.begin_scenario(sc.name)
     anchor = s.now()
-    last_status = None
+    last_status = None  # the status line of the most recent control step only
     for step in sc.steps:
         label = str(step)
         try:
             if isinstance(step, Con):
+                last_status = None
                 anchor, reply = s.console(step.cmd)
-                status = [ln for ln in reply if ln.startswith("status ")]
+                body = []
+                for ln in reply:
+                    if _is_terminator(ln):
+                        break
+                    body.append(ln)
+                status = [ln for ln in body if ln.startswith("status ")]
                 if status:
                     last_status = status[-1]
                 ok, why = _con_ok(step.expect, reply)
@@ -449,12 +555,15 @@ def run_scenario(sc: Scenario, s: Session) -> List[CheckResult]:
                 s.wait(step.seconds)
                 continue
             elif isinstance(step, FtmsConnect):
-                s.ftms_connect()
-                anchor, ok, why = s.now(), True, "connected"
+                last_status = None
+                anchor = s.ftms_connect()
+                ok, why = True, f"connected at t={anchor:.3f}"
             elif isinstance(step, FtmsDisconnect):
-                s.ftms_disconnect()
-                anchor, ok, why = s.now(), True, "disconnected"
+                last_status = None
+                anchor = s.ftms_disconnect()
+                ok, why = True, f"disconnected at t={anchor:.3f}"
             elif isinstance(step, FtmsCp):
+                last_status = None
                 anchor = s.ftms_cp(step.hex)
                 ok, why = True, f"written at t={anchor:.3f}"
             elif isinstance(step, Status):
@@ -547,6 +656,9 @@ def main():
         print(f"no recording: {path}", file=sys.stderr)
         return 2
     s = ReplaySession(path)
+    print(f"{path}: {len(s.timeline())} records, {len(s.unparsed)} unparsed")
+    for u in s.unparsed:
+        print(f"   unparsed: {u}")
     all_ok = True
     for n in names:
         results = run_scenario(SCENARIOS[n], s)
