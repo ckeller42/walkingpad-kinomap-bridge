@@ -3,8 +3,8 @@
  * @file devmenu.h
  * @brief The developer menu: the radio switches and Wi-Fi pairing.
  */
-// The developer menu: the radio switches and Wi-Fi pairing. OTA is driven
-// from the serial console (`ota check`), not from a row here.
+// The developer menu: the radio switches, Wi-Fi pairing and the firmware
+// Update screen (check, install). The serial console's `ota` commands remain.
 //
 // Arduino-free and unit-tested, like lib/wizard. It decides *what* should
 // happen and never does it: every press returns an Action for the host to
@@ -25,6 +25,17 @@ enum class Step : uint8_t {
     Root,      ///< The switches.
     WifiScan,  ///< Networks found nearby.
     WifiPass,  ///< On-screen keyboard for the password.
+    Update,    ///< Firmware update: running version, check and install.
+};
+
+/** @brief Where the firmware update stands. Mirrors `ota::State`, in the same order. */
+enum class OtaState : uint8_t {
+    Idle,        ///< Nothing checked yet.
+    Checking,    ///< Asking the update server what is current.
+    UpToDate,    ///< The server's image is the one already running.
+    Available,   ///< A different image is on offer.
+    Installing,  ///< Downloading and writing the image.
+    Failed,      ///< The last check or install failed; see Inputs::otaMessage.
 };
 
 /**
@@ -42,10 +53,13 @@ enum class Action : uint8_t {
     SubmitPassword,  ///< Connect using ssid() and password().
     ForgetWifi,      ///< Clear the stored credentials.
     RerunSetup,      ///< Close the menu and open the setup wizard.
+    OpenUpdate,      ///< The Update screen was opened; the host may refresh its state.
+    CheckOta,        ///< Ask the update server whether a newer image exists.
+    InstallOta,      ///< Download and install the available image.
 };
 
-constexpr uint8_t kMaxRows = 5;  ///< Rows that fit on the 320x240 panel.
-constexpr uint8_t kMaxNetworks = kMaxRows;  ///< Scan results kept: as many as shown.
+constexpr uint8_t kMaxRows = 6;  ///< Rows that fit on the 320x240 panel.
+constexpr uint8_t kMaxNetworks = 5;  ///< Scan results kept; the list screen shows at most this many.
 constexpr size_t kMaxSsid = 33;      ///< 32 characters plus NUL.
 constexpr size_t kMaxPassword = 64;  ///< WPA2 allows 63 characters, plus NUL.
 
@@ -65,12 +79,19 @@ struct Inputs {
     bool scanning = false;        ///< A Wi-Fi scan is in progress.
     uint8_t networkCount = 0;     ///< Networks in @ref networks.
     const char* networks[kMaxNetworks] = {};  ///< Scan results, strongest first.
+    const char* otaVersion = "";    ///< Running firmware version, "" when unknown.
+    const char* otaAvailable = "";  ///< Version on offer from the server, "" when none.
+    OtaState otaState = OtaState::Idle;  ///< Where the update stands.
+    const char* otaMessage = "";    ///< One line of detail for the Update screen, e.g. a failure reason.
+    const char* otaHost = "";       ///< Update server host, shown as the source.
+    const char* otaImageEnv = "";   ///< Build environment the offered image targets.
+    bool otaEnvMismatch = false;    ///< The offered image targets a different build; installing is refused.
 };
 
 /** @brief One line of a list screen. */
 struct Row {
     char label[24] = {};  ///< Left-hand text.
-    char value[18] = {};  ///< Right-hand text, often a state.
+    char value[24] = {};  ///< Right-hand text, often a state.
     bool enabled = true;  ///< A disabled row is drawn dim and ignores taps.
 };
 
